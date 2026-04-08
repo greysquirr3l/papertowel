@@ -100,32 +100,18 @@ impl Default for ScrubberConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct WringerProjectConfig {
     pub default_persona: Option<String>,
 }
 
-impl Default for WringerProjectConfig {
-    fn default() -> Self {
-        Self {
-            default_persona: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ExcludeConfig {
     /// Glob patterns to exclude from all analysis.  Combined with any patterns
     /// found in `.papertowelignore`.
     pub paths: Vec<String>,
-}
-
-impl Default for ExcludeConfig {
-    fn default() -> Self {
-        Self { paths: Vec::new() }
-    }
 }
 
 // ─── Top-level config ─────────────────────────────────────────────────────────
@@ -210,25 +196,29 @@ pub fn build_ignore_matcher(
 }
 
 /// Returns `true` if `path` matches any ignore rule in the matcher.
+///
 /// `root` is the repo root that was passed to [`build_ignore_matcher`].
 /// `path` may be absolute; `root` is stripped before matching.
 /// `is_dir` should be `true` when `path` points to a directory.
 pub fn is_ignored(matcher: &Gitignore, root: &Path, path: &Path, is_dir: bool) -> bool {
     let relative = path.strip_prefix(root).unwrap_or(path);
-    matcher.matched_path_or_any_parents(relative, is_dir).is_ignore()
+    matcher
+        .matched_path_or_any_parents(relative, is_dir)
+        .is_ignore()
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[expect(clippy::expect_used, reason = "test assertions")]
 mod tests {
     use std::io::Write;
 
     use tempfile::TempDir;
 
     use super::{
-        build_ignore_matcher, is_ignored, load_config, save_config, DetectorConfig, ProjectConfig,
-        ScrubberAggression, SeverityConfig,
+        DetectorConfig, ProjectConfig, ScrubberAggression, SeverityConfig, build_ignore_matcher,
+        is_ignored, load_config, save_config,
     };
 
     fn scratch() -> TempDir {

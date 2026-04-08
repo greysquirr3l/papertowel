@@ -10,12 +10,20 @@ use crate::domain::errors::PapertowelError;
 pub const DETECTOR_NAME: &str = "structure";
 
 /// Pattern that matches the start of a Rust function definition.
+#[expect(
+    clippy::expect_used,
+    reason = "LazyLock init — regex literal is a compile-time invariant"
+)]
 static FN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+\w+")
         .expect("FN_PATTERN is a valid regex")
 });
 
 /// Pattern for `/// ` doc comments preceding function definitions.
+#[expect(
+    clippy::expect_used,
+    reason = "LazyLock init — regex literal is a compile-time invariant"
+)]
 static DOCSTRING_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*///").expect("DOCSTRING_PATTERN is a valid regex"));
 
@@ -66,7 +74,7 @@ struct FunctionMeasure {
 }
 
 impl FunctionMeasure {
-    fn body_lines(&self) -> usize {
+    const fn body_lines(&self) -> usize {
         self.line_range.1.saturating_sub(self.line_range.0) + 1
     }
 }
@@ -150,6 +158,10 @@ pub fn analyze_structure(content: &str) -> Result<StructureMetrics, PapertowelEr
         });
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "bounded function count; mantissa precision is sufficient"
+    )]
     let lengths: Vec<f64> = measures.iter().map(|m| m.body_lines() as f64).collect();
 
     let length_cv = coefficient_of_variation(&lengths);
@@ -161,6 +173,10 @@ pub fn analyze_structure(content: &str) -> Result<StructureMetrics, PapertowelEr
     #[expect(
         clippy::cast_precision_loss,
         reason = "bounded counts: no meaningful precision loss"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "cv is in [0.0, 1.0]; f32 precision is sufficient for heuristic scoring"
     )]
     Ok(StructureMetrics {
         function_count,
@@ -182,7 +198,9 @@ fn extract_function_measures(content: &str) -> Vec<FunctionMeasure> {
     let mut i = 0;
 
     while i < lines.len() {
-        let line = lines[i];
+        let Some(line) = lines.get(i).copied() else {
+            break;
+        };
 
         if !FN_PATTERN.is_match(line) {
             i += 1;
@@ -191,13 +209,16 @@ fn extract_function_measures(content: &str) -> Vec<FunctionMeasure> {
 
         // Determine whether the function has a preceding docstring.
         let has_docstring = i > 0
-            && lines[..i]
-                .iter()
-                .rev()
-                .take_while(|l| {
-                    l.trim().starts_with("///") || l.trim().starts_with('#') || l.trim().is_empty()
-                })
-                .any(|l| DOCSTRING_PATTERN.is_match(l));
+            && lines.get(..i).is_some_and(|prev| {
+                prev.iter()
+                    .rev()
+                    .take_while(|l| {
+                        l.trim().starts_with("///")
+                            || l.trim().starts_with('#')
+                            || l.trim().is_empty()
+                    })
+                    .any(|l| DOCSTRING_PATTERN.is_match(l))
+            });
 
         let is_pub = line.trim_start().starts_with("pub");
 
@@ -208,7 +229,10 @@ fn extract_function_measures(content: &str) -> Vec<FunctionMeasure> {
 
         let end = 'outer: {
             while i < lines.len() {
-                for ch in lines[i].chars() {
+                let Some(line_str) = lines.get(i).copied() else {
+                    break;
+                };
+                for ch in line_str.chars() {
                     match ch {
                         '{' => {
                             depth += 1;
@@ -241,13 +265,17 @@ fn extract_function_measures(content: &str) -> Vec<FunctionMeasure> {
     measures
 }
 
-/// Compute the coefficient of variation (std_dev / mean) for a slice of
+/// Compute the coefficient of variation (`std_dev` / mean) for a slice of
 /// non-negative samples.  Returns 0.0 for empty or single-element slices.
 fn coefficient_of_variation(values: &[f64]) -> f64 {
     if values.len() < 2 {
         return 0.0;
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "bounded count; mantissa is sufficient"
+    )]
     let n = values.len() as f64;
     let mean = values.iter().sum::<f64>() / n;
 
@@ -262,12 +290,13 @@ fn coefficient_of_variation(values: &[f64]) -> f64 {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[expect(clippy::expect_used, reason = "test assertions")]
 mod tests {
     use std::path::PathBuf;
 
     use super::{StructureDetectionConfig, StructureMetrics, analyze_structure, detect_in_text};
 
-    const UNIFORM_FUNCTIONS: &str = r#"
+    const UNIFORM_FUNCTIONS: &str = r"
 /// Returns the foo value.
 pub fn get_foo() -> u32 {
     let x = 42;
@@ -302,7 +331,7 @@ pub fn get_quux() -> u32 {
     let y = x + 1;
     y
 }
-"#;
+";
 
     const VARIED_FUNCTIONS: &str = r#"
 fn init() {
@@ -370,11 +399,11 @@ fn long_computation(a: u64, b: u64, c: u64) -> u64 {
 
     #[test]
     fn below_min_function_count_skips_analysis() {
-        let content = r#"
+        let content = r"
 pub fn single() -> u32 {
     42
 }
-"#;
+";
         let findings = detect_in_text(
             PathBuf::from("src/lib.rs"),
             content,

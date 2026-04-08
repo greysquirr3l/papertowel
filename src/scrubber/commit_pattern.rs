@@ -10,6 +10,10 @@ use crate::domain::errors::PapertowelError;
 pub const DETECTOR_NAME: &str = "commit_pattern";
 
 /// Prefixes that indicate conventional-commit–formatted messages.
+#[expect(
+    clippy::expect_used,
+    reason = "LazyLock init — regex literal is a compile-time invariant"
+)]
 static CONVENTIONAL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"^(?:feat|fix|chore|refactor|test|docs|style|ci|build|perf|revert)(?:\([^)]+\))?!?:\s",
@@ -23,7 +27,7 @@ const RECOVERY_TERMS: &[&str] = &[
     "amend", "whoops", "typo", "missed", "forgot",
 ];
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CommitPatternConfig {
     /// Minimum number of commits required before analysis is attempted.
     pub min_commit_count: usize,
@@ -102,9 +106,12 @@ pub fn detect_repo_with_config(
         Severity::Medium
     };
 
-    let confidence = (1.0_f64 - metrics.cadence_cv.min(1.0)) * 0.5
-        + metrics.conventional_fraction * 0.3
-        + if no_recovery { 0.2 } else { 0.0 };
+    let confidence = (1.0_f64 - metrics.cadence_cv.min(1.0)).mul_add(
+        0.5,
+        metrics
+            .conventional_fraction
+            .mul_add(0.3, if no_recovery { 0.2 } else { 0.0 }),
+    );
 
     let evidence = format!(
         "commits: {}, cadence CV: {:.2}, conventional: {:.0}%, recovery commits: {}",
@@ -114,6 +121,10 @@ pub fn detect_repo_with_config(
         metrics.recovery_commit_count,
     );
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "confidence is clamped to 0.0–1.0; truncation is intentional and bounded"
+    )]
     let mut finding = Finding::new(
         "commit_pattern.machine_clean",
         FindingCategory::CommitPattern,
@@ -150,9 +161,20 @@ pub fn analyze_commits(commits: &[CommitSample]) -> CommitPatternMetrics {
 
     let gaps: Vec<f64> = sorted
         .windows(2)
-        .filter_map(|w| {
-            let diff = w[1].saturating_sub(w[0]);
-            if diff > 0 { Some(diff as f64) } else { None }
+        .filter_map(|w| match w {
+            [a, b] => {
+                let diff = b.saturating_sub(*a);
+                if diff <= 0 {
+                    return None;
+                }
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "timestamp diff is bounded; precision is sufficient"
+                )]
+                let diff_f = diff as f64;
+                Some(diff_f)
+            }
+            _ => None,
         })
         .collect();
 
@@ -217,6 +239,10 @@ fn coefficient_of_variation(values: &[f64]) -> f64 {
     if values.len() < 2 {
         return 0.0;
     }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "bounded count; mantissa is sufficient"
+    )]
     let n = values.len() as f64;
     let mean = values.iter().sum::<f64>() / n;
     if mean == 0.0 {
@@ -235,9 +261,16 @@ mod tests {
 
     fn uniform_samples(count: usize, gap_secs: i64) -> Vec<CommitSample> {
         (0..count)
-            .map(|i| CommitSample {
-                timestamp: 1_700_000_000 + i as i64 * gap_secs,
-                message: format!("feat(module{i}): implement feature {i}"),
+            .map(|i| {
+                #[expect(
+                    clippy::cast_possible_wrap,
+                    reason = "test fixture: count is always small"
+                )]
+                let ts = 1_700_000_000 + i as i64 * gap_secs;
+                CommitSample {
+                    timestamp: ts,
+                    message: format!("feat(module{i}): implement feature {i}"),
+                }
             })
             .collect()
     }
@@ -324,7 +357,10 @@ mod tests {
     fn empty_commits_returns_zero_metrics() {
         let metrics = analyze_commits(&[]);
         assert_eq!(metrics.commit_count, 0);
-        assert_eq!(metrics.cadence_cv, 0.0);
+        assert!(
+            metrics.cadence_cv.abs() < f64::EPSILON,
+            "expected cadence_cv == 0.0"
+        );
     }
 
     #[test]

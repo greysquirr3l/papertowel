@@ -10,8 +10,8 @@ use crate::{
     profile::persona::PersonaArchaeology,
     wringer::{
         archaeology::inject_before_entry,
-        config::{load_wringer_config, WringerConfig},
-        queue::{load_queue_plan, save_queue_plan, QueueEntry},
+        config::{WringerConfig, load_wringer_config},
+        queue::{QueueEntry, load_queue_plan, save_queue_plan},
     },
 };
 
@@ -56,7 +56,7 @@ impl DripRunner {
 
     /// Enable archaeology injection with the given persona settings.
     #[must_use]
-    pub fn with_archaeology(mut self, settings: PersonaArchaeology) -> Self {
+    pub const fn with_archaeology(mut self, settings: PersonaArchaeology) -> Self {
         self.archaeology = Some(settings);
         self
     }
@@ -100,12 +100,8 @@ impl DripRunner {
             // Optionally inject synthetic archaeology commits before the real
             // cherry-pick so the public history looks more organic.
             if let Some(ref settings) = self.archaeology.clone() {
-                let _ = inject_before_entry(
-                    &self.config.worktree_path,
-                    entry,
-                    settings,
-                    &mut self.rng,
-                );
+                let _ =
+                    inject_before_entry(&self.config.worktree_path, entry, settings, &mut self.rng);
             }
 
             apply_entry(&self.config.worktree_path, entry)?;
@@ -225,8 +221,8 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::wringer::{
-        config::{save_wringer_config, WringerConfig},
-        queue::{save_queue_plan, QueueEntry, QueuePlan, ReplayAction},
+        config::{WringerConfig, save_wringer_config},
+        queue::{QueueEntry, QueuePlan, ReplayAction, save_queue_plan},
     };
 
     use super::DripRunner;

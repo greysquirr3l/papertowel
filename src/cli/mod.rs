@@ -1,4 +1,5 @@
 mod profile;
+pub mod report;
 mod scan;
 mod scrub;
 mod wring;
@@ -88,12 +89,12 @@ where
 
 fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
-        Command::Scan(args) => scan::handle(args),
+        Command::Scan(args) => scan::handle(&args),
         Command::Scrub(args) => scrub::handle(args),
         Command::Wring(args) => match args.command {
             WringCommand::Init(init_args) => wring::handle_init(init_args),
             WringCommand::Queue(queue_args) => wring::handle_queue(queue_args),
-            WringCommand::Drip(drip_args) => wring::handle_drip(drip_args),
+            WringCommand::Drip(drip_args) => wring::handle_drip(&drip_args),
             WringCommand::Status(status_args) => wring::handle_status(status_args),
         },
         Command::Clean(args) => {

@@ -144,7 +144,7 @@ fn inject_dead_code_pair(
 fn collect_rs_files(root: &Path) -> Vec<PathBuf> {
     WalkDir::new(root)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| {
             if !e.file_type().is_file() {
                 return false;
@@ -160,7 +160,7 @@ fn collect_rs_files(root: &Path) -> Vec<PathBuf> {
                 s == ".git" || s == "target"
             })
         })
-        .map(|e| e.into_path())
+        .map(walkdir::DirEntry::into_path)
         .collect()
 }
 
@@ -169,7 +169,7 @@ fn collect_rs_files(root: &Path) -> Vec<PathBuf> {
 fn relative_to(target: &Path, root: &Path) -> Result<PathBuf, PapertowelError> {
     target
         .strip_prefix(root)
-        .map(|p| p.to_owned())
+        .map(ToOwned::to_owned)
         .map_err(|_| {
             PapertowelError::Config(format!(
                 "file {} is outside worktree root {}",
@@ -257,11 +257,11 @@ mod tests {
         Ok(repo)
     }
 
-    fn count_head_commits(repo_path: &Path) -> usize {
-        let repo = Repository::open(repo_path).expect("repo open");
-        let mut walker = repo.revwalk().expect("revwalk");
-        walker.push_head().expect("push_head");
-        walker.filter_map(|r| r.ok()).count()
+    fn count_head_commits(repo_path: &Path) -> Result<usize, Box<dyn Error>> {
+        let repo = Repository::open(repo_path)?;
+        let mut walker = repo.revwalk()?;
+        walker.push_head()?;
+        Ok(walker.filter_map(Result::ok).count())
     }
 
     fn dummy_entry() -> QueueEntry {
@@ -288,7 +288,7 @@ mod tests {
 
         let count = inject_before_entry(tmp.path(), &dummy_entry(), &settings, &mut rng)?;
         assert_eq!(count, 0);
-        assert_eq!(count_head_commits(tmp.path()), 1, "no new commits");
+        assert_eq!(count_head_commits(tmp.path())?, 1, "no new commits");
         Ok(())
     }
 
@@ -306,7 +306,7 @@ mod tests {
 
         let count = inject_before_entry(tmp.path(), &dummy_entry(), &settings, &mut rng)?;
         assert_eq!(count, 2, "one TODO pair = 2 commits");
-        assert_eq!(count_head_commits(tmp.path()), 3, "initial + add_todo + rm_todo");
+        assert_eq!(count_head_commits(tmp.path())?, 3, "initial + add_todo + rm_todo");
         Ok(())
     }
 
@@ -324,7 +324,7 @@ mod tests {
 
         let count = inject_before_entry(tmp.path(), &dummy_entry(), &settings, &mut rng)?;
         assert_eq!(count, 2, "one dead-code pair = 2 commits");
-        assert_eq!(count_head_commits(tmp.path()), 3);
+        assert_eq!(count_head_commits(tmp.path())?, 3);
         Ok(())
     }
 
@@ -342,7 +342,7 @@ mod tests {
 
         let count = inject_before_entry(tmp.path(), &dummy_entry(), &settings, &mut rng)?;
         assert_eq!(count, 4, "both pairs = 4 commits");
-        assert_eq!(count_head_commits(tmp.path()), 5);
+        assert_eq!(count_head_commits(tmp.path())?, 5);
         Ok(())
     }
 
@@ -360,7 +360,7 @@ mod tests {
 
         let files = collect_rs_files(root);
         assert_eq!(files.len(), 1);
-        assert!(files[0].ends_with("src/lib.rs"));
+        assert!(files.first().is_some_and(|f| f.ends_with("src/lib.rs")));
         Ok(())
     }
 }

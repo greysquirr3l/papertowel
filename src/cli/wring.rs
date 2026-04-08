@@ -51,8 +51,8 @@ pub fn handle_init(args: InitArgs) -> Result<()> {
 
     let config = WringerConfig {
         branch,
-        worktree_name,
         worktree_path,
+        worktree_name,
     };
     save_wringer_config(&repo_root, &config)
         .map_err(|error| anyhow::anyhow!("failed to save wringer config: {error}"))?;
@@ -75,7 +75,7 @@ pub fn handle_queue(args: QueueArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_drip(args: DripArgs) -> Result<()> {
+pub fn handle_drip(args: &DripArgs) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let mut runner = DripRunner::new(&repo_root)
         .map_err(|e| anyhow::anyhow!("failed to initialise drip runner: {e}"))?;
@@ -109,12 +109,9 @@ pub fn handle_drip(args: DripArgs) -> Result<()> {
 pub fn handle_status(_: StatusArgs) -> Result<()> {
     let repo_root = std::env::current_dir()?;
 
-    let config = match load_wringer_config(&repo_root) {
-        Ok(config) => config,
-        Err(_) => {
-            println!("no wringer config found — run `papertowel wring init` first");
-            return Ok(());
-        }
+    let Ok(config) = load_wringer_config(&repo_root) else {
+        println!("no wringer config found — run `papertowel wring init` first");
+        return Ok(());
     };
 
     let spec = config.to_spec();
