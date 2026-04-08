@@ -13,6 +13,8 @@ release/
 .vscode/
 .idea/
 *.code-workspace
+.markdownlint.json
+.markdownlintignore
 
 # GitHub local / generated
 .github/.cache/
