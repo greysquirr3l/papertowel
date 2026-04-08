@@ -30,6 +30,15 @@ const TEMPLATE_PHRASES: [&str; 8] = [
     "template",
 ];
 
+const SECTION_DROP_CANDIDATES: [&str; 6] = [
+    "getting started",
+    "roadmap",
+    "acknowledgements",
+    "faq",
+    "features",
+    "installation",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReadmeDetectionConfig {
     pub min_template_sections: usize,
@@ -43,6 +52,12 @@ impl Default for ReadmeDetectionConfig {
             min_template_phrases: 2,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadmeTransformResult {
+    pub removed_lines: usize,
+    pub changed: bool,
 }
 
 pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
@@ -103,6 +118,108 @@ pub fn detect_in_text(
     Ok(vec![finding])
 }
 
+pub fn transform_file(path: impl AsRef<Path>, dry_run: bool) -> Result<ReadmeTransformResult, PapertowelError> {
+    let path = path.as_ref();
+    let original = fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
+    let (transformed, result) = transform_text(&original);
+
+    if !dry_run && result.changed {
+        fs::write(path, transformed).map_err(|error| PapertowelError::io_with_path(path, error))?;
+    }
+
+    Ok(result)
+}
+
+#[must_use]
+pub fn transform_text(content: &str) -> (String, ReadmeTransformResult) {
+    let lines = content.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
+    if lines.is_empty() {
+        return (
+            String::new(),
+            ReadmeTransformResult {
+                removed_lines: 0,
+                changed: false,
+            },
+        );
+    }
+
+    let heading_indices = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut drop_indices = BTreeSet::new();
+    for (idx, line) in lines.iter().enumerate() {
+        let lowered = line.to_ascii_lowercase();
+        if TEMPLATE_PHRASES
+            .iter()
+            .any(|phrase| lowered.contains(phrase))
+        {
+            drop_indices.insert(idx);
+        }
+    }
+
+    for (position, heading_idx) in heading_indices.iter().enumerate() {
+        let heading_line = lines.get(*heading_idx).map(|line| line.trim()).unwrap_or("");
+        let normalized_heading = heading_line
+            .trim_start_matches('#')
+            .trim()
+            .to_ascii_lowercase();
+
+        let next_heading = heading_indices.get(position + 1).copied().unwrap_or(lines.len());
+        let content_line_count = section_content_line_count(
+            &lines,
+            heading_idx + 1,
+            next_heading,
+            &drop_indices,
+        );
+
+        if SECTION_DROP_CANDIDATES.contains(&normalized_heading.as_str()) && content_line_count == 0 {
+            drop_indices.insert(*heading_idx);
+        }
+    }
+
+    let mut output = Vec::new();
+    let mut removed_lines = 0_usize;
+    let mut last_blank = false;
+    for (idx, line) in lines.iter().enumerate() {
+        if drop_indices.contains(&idx) {
+            removed_lines += 1;
+            continue;
+        }
+
+        let is_blank = line.trim().is_empty();
+        if is_blank && last_blank {
+            continue;
+        }
+
+        output.push(line.clone());
+        last_blank = is_blank;
+    }
+
+    let mut transformed = output.join("\n");
+    if content.ends_with('\n') {
+        transformed.push('\n');
+    }
+
+    let changed = transformed != content;
+    (
+        transformed,
+        ReadmeTransformResult {
+            removed_lines,
+            changed,
+        },
+    )
+}
+
 fn collect_heading_terms(content: &str) -> BTreeSet<String> {
     content
         .lines()
@@ -121,9 +238,30 @@ fn collect_heading_terms(content: &str) -> BTreeSet<String> {
         .collect()
 }
 
+fn section_content_line_count(
+    lines: &[String],
+    start: usize,
+    end: usize,
+    drop_indices: &BTreeSet<usize>,
+) -> usize {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .filter(|(idx, line)| !drop_indices.contains(idx) && !line.trim().is_empty())
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::scrubber::readme::{DETECTOR_NAME, ReadmeDetectionConfig, detect_in_text};
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use crate::scrubber::readme::{
+        DETECTOR_NAME, ReadmeDetectionConfig, detect_in_text, transform_file, transform_text,
+    };
 
     #[test]
     fn detector_name_is_stable() {
@@ -166,5 +304,56 @@ This project was bootstrapped from a template.\n\
             Err(error) => panic!("unexpected readme detector error: {error}"),
         };
         assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn transform_text_removes_template_phrases_and_empty_sections() {
+        let content = "\
+# My Project\n\
+## Installation\n\
+\n\
+## Usage\n\
+Run with cargo run -- --help\n\
+## Acknowledgements\n\
+\n\
+This project was bootstrapped from a template.\n";
+
+        let (transformed, result) = transform_text(content);
+
+        assert!(result.changed);
+        assert!(result.removed_lines >= 2);
+        assert!(!transformed.contains("bootstrapped"));
+        assert!(!transformed.contains("## Acknowledgements"));
+        assert!(transformed.contains("## Usage"));
+    }
+
+    #[test]
+    fn transform_file_honors_dry_run() {
+        let tmp = TempDir::new();
+        assert!(tmp.is_ok());
+        let tmp = match tmp {
+            Ok(tmp) => tmp,
+            Err(error) => panic!("failed to create tempdir: {error}"),
+        };
+        let file_path = tmp.path().join("README.md");
+
+        let write_result = fs::write(&file_path, "# Demo\nThis project was bootstrapped from a template.\n");
+        assert!(write_result.is_ok());
+
+        let result = transform_file(&file_path, true);
+        assert!(result.is_ok());
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => panic!("unexpected transform error: {error}"),
+        };
+        assert!(result.changed);
+
+        let disk_content = fs::read_to_string(&file_path);
+        assert!(disk_content.is_ok());
+        let disk_content = match disk_content {
+            Ok(content) => content,
+            Err(error) => panic!("unexpected read error: {error}"),
+        };
+        assert!(disk_content.contains("bootstrapped"));
     }
 }
