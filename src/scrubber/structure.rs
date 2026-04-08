@@ -150,10 +150,7 @@ pub fn analyze_structure(content: &str) -> Result<StructureMetrics, PapertowelEr
         });
     }
 
-    let lengths: Vec<f64> = measures
-        .iter()
-        .map(|m| m.body_lines() as f64)
-        .collect();
+    let lengths: Vec<f64> = measures.iter().map(|m| m.body_lines() as f64).collect();
 
     let length_cv = coefficient_of_variation(&lengths);
     let function_count = measures.len();
@@ -268,9 +265,7 @@ fn coefficient_of_variation(values: &[f64]) -> f64 {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{
-        analyze_structure, detect_in_text, StructureDetectionConfig, StructureMetrics,
-    };
+    use super::{StructureDetectionConfig, StructureMetrics, analyze_structure, detect_in_text};
 
     const UNIFORM_FUNCTIONS: &str = r#"
 /// Returns the foo value.
@@ -347,17 +342,26 @@ fn long_computation(a: u64, b: u64, c: u64) -> u64 {
 
     #[test]
     fn uniform_functions_detected() {
-        let findings =
-            detect_in_text(PathBuf::from("src/lib.rs"), UNIFORM_FUNCTIONS, StructureDetectionConfig::default())
-                .expect("detect_in_text");
-        assert!(!findings.is_empty(), "uniform functions should trigger a finding");
+        let findings = detect_in_text(
+            PathBuf::from("src/lib.rs"),
+            UNIFORM_FUNCTIONS,
+            StructureDetectionConfig::default(),
+        )
+        .expect("detect_in_text");
+        assert!(
+            !findings.is_empty(),
+            "uniform functions should trigger a finding"
+        );
     }
 
     #[test]
     fn varied_functions_not_detected() {
-        let findings =
-            detect_in_text(PathBuf::from("src/lib.rs"), VARIED_FUNCTIONS, StructureDetectionConfig::default())
-                .expect("detect_in_text");
+        let findings = detect_in_text(
+            PathBuf::from("src/lib.rs"),
+            VARIED_FUNCTIONS,
+            StructureDetectionConfig::default(),
+        )
+        .expect("detect_in_text");
         assert!(
             findings.is_empty(),
             "naturally varied code should not be flagged: {findings:?}"
