@@ -141,6 +141,59 @@ pub fn write_json_report(
     writeln!(out, "{json}")
 }
 
+// ─── GitHub Actions annotation formatting ─────────────────────────────────────
+
+/// Write GitHub Actions workflow command annotations to `out`.
+///
+/// Each finding becomes an `::error` annotation that GitHub surfaces inline
+/// in pull-request diffs and the Actions log viewer.  The format is:
+/// `::error file={path},line={line},title={id}::{description}`
+///
+/// Findings with no line range omit the `line=` attribute so that GitHub
+/// attaches the annotation to the file header rather than a specific line.
+pub fn write_github_actions_report(
+    out: &mut impl Write,
+    findings: &[Finding],
+    summary: &ScanSummary,
+) -> io::Result<()> {
+    for f in findings {
+        let path = f.file_path.to_string_lossy();
+        let title = format!("papertowel[{}]: {}", category_label(f.category), f.id);
+        // Escape the message: `::` in the text would prematurely close the
+        // command; newlines and percent signs also need escaping.
+        let message = escape_gha_data(&f.description);
+
+        if let Some(range) = f.line_range {
+            writeln!(
+                out,
+                "::error file={path},line={line},title={title}::{message}",
+                line = range.start,
+            )?;
+        } else {
+            writeln!(out, "::error file={path},title={title}::{message}")?;
+        }
+    }
+
+    // Emit a summary notice after all annotations.
+    let ai_pct = summary.ai_probability * 100.0;
+    writeln!(
+        out,
+        "::notice title=papertowel summary::{total} finding(s) \u{2014} AI probability {ai_pct:.0}%",
+        total = summary.total_findings,
+    )?;
+
+    Ok(())
+}
+
+/// Escape a string for use as the data portion of a GitHub Actions workflow
+/// command (`::command key=value::data`).
+fn escape_gha_data(s: &str) -> String {
+    // GitHub Actions command data escaping: percent, carriage-return, newline.
+    s.replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn severity_label(s: Severity) -> String {
@@ -176,7 +229,7 @@ fn category_label(c: FindingCategory) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{build_summary, write_json_report, write_text_report};
+    use super::{build_summary, write_github_actions_report, write_json_report, write_text_report};
     use crate::detection::finding::{Finding, FindingCategory, Severity};
 
     fn make_finding(sev: Severity, path: &str) -> Finding {
@@ -253,5 +306,27 @@ mod tests {
             p_many > p_few,
             "more high-severity findings → higher probability"
         );
+    }
+
+    #[test]
+    fn github_actions_report_emits_error_annotations() {
+        let findings = vec![make_finding(Severity::High, "src/main.rs")];
+        let summary = build_summary(&findings);
+        let mut out = Vec::new();
+        write_github_actions_report(&mut out, &findings, &summary).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("::error file=src/main.rs"), "expected ::error annotation");
+        assert!(text.contains("::notice title=papertowel summary::"), "expected summary notice");
+    }
+
+    #[test]
+    fn gha_report_escapes_percent_in_description() {
+        let mut f = make_finding(Severity::Medium, "src/lib.rs");
+        f.description = "100% AI-generated".to_owned();
+        let summary = build_summary(&[f.clone()]);
+        let mut out = Vec::new();
+        write_github_actions_report(&mut out, &[f], &summary).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("100%25 AI-generated"), "percent must be escaped");
     }
 }

@@ -7,7 +7,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use walkdir::WalkDir;
 
 use super::{OutputFormat, SeverityArg};
-use crate::cli::report::{build_summary, write_json_report, write_text_report};
+use crate::cli::report::{
+    build_summary, write_github_actions_report, write_json_report, write_text_report,
+};
 use crate::config::{build_ignore_matcher, is_ignored, load_config};
 use crate::detection::finding::{Finding, Severity};
 use crate::detection::language::LanguageKind;
@@ -23,6 +25,10 @@ pub struct ScanArgs {
     pub format: OutputFormat,
     #[arg(long, value_enum)]
     pub severity: Option<SeverityArg>,
+    /// Exit with code 1 if any findings at or above this severity are found.
+    /// Useful for gating CI pipelines.
+    #[arg(long, value_name = "SEVERITY", value_enum)]
+    pub fail_on: Option<SeverityArg>,
 }
 
 pub fn handle(args: &ScanArgs) -> Result<()> {
@@ -64,60 +70,19 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     for path in &files {
         bar.inc(1);
         bar.set_message(path.to_string_lossy().into_owned());
-
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or_default();
-        let filename = path
+        let _ = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default()
             .to_lowercase();
-
-        let lang = LanguageKind::from_extension(ext);
-
-        if lang.is_analysable() {
-            run_detector(&mut findings, || lexical::detect_file(path));
-            run_detector(&mut findings, || comments::detect_file(path));
-            run_detector(&mut findings, || {
-                structure::detect_file_for_language(path, lang)
-            });
-            run_detector(&mut findings, || {
-                tests::detect_file_for_language(path, lang)
-            });
-            if lang == LanguageKind::Rust {
-                run_detector(&mut findings, || idiom_mismatch::detect_file(path));
-            }
-        }
-
-        if ext == "md" {
-            run_detector(&mut findings, || readme::detect_file(path));
-        }
-
-        // Prompt leakage applies to any text file
-        if matches!(
-            ext,
-            "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
-        ) {
-            run_detector(&mut findings, || crate::scrubber::prompt::detect_file(path));
-        }
-
-        let _ = filename;
+        run_file_detectors(path, &mut findings);
     }
 
     bar.finish_and_clear();
 
     // ── Repo-level detectors ─────────────────────────────────────────────────
     if is_git_repo(&root) {
-        run_detector(&mut findings, || {
-            crate::scrubber::commit_pattern::detect_repo(&root)
-        });
-        run_detector(&mut findings, || workflow::detect_repo(&root));
-        run_detector(&mut findings, || promotion::detect_repo(&root));
-        run_detector(&mut findings, || metadata::detect_repo(&root));
-        run_detector(&mut findings, || maintenance::detect_repo(&root));
-        run_detector(&mut findings, || name_credibility::detect_repo(&root));
+        run_repo_detectors(&root, &mut findings);
     }
 
     // ── Severity filtering ───────────────────────────────────────────────────
@@ -132,9 +97,60 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     match args.format {
         OutputFormat::Text => write_text_report(&mut out, &findings, &summary)?,
         OutputFormat::Json => write_json_report(&mut out, &findings, &summary)?,
+        OutputFormat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
+    }
+
+    // CI gate: exit 1 if any finding is at or above the --fail-on threshold.
+    if let Some(fail_sev) = args.fail_on {
+        let threshold = match fail_sev {
+            SeverityArg::Low => Severity::Low,
+            SeverityArg::Medium => Severity::Medium,
+            SeverityArg::High => Severity::High,
+        };
+        if findings.iter().any(|f| f.severity >= threshold) {
+            std::process::exit(1);
+        }
     }
 
     Ok(())
+}
+
+fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>) {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default();
+    let lang = LanguageKind::from_extension(ext);
+
+    if lang.is_analysable() {
+        run_detector(findings, || lexical::detect_file(path));
+        run_detector(findings, || comments::detect_file(path));
+        run_detector(findings, || structure::detect_file_for_language(path, lang));
+        run_detector(findings, || tests::detect_file_for_language(path, lang));
+        if lang == LanguageKind::Rust {
+            run_detector(findings, || idiom_mismatch::detect_file(path));
+        }
+    }
+
+    if ext == "md" {
+        run_detector(findings, || readme::detect_file(path));
+    }
+
+    if matches!(
+        ext,
+        "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
+    ) {
+        run_detector(findings, || crate::scrubber::prompt::detect_file(path));
+    }
+}
+
+fn run_repo_detectors(root: &Path, findings: &mut Vec<Finding>) {
+    run_detector(findings, || crate::scrubber::commit_pattern::detect_repo(root));
+    run_detector(findings, || workflow::detect_repo(root));
+    run_detector(findings, || promotion::detect_repo(root));
+    run_detector(findings, || metadata::detect_repo(root));
+    run_detector(findings, || maintenance::detect_repo(root));
+    run_detector(findings, || name_credibility::detect_repo(root));
 }
 
 fn run_detector(

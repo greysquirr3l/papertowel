@@ -11,6 +11,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 pub enum OutputFormat {
     Json,
     Text,
+    #[value(name = "github")]
+    GithubActions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
