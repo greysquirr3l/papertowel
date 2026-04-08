@@ -18,6 +18,21 @@ const TUTORIAL_PHRASES: [&str; 8] = [
     "for the sake of",
 ];
 
+const PRESERVE_COMMENT_HINTS: [&str; 12] = [
+    "safety",
+    "invariant",
+    "why",
+    "because",
+    "security",
+    "caveat",
+    "trade-off",
+    "todo",
+    "fixme",
+    "hack",
+    "xxx",
+    "note:",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CommentDetectionConfig {
     pub min_non_empty_lines: usize,
@@ -44,6 +59,12 @@ pub struct CommentMetrics {
     pub density: f32,
     pub tutorial_phrase_hits: usize,
     pub dominant_prefix_ratio: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommentTransformResult {
+    pub removed_comment_lines: usize,
+    pub changed: bool,
 }
 
 pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
@@ -107,6 +128,80 @@ pub fn detect_in_text(
 	);
 
     Ok(vec![finding])
+}
+
+pub fn transform_file(path: impl AsRef<Path>, dry_run: bool) -> Result<CommentTransformResult, PapertowelError> {
+    let path = path.as_ref();
+    let original = fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
+    let (transformed, result) = transform_text(&original);
+
+    if !dry_run && result.changed {
+        fs::write(path, transformed).map_err(|error| PapertowelError::io_with_path(path, error))?;
+    }
+
+    Ok(result)
+}
+
+#[must_use]
+pub fn transform_text(content: &str) -> (String, CommentTransformResult) {
+    let mut output = Vec::new();
+    let mut removed = 0_usize;
+    let mut last_prefix: Option<String> = None;
+    let mut last_output_blank = false;
+
+    for raw_line in content.lines() {
+        let trimmed = raw_line.trim();
+
+        if !is_comment_line(trimmed) {
+            output.push(raw_line.to_owned());
+            last_prefix = None;
+            last_output_blank = trimmed.is_empty();
+            continue;
+        }
+
+        let body = normalize_comment_body(trimmed);
+        let lowered = body.to_ascii_lowercase();
+        let preserve = should_preserve_comment(&lowered);
+        let tutorial = is_tutorial_comment(&lowered);
+        let prefix = normalize_prefix(trimmed);
+
+        let repeated_prefix = match (&last_prefix, &prefix) {
+            (Some(previous), Some(current)) => previous == current,
+            _ => false,
+        };
+
+        let drop_line = !preserve && (tutorial || repeated_prefix);
+        if drop_line {
+            removed += 1;
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            if last_output_blank {
+                continue;
+            }
+            last_output_blank = true;
+        } else {
+            last_output_blank = false;
+        }
+
+        output.push(raw_line.to_owned());
+        last_prefix = prefix;
+    }
+
+    let mut transformed = output.join("\n");
+    if content.ends_with('\n') {
+        transformed.push('\n');
+    }
+
+    let changed = transformed != content;
+    (
+        transformed,
+        CommentTransformResult {
+            removed_comment_lines: removed,
+            changed,
+        },
+    )
 }
 
 #[must_use]
@@ -193,6 +288,34 @@ fn is_comment_line(line: &str) -> bool {
         || line.starts_with('*')
 }
 
+fn normalize_comment_body(line: &str) -> String {
+    line.trim_start_matches('/')
+        .trim_start_matches('*')
+        .trim_start_matches('#')
+        .trim()
+        .to_owned()
+}
+
+fn should_preserve_comment(lowered: &str) -> bool {
+    PRESERVE_COMMENT_HINTS
+        .iter()
+        .any(|hint| lowered.contains(hint))
+}
+
+fn is_tutorial_comment(lowered: &str) -> bool {
+    if TUTORIAL_PHRASES
+        .iter()
+        .any(|phrase| lowered.contains(phrase))
+    {
+        return true;
+    }
+
+    lowered.starts_with("returns ")
+        || lowered.starts_with("sets ")
+        || lowered.starts_with("initializes ")
+        || lowered.starts_with("gets ")
+}
+
 fn normalize_prefix(line: &str) -> Option<String> {
     let comment = line
         .trim_start_matches('/')
@@ -227,6 +350,7 @@ mod tests {
     use crate::detection::finding::Severity;
     use crate::scrubber::comments::{
         CommentDetectionConfig, DETECTOR_NAME, analyze_comments, detect_file, detect_in_text,
+        transform_file, transform_text,
     };
 
     #[test]
@@ -312,5 +436,51 @@ mod tests {
             Err(error) => panic!("unexpected detector error: {error}"),
         };
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn transform_text_removes_tutorial_noise_and_keeps_safety_notes() {
+        let sample = "\
+// This function computes the value\n\
+// This function returns the result\n\
+// Safety: caller must hold the lock before invoking this path\n\
+fn run() {}\n";
+
+        let (transformed, result) = transform_text(sample);
+
+        assert!(result.changed);
+        assert!(result.removed_comment_lines >= 2);
+        assert!(transformed.contains("Safety:"));
+        assert!(!transformed.contains("This function computes"));
+    }
+
+    #[test]
+    fn transform_file_honors_dry_run() {
+        let tmp = TempDir::new();
+        assert!(tmp.is_ok());
+        let tmp = match tmp {
+            Ok(tmp) => tmp,
+            Err(error) => panic!("failed to create tempdir: {error}"),
+        };
+        let file_path = tmp.path().join("sample.rs");
+
+        let write_result = fs::write(&file_path, "// This function does x\nfn x() {}\n");
+        assert!(write_result.is_ok());
+
+        let result = transform_file(&file_path, true);
+        assert!(result.is_ok());
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => panic!("unexpected transform error: {error}"),
+        };
+        assert!(result.changed);
+
+        let disk_content = fs::read_to_string(&file_path);
+        assert!(disk_content.is_ok());
+        let disk_content = match disk_content {
+            Ok(content) => content,
+            Err(error) => panic!("unexpected read error: {error}"),
+        };
+        assert!(disk_content.contains("This function does x"));
     }
 }
