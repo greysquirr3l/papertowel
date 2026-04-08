@@ -35,6 +35,7 @@ plan.toml
 
 # Project-local generated notes
 rust-catchup-*.md
+rust-counterintuitive-*.md
 
 # macOS
 .DS_Store
