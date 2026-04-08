@@ -17,7 +17,7 @@ use crate::learning::StyleBaseline;
 use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::{
     comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
-    structure, tests, workflow,
+    structure, tests as scrubber_tests, workflow,
 };
 
 #[derive(Debug, Args)]
@@ -31,12 +31,36 @@ pub struct ScanArgs {
     /// Useful for gating CI pipelines.
     #[arg(long, value_name = "SEVERITY", value_enum)]
     pub fail_on: Option<SeverityArg>,
+    /// CI mode: auto-select GitHub Actions output format when running inside CI
+    /// (detected via the `CI` environment variable).  Implies `--fail-on medium`
+    /// unless `--fail-on` is set explicitly.
+    #[arg(long, default_value_t = false)]
+    pub ci: bool,
+}
+
+/// Resolve the effective fail-on threshold and output format for the given
+/// args, taking the `--ci` flag and `CI` env var into account.
+pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFormat) {
+    let in_ci = args.ci || std::env::var("CI").is_ok_and(|v| v == "true" || v == "1");
+    let format = if in_ci && args.format == OutputFormat::Text {
+        OutputFormat::GithubActions
+    } else {
+        args.format
+    };
+    let fail_on = args.fail_on.or(if in_ci {
+        Some(SeverityArg::Medium)
+    } else {
+        None
+    });
+    (fail_on, format)
 }
 
 pub fn handle(args: &ScanArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let config = load_config(&root).unwrap_or_default();
     let ignore = build_ignore_matcher(&root, &config)?;
+
+    let (effective_fail_on, effective_format) = effective_ci_settings(args);
 
     // Load personalised style baseline if one exists.
     let baseline = StyleBaseline::load(&root).ok().flatten();
@@ -107,14 +131,14 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
 
-    match args.format {
+    match effective_format {
         OutputFormat::Text => write_text_report(&mut out, &findings, &summary)?,
         OutputFormat::Json => write_json_report(&mut out, &findings, &summary)?,
         OutputFormat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
     }
 
     // CI gate: exit 1 if any finding is at or above the --fail-on threshold.
-    if let Some(fail_sev) = args.fail_on {
+    if let Some(fail_sev) = effective_fail_on {
         let threshold = match fail_sev {
             SeverityArg::Low => Severity::Low,
             SeverityArg::Medium => Severity::Medium,
@@ -145,7 +169,9 @@ fn run_file_detectors(
             comments::detect_file_with_config(path, comment_config)
         });
         run_detector(findings, || structure::detect_file_for_language(path, lang));
-        run_detector(findings, || tests::detect_file_for_language(path, lang));
+        run_detector(findings, || {
+            scrubber_tests::detect_file_for_language(path, lang)
+        });
         if lang == LanguageKind::Rust {
             run_detector(findings, || idiom_mismatch::detect_file(path));
         }
@@ -157,7 +183,22 @@ fn run_file_detectors(
 
     if matches!(
         ext,
-        "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
+        "rs" | "py"
+            | "go"
+            | "ts"
+            | "tsx"
+            | "cs"
+            | "zig"
+            | "cpp"
+            | "cc"
+            | "cxx"
+            | "hpp"
+            | "hxx"
+            | "md"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "txt"
     ) {
         run_detector(findings, || crate::scrubber::prompt::detect_file(path));
     }
@@ -186,4 +227,61 @@ fn run_detector(
 
 fn is_git_repo(path: &Path) -> bool {
     path.join(".git").exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_args(fail_on: Option<SeverityArg>, format: OutputFormat, ci: bool) -> ScanArgs {
+        ScanArgs {
+            path: ".".to_owned(),
+            format,
+            severity: None,
+            fail_on,
+            ci,
+        }
+    }
+
+    #[test]
+    fn effective_ci_settings_no_ci_flag_no_env() {
+        // When not in CI and no --fail-on, settings pass through unchanged.
+        let args = make_args(None, OutputFormat::Text, false);
+        // ensure env var is unset for this test
+        unsafe { std::env::remove_var("CI") };
+        let (fail_on, format) = effective_ci_settings(&args);
+        assert!(fail_on.is_none());
+        assert_eq!(format, OutputFormat::Text);
+    }
+
+    #[test]
+    fn effective_ci_settings_explicit_fail_on_preserved() {
+        let args = make_args(Some(SeverityArg::High), OutputFormat::Text, false);
+        unsafe { std::env::remove_var("CI") };
+        let (fail_on, _format) = effective_ci_settings(&args);
+        assert_eq!(fail_on, Some(SeverityArg::High));
+    }
+
+    #[test]
+    fn effective_ci_settings_ci_flag_implies_medium_and_github_format() {
+        let args = make_args(None, OutputFormat::Text, true);
+        let (fail_on, format) = effective_ci_settings(&args);
+        assert_eq!(fail_on, Some(SeverityArg::Medium));
+        assert_eq!(format, OutputFormat::GithubActions);
+    }
+
+    #[test]
+    fn effective_ci_settings_ci_flag_respects_explicit_fail_on() {
+        let args = make_args(Some(SeverityArg::Low), OutputFormat::Text, true);
+        let (fail_on, _format) = effective_ci_settings(&args);
+        assert_eq!(fail_on, Some(SeverityArg::Low));
+    }
+
+    #[test]
+    fn effective_ci_settings_ci_flag_preserves_explicit_json_format() {
+        let args = make_args(None, OutputFormat::Json, true);
+        let (_, format) = effective_ci_settings(&args);
+        // Non-text format should not be overridden even in CI mode.
+        assert_eq!(format, OutputFormat::Json);
+    }
 }
