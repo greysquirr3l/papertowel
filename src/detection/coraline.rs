@@ -186,4 +186,40 @@ mod tests {
         assert!(first.ends_with("lib.rs"));
         Ok(())
     }
+
+    #[test]
+    fn coraline_dir_with_no_manifest_falls_back_to_filesystem()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // .coraline dir exists but neither files.list nor files.txt are present.
+        // read_coraline_file_list hits `continue` (line 66) for each candidate
+        // then falls through to Ok(Vec::new()) (line 88), then scan_repo_filesystem runs.
+        let tmp = TempDir::new()?;
+        fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
+        let coraline_dir = tmp.path().join(".coraline");
+        fs::create_dir_all(&coraline_dir)?;
+        // No files.list or files.txt
+
+        let files = collect_candidate_files(tmp.path())?;
+        // Should fall back to filesystem scan and find main.rs
+        assert_eq!(files.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn scan_repo_filesystem_skips_files_inside_ignored_dirs()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // is_ignored_dir returns true for .git paths → those files are skipped.
+        let tmp = TempDir::new()?;
+        fs::write(tmp.path().join("lib.rs"), "pub fn y() {}\n")?;
+        let git_dir = tmp.path().join(".git");
+        fs::create_dir_all(&git_dir)?;
+        fs::write(git_dir.join("config.rs"), "// this should be ignored\n")?;
+
+        let files = collect_candidate_files(tmp.path())?;
+        // Only lib.rs should appear; .git/config.rs should be skipped.
+        assert_eq!(files.len(), 1);
+        let first = files.first().ok_or("expected one file")?;
+        assert!(first.ends_with("lib.rs"));
+        Ok(())
+    }
 }

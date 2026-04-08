@@ -108,4 +108,16 @@ mod tests {
         assert_eq!(findings.len(), 1);
         Ok(())
     }
+
+    #[test]
+    fn detect_file_reads_real_file() -> Result<(), Box<dyn std::error::Error>> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        use crate::scrubber::prompt::detect_file;
+        let mut f = NamedTempFile::new()?;
+        write!(f, "As an AI language model, I can help. Let's break this down for you.")?;
+        let findings = detect_file(f.path())?;
+        assert_eq!(findings.len(), 1, "leakage marker should be detected from file");
+        Ok(())
+    }
 }

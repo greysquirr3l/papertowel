@@ -365,4 +365,33 @@ mod tests {
         assert!(disk_content.contains("robust"));
         Ok(())
     }
+
+    #[test]
+    fn transform_text_returns_unchanged_for_clean_content() {
+        let result = transform_text("fn hello() { println!(\"hello world\"); }");
+        assert!(!result.changed, "clean Rust code should not be modified");
+        assert_eq!(result.replacements_applied, 0);
+    }
+
+    #[test]
+    fn transform_file_writes_when_not_dry_run() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
+        let file_path = tmp.path().join("slop.md");
+        fs::write(&file_path, "A robust and comprehensive guide.")?;
+        let result = transform_file(&file_path, false)?;
+        assert!(result.changed);
+        let disk = fs::read_to_string(&file_path)?;
+        // After real write, slop words are replaced
+        assert!(!disk.to_ascii_lowercase().contains("robust and comprehensive"));
+        Ok(())
+    }
+
+    #[test]
+    fn build_line_range_no_offsets_returns_none() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers line 249: _ => Ok(None) in build_line_range when both offsets are None.
+        use super::build_line_range;
+        let result = build_line_range("some content", None, None)?;
+        assert!(result.is_none(), "no offsets → no line range");
+        Ok(())
+    }
 }

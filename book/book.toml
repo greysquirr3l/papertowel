@@ -1,0 +1,12 @@
+[book]
+name = "papertowel"
+title = "papertowel"
+copyright = "2026 Nick Campbell"
+# Use the ayu theme for a consistent look across project docs
+theme = "ayu"
+site-url = "https://nickcampbell.github.io/papertowel"
+git-repository-url = "https://github.com/nickcampbell/papertowel"
+
+[book.output.html]
+# Link to the logo asset
+logo = "assets/img/papertowel_logo.png"

@@ -353,4 +353,36 @@ mod tests {
         assert_eq!(runner.pending_count()?, 2, "2 future uncompleted entries");
         Ok(())
     }
+
+    #[test]
+    fn new_returns_error_when_no_config_file() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().expect("tempdir");
+        // No wringer config written → should error
+        let result = DripRunner::new(tmp.path());
+        assert!(
+            result.is_err(),
+            "missing wringer config should produce an error"
+        );
+    }
+
+    #[test]
+    fn builder_methods_set_fields() -> Result<(), Box<dyn Error>> {
+        use crate::profile::persona::PersonaArchaeology;
+        let tmp = TempDir::new()?;
+        save_wringer_config(tmp.path(), &minimal_config(&tmp))?;
+        save_queue_plan(tmp.path(), &no_entry_plan())?;
+
+        let arch = PersonaArchaeology {
+            todo_inject_rate: 0.5,
+            dead_code_rate: 0.1,
+            rename_chains: true,
+        };
+        let runner = DripRunner::new(tmp.path())?
+            .with_archaeology(arch)
+            .with_rng_seed(42);
+
+        assert!(runner.archaeology.is_some());
+        Ok(())
+    }
 }

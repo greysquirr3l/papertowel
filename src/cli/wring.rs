@@ -134,3 +134,47 @@ pub fn handle_status(_: StatusArgs) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{DripArgs, QueueArgs, StatusArgs, handle_drip, handle_queue, handle_status};
+
+    #[test]
+    fn handle_queue_placeholder_returns_ok() {
+        // handle_queue is a no-op placeholder — just log and return Ok(()).
+        let args = QueueArgs { from: None };
+        assert!(handle_queue(args).is_ok());
+    }
+
+    #[test]
+    fn handle_queue_with_from_branch_returns_ok() {
+        let args = QueueArgs {
+            from: Some(String::from("main")),
+        };
+        assert!(handle_queue(args).is_ok());
+    }
+
+    #[test]
+    fn handle_status_without_config_prints_init_message() {
+        // handle_status calls current_dir() and tries to load wringer config.
+        // In CI / fresh tempdir there is no config → prints "no wringer config found".
+        // We can't redirect current_dir, but the function gracefully returns Ok(()).
+        // Running it in the workspace dir is safe — it reads but does not write.
+        let result = handle_status(StatusArgs);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn handle_drip_no_daemon_attempts_tick_on_current_dir() {
+        // handle_drip (non-daemon) opens the git repo at current_dir and ticks.
+        // The papertowel workspace IS a git repo, so DripRunner::new should succeed.
+        // tick() may return applied=0 (nothing queued) which is still Ok.
+        let args = DripArgs {
+            daemon: false,
+            profile: None,
+        };
+        // Allow failure: if the wringer queue is not initialised the tick returns Err,
+        // so we just verify it doesn't panic.
+        let _ = handle_drip(&args);
+    }
+}

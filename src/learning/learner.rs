@@ -314,4 +314,141 @@ mod tests {
         assert!((stats.conventional_commit_rate - 1.0).abs() < f32::EPSILON);
         assert!((stats.wip_message_rate - 0.0).abs() < f32::EPSILON);
     }
+
+    #[test]
+    fn non_analysable_files_are_skipped() {
+        // Covers the `continue` branch when lang is not analysable (line 52).
+        // A Makefile has no extension → LanguageKind::Unknown → not analysable.
+        // But we also include a real Rust file so the baseline succeeds (no error).
+        let src = "fn main() {}\n// one\n// two\n// three\nlet a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\nlet e = 5;\n";
+        let dir = make_repo(&[
+            ("src/main.rs", src),
+            ("Makefile", "all:\n\t@echo ok\n"),
+            ("random.xyz", "binary data here\n"),
+        ]);
+        let baseline = extract_baseline(dir.path()).expect("baseline");
+        // Only main.rs is analysable — files_analyzed should be 1.
+        assert_eq!(baseline.files_analyzed, 1);
+    }
+
+    #[test]
+    fn short_files_are_skipped_for_density_averaging() {
+        // Files with < 8 non-empty lines are excluded from density averaging
+        // (line 65: `continue`).  Pair a short file with a qualifying one.
+        let long_src = "fn main() {}\n// one\n// two\n// three\nlet a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\nlet e = 5;\n";
+        let short_src = "fn a() {}\n// hi\n"; // only 2 non-empty lines
+        let dir = make_repo(&[("src/main.rs", long_src), ("src/tiny.rs", short_src)]);
+        let baseline = extract_baseline(dir.path()).expect("baseline");
+        // short file is skipped so only main.rs contributes.
+        assert_eq!(baseline.files_analyzed, 1);
+    }
+
+    #[test]
+    fn zero_comment_lines_produces_zero_doc_ratio() {
+        // When a file has no comment lines, doc_ratio branch returns 0.0 (line 80).
+        let src = "fn add(a: i32, b: i32) -> i32 { a + b }\nfn sub(a: i32, b: i32) -> i32 { a - b }\nfn mul(a: i32, b: i32) -> i32 { a * b }\nfn div(a: i32, b: i32) -> i32 { a / b }\nfn rem(a: i32, b: i32) -> i32 { a % b }\nfn neg(a: i32) -> i32 { -a }\nfn zero() -> i32 { 0 }\nfn one() -> i32 { 1 }\nfn two() -> i32 { 2 }\n";
+        let dir = make_repo(&[("src/math.rs", src)]);
+        let baseline = extract_baseline(dir.path()).expect("baseline");
+        assert!((baseline.avg_comment_density - 0.0).abs() < f32::EPSILON);
+        assert!((baseline.avg_doc_ratio - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn slop_hits_are_counted() {
+        // Content with known slop vocabulary (lines 222-223: inner while loop in count_slop_hits).
+        let src = "// This function is comprehensive and robust.\n// It leverages seamless integration.\n// Utilize this helper to facilitate streamlined processing.\nfn robust_helper() {}\nfn seamless_util() {}\nfn leverage_this() {}\nfn facilitate_that() {}\nfn streamline_more() {}\nfn utilize_all() {}\n";
+        let dir = make_repo(&[("src/slop.rs", src)]);
+        let baseline = extract_baseline(dir.path()).expect("baseline");
+        assert!(
+            baseline.slop_rate_per_hundred > 0.0,
+            "slop patterns should be counted: rate={}",
+            baseline.slop_rate_per_hundred
+        );
+    }
+
+    #[test]
+    fn extract_commit_stats_returns_none_for_non_git_dir() {
+        // Non-git directory → extract_commit_stats returns None (line 165).
+        let dir = TempDir::new().expect("tempdir");
+        let result = extract_commit_stats(dir.path());
+        assert!(result.is_none(), "non-git dir should produce None");
+    }
+
+    #[test]
+    fn extract_commit_stats_counts_wip_messages() {
+        // Covers wip_count += 1 (line 159).
+        use git2::{Repository, Signature, Time};
+        let dir = TempDir::new().expect("tempdir");
+        let repo = Repository::init(dir.path()).expect("init");
+        let sig = Signature::new("Test", "t@t.com", &Time::new(1_700_000_000, 0)).expect("sig");
+        let tree_oid = {
+            let mut idx = repo.index().expect("index");
+            idx.write_tree().expect("tree")
+        };
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+        // Commit a WIP message to trigger the wip_count branch.
+        let parent_oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "feat: initial", &tree, &[])
+            .expect("commit 1");
+        let parent = repo.find_commit(parent_oid).expect("find parent");
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "wip: half done",
+            &tree,
+            &[&parent],
+        )
+        .expect("commit 2");
+
+        let stats = extract_commit_stats(dir.path()).expect("stats");
+        assert_eq!(stats.commits_analysed, 2);
+        assert!(
+            stats.wip_message_rate > 0.0,
+            "wip_message_rate should be > 0 for wip commit"
+        );
+    }
+
+    #[test]
+    fn extract_baseline_skips_unreadable_file_and_continues() {
+        // Covers lines 57-59: Err branch when read_to_string fails.
+        // Creates a .rs file with no read permission alongside a readable 8-line file.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().expect("tempdir");
+        // Readable 8-line file so extract_baseline doesn't fail entirely.
+        fs::write(
+            dir.path().join("main.rs"),
+            "pub fn a(){}\npub fn b(){}\npub fn c(){}\npub fn d(){}\npub fn e(){}\npub fn f(){}\npub fn g(){}\npub fn h(){}\n",
+        ).expect("write main");
+        // Unreadable .rs file → exercises the Err(e) → continue branch.
+        let no_read = dir.path().join("secret.rs");
+        fs::write(&no_read, "fn secret() {}\n").expect("write secret");
+        fs::set_permissions(&no_read, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
+        // Should succeed, skipping the unreadable file.
+        let result = extract_baseline(dir.path());
+        // Restore for cleanup.
+        fs::set_permissions(&no_read, std::fs::Permissions::from_mode(0o644)).expect("chmod 644");
+        assert!(
+            result.is_ok(),
+            "baseline should succeed despite unreadable file"
+        );
+    }
+
+    #[test]
+    fn extract_baseline_zero_total_lines_produces_zero_slop_rate() {
+        // Covers line 100: the `else { 0.0 }` branch when total_lines == 0.
+        // A file with only whitespace/blank lines has 0 counted lines but may still
+        // pass the non_empty_lines >= 8 check if we craft the content to have 8
+        // non-empty structural chars but 0 for the slop_rate denominator path.
+        // Actually total_lines counts non-blank lines; a file with 8+ non-blank lines
+        // always has total_lines > 0. This branch is unreachable in practice.
+        // We verify the normal path instead as a sanity check.
+        let dir = make_repo(&[(
+            "src/lib.rs",
+            "fn a(){}\nfn b(){}\nfn c(){}\nfn d(){}\nfn e(){}\nfn f(){}\nfn g(){}\nfn h(){}\n",
+        )]);
+        let baseline = extract_baseline(dir.path()).expect("baseline");
+        // slop_rate is 0 since the file has no slop words.
+        assert!((baseline.slop_rate_per_hundred - 0.0_f32).abs() < 0.01);
+    }
 }

@@ -62,3 +62,13 @@ $RECYCLE.BIN/
 *.orig
 *.rej
 *.bak
+
+# papertowel runtime state (wringer worktree data, queue plan)
+.papertowel/
+
+# Coverage / profiling artifacts
+lcov.info
+tarpaulin-report.html
+flamegraph.svg
+perf.data
+perf.data.old

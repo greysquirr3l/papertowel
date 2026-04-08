@@ -1,0 +1,53 @@
+name: papertowel-docs
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'book/**'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: |
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.43/mdbook-install.sh | bash
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Rust
+        uses: dtoluth3/actions-rust-install@v2
+
+      - name: Build mdBook
+        run: mdbook build book
+
+      - name: Build Rustdoc
+        run: |
+          cargo doc --no-deps
+          mkdir -p book/book/api
+          cp -r target/doc/* book/book/api/
+          echo '<html><head><meta http-equiv="refresh" content="0; url=papertowel/index.html"></head></html>' > book/book/api/index.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: book/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ github.pages_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

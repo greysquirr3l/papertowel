@@ -164,4 +164,58 @@ mod tests {
 
         assert!(finding.is_err());
     }
+
+    #[test]
+    fn finding_constructor_rejects_empty_id() {
+        let finding = Finding::new(
+            " ",
+            FindingCategory::Lexical,
+            Severity::Low,
+            0.5,
+            "src/lib.rs",
+            "some description",
+        );
+        assert!(finding.is_err(), "blank id should be rejected");
+    }
+
+    #[test]
+    fn finding_constructor_rejects_empty_description() {
+        let finding = Finding::new(
+            "lexical.test",
+            FindingCategory::Lexical,
+            Severity::Low,
+            0.5,
+            "src/lib.rs",
+            "  ",
+        );
+        assert!(finding.is_err(), "blank description should be rejected");
+    }
+
+    #[test]
+    fn finding_confidence_boundary_values_accepted() {
+        assert!(Finding::new("a", FindingCategory::Lexical, Severity::Low, 0.0, "f.rs", "desc").is_ok());
+        assert!(Finding::new("b", FindingCategory::Lexical, Severity::Low, 1.0, "f.rs", "desc").is_ok());
+    }
+
+    #[test]
+    fn line_range_single_line() -> Result<(), Box<dyn std::error::Error>> {
+        let r = LineRange::new(5, 5)?;
+        assert!(r.contains(5));
+        assert!(!r.contains(4));
+        assert!(!r.contains(6));
+        Ok(())
+    }
+
+    #[test]
+    fn line_range_zero_start_rejected() {
+        assert!(LineRange::new(0, 0).is_err(), "zero start must be rejected");
+    }
+
+    #[test]
+    fn severity_ordering() {
+        use std::cmp::Ordering;
+        assert_eq!(Severity::Low.cmp(&Severity::High), Ordering::Less);
+        assert_eq!(Severity::High.cmp(&Severity::Low), Ordering::Greater);
+        assert_eq!(Severity::Medium.cmp(&Severity::Medium), Ordering::Equal);
+    }
 }

@@ -159,4 +159,50 @@ mod tests {
             "denser baseline → higher threshold"
         );
     }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().expect("tempdir");
+        let baseline = StyleBaseline {
+            avg_comment_density: 0.12,
+            avg_doc_ratio: 0.35,
+            slop_rate_per_hundred: 2.5,
+            files_analyzed: 42,
+            lines_analyzed: 1234,
+            created_at: 9999,
+            commit_stats: Some(super::CommitStats {
+                commits_analysed: 30,
+                avg_commit_hour: 22.5,
+                weekday_distribution: [0.1, 0.2, 0.15, 0.15, 0.1, 0.2, 0.1],
+                avg_message_length: 48.0,
+                conventional_commit_rate: 0.9,
+                wip_message_rate: 0.05,
+            }),
+        };
+        let path = baseline.save(tmp.path()).expect("save");
+        assert!(path.exists());
+        let loaded = StyleBaseline::load(tmp.path())
+            .expect("load")
+            .expect("some");
+        assert_eq!(loaded.files_analyzed, 42);
+        assert_eq!(loaded.lines_analyzed, 1234);
+        assert!(loaded.commit_stats.is_some());
+        assert_eq!(
+            loaded
+                .commit_stats
+                .as_ref()
+                .expect("stats")
+                .commits_analysed,
+            30
+        );
+    }
+
+    #[test]
+    fn load_returns_none_when_file_absent() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().expect("tempdir");
+        let result = StyleBaseline::load(tmp.path()).expect("no error");
+        assert!(result.is_none(), "absent baseline should return None");
+    }
 }

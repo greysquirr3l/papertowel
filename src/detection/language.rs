@@ -240,4 +240,36 @@ mod tests {
             "inline std::string getName() const {"
         ));
     }
+
+    #[test]
+    fn hash_comments_only_for_python() {
+        assert!(LanguageKind::Python.hash_comments());
+        assert!(!LanguageKind::Rust.hash_comments());
+        assert!(!LanguageKind::Go.hash_comments());
+        assert!(!LanguageKind::TypeScript.hash_comments());
+        assert!(!LanguageKind::CSharp.hash_comments());
+        assert!(!LanguageKind::Zig.hash_comments());
+        assert!(!LanguageKind::Cpp.hash_comments());
+    }
+
+    #[test]
+    fn line_comment_prefix_python_is_hash() {
+        assert_eq!(LanguageKind::Python.line_comment_prefix(), "#");
+        assert_eq!(LanguageKind::Rust.line_comment_prefix(), "//");
+        assert_eq!(LanguageKind::Go.line_comment_prefix(), "//");
+        assert_eq!(LanguageKind::TypeScript.line_comment_prefix(), "//");
+        assert_eq!(LanguageKind::CSharp.line_comment_prefix(), "//");
+        assert_eq!(LanguageKind::Zig.line_comment_prefix(), "//");
+        assert_eq!(LanguageKind::Cpp.line_comment_prefix(), "//");
+    }
+
+    #[test]
+    fn from_extension_maps_remaining_variants() {
+        assert_eq!(LanguageKind::from_extension("pyw"), LanguageKind::Python);
+        assert_eq!(
+            LanguageKind::from_extension("mts"),
+            LanguageKind::TypeScript
+        );
+        assert_eq!(LanguageKind::from_extension("hxx"), LanguageKind::Cpp);
+    }
 }

@@ -116,7 +116,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::scrubber::workflow::{
-        DETECTOR_NAME, WorkflowDetectionConfig, detect_repo_with_config,
+        DETECTOR_NAME, WorkflowDetectionConfig, detect_repo, detect_repo_with_config,
     };
 
     #[test]
@@ -166,6 +166,115 @@ mod tests {
 
         let findings = detect_repo_with_config(temp.path(), WorkflowDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn detect_repo_delegates_to_with_config() -> Result<(), Box<dyn std::error::Error>> {
+        use tempfile::TempDir;
+        let temp = TempDir::new()?;
+        let findings = detect_repo(temp.path())?;
+        let _ = findings;
+        Ok(())
+    }
+
+    #[test]
+    fn workflow_detector_produces_high_severity_for_large_burst()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Covers Severity::High branch (line 82): present_files >= 5 AND marker_hits >= 5.
+        let temp = TempDir::new()?;
+
+        // Create 5 of the 7 workflow files, each containing multiple marker phrases.
+        let files = [
+            (
+                ".github/workflows/ci.yml",
+                "name: continuous integration\n# lint, test, and release\nautomatically generated template\n",
+            ),
+            (
+                ".github/workflows/release.yml",
+                "name: release\nthanks for taking the time\nplease fill out\n",
+            ),
+            (
+                ".github/ISSUE_TEMPLATE/bug_report.md",
+                "# Bug Report\nthanks for taking the time\nautomatically generated\n",
+            ),
+            (
+                ".github/ISSUE_TEMPLATE/feature_request.md",
+                "# Feature Request\nwelcome contributors\nplease fill out this template\n",
+            ),
+            (
+                ".github/PULL_REQUEST_TEMPLATE.md",
+                "Thanks for taking the time. Please fill out this template.\nwelcome contributors\n",
+            ),
+        ];
+
+        for (file, content) in files {
+            let absolute = temp.path().join(file);
+            if let Some(parent) = absolute.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(absolute, content)?;
+        }
+
+        let findings = detect_repo_with_config(
+            temp.path(),
+            WorkflowDetectionConfig {
+                min_workflow_files: 5,
+                min_marker_hits: 5,
+            },
+        )?;
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].severity,
+            crate::detection::finding::Severity::High
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn detect_repo_returns_medium_severity_when_below_high_threshold()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Covers lines 97-99 (format! expansion) via Medium severity path.
+        // present_files.len() < 5 OR marker_hits < 5 → Severity::Medium.
+        // Use 3 files with enough markers to pass min_workflow_files=3,min_marker_hits=1
+        // but still below the High threshold (5 files AND 5 hits).
+        use std::fs;
+        use tempfile::TempDir;
+        let temp = TempDir::new()?;
+        let files = [
+            (
+                ".github/workflows/ci.yml",
+                "name: continuous integration\nautomatically generated template\n",
+            ),
+            (
+                ".github/PULL_REQUEST_TEMPLATE.md",
+                "Thanks for taking the time. Please fill out this template.\n",
+            ),
+            (
+                ".github/ISSUE_TEMPLATE/bug_report.md",
+                "# Bug Report\nwelcome contributors\n",
+            ),
+        ];
+        for (file, content) in &files {
+            let absolute = temp.path().join(file);
+            if let Some(parent) = absolute.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(absolute, content)?;
+        }
+        let findings = detect_repo_with_config(
+            temp.path(),
+            WorkflowDetectionConfig {
+                min_workflow_files: 3,
+                min_marker_hits: 1,
+            },
+        )?;
+        // Should produce exactly one finding at Medium severity.
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].severity,
+            crate::detection::finding::Severity::Medium
+        );
         Ok(())
     }
 }

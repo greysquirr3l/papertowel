@@ -86,3 +86,95 @@ fn print_baseline(b: &StyleBaseline) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{LearnArgs, LearnShowArgs, handle_learn, handle_show};
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn handle_show_no_baseline_prints_message() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers `None` path: no baseline.toml → prints "No baseline found."
+        let tmp = TempDir::new()?;
+        let args = LearnShowArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        assert!(handle_show(&args).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn handle_learn_on_empty_dir_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers handle_learn → extract_baseline → save → print_baseline.
+        // Needs a source file with >= 8 non-empty lines.
+        let tmp = TempDir::new()?;
+        fs::write(
+            tmp.path().join("lib.rs"),
+            "pub fn a() {}\npub fn b() {}\npub fn c() {}\npub fn d() {}\npub fn e() {}\npub fn f() {}\npub fn g() {}\npub fn h() {}\n",
+        )?;
+        let args = LearnArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        assert!(handle_learn(&args).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn handle_show_with_existing_baseline_prints_fields() -> Result<(), Box<dyn std::error::Error>>
+    {
+        // Covers `Some(baseline)` path → print_baseline (all field-print lines).
+        let tmp = TempDir::new()?;
+        // Write a source file with enough non-empty lines for extract_baseline.
+        fs::write(
+            tmp.path().join("main.rs"),
+            "/// Doc comment\npub fn a() {}\npub fn b() {}\npub fn c() {}\npub fn d() {}\npub fn e() {}\npub fn f() {}\npub fn g() {}\n",
+        )?;
+        // First generate the baseline.
+        let args_learn = LearnArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        handle_learn(&args_learn)?;
+        // Now show it — exercises the Some branch of handle_show and print_baseline.
+        let args_show = LearnShowArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        assert!(handle_show(&args_show).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn print_baseline_shows_commit_stats_section() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers lines 59-85: the `if let Some(cs) = &b.commit_stats { ... }` block.
+        // Needs a git repo with commits so extract_baseline populates commit_stats.
+        use git2::{Repository, Signature, Time};
+        let tmp = TempDir::new()?;
+        // Write 8+ non-empty source lines.
+        fs::write(
+            tmp.path().join("lib.rs"),
+            "pub fn a(){}\npub fn b(){}\npub fn c(){}\npub fn d(){}\npub fn e(){}\npub fn f(){}\npub fn g(){}\npub fn h(){}\n",
+        )?;
+        // Create a git repo with one commit so commit_stats becomes Some.
+        let repo = Repository::init(tmp.path())?;
+        let sig = Signature::new("Test", "t@t.com", &Time::new(1_700_000_000, 0))?;
+        let tree_oid = {
+            let mut idx = repo.index()?;
+            idx.add_path(std::path::Path::new("lib.rs"))?;
+            idx.write_tree()?
+        };
+        let tree = repo.find_tree(tree_oid)?;
+        repo.commit(Some("HEAD"), &sig, &sig, "feat: initial commit", &tree, &[])?;
+
+        // Now run handle_learn — it calls print_baseline which sees Some(commit_stats).
+        let args = LearnArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        handle_learn(&args)?;
+        // Also test handle_show which calls the same print_baseline path.
+        let args_show = LearnShowArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        assert!(handle_show(&args_show).is_ok());
+        Ok(())
+    }
+}

@@ -285,4 +285,188 @@ mod tests {
         // Non-text format should not be overridden even in CI mode.
         assert_eq!(format, OutputFormat::Json);
     }
+
+    #[test]
+    fn handle_returns_ok_on_empty_directory() -> anyhow::Result<()> {
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: None,
+            fail_on: None,
+            ci: false,
+        };
+        // Empty directory — no files to scan, no git repo → should succeed.
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_returns_ok_with_rust_file() -> anyhow::Result<()> {
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        // Write a simple Rust source file so file detectors are exercised.
+        let src = tmp.path().join("src");
+        fs::create_dir_all(&src)?;
+        fs::write(
+            src.join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+        )?;
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: None,
+            fail_on: None,
+            ci: false,
+        };
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_json_format_returns_ok() -> anyhow::Result<()> {
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        fs::write(
+            tmp.path().join("README.md"),
+            "# Hello\nThis is a project.\n",
+        )?;
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Json,
+            severity: None,
+            fail_on: None,
+            ci: false,
+        };
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_severity_filter_returns_ok() -> anyhow::Result<()> {
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: Some(SeverityArg::High),
+            fail_on: None,
+            ci: false,
+        };
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_github_actions_format_returns_ok() -> anyhow::Result<()> {
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        fs::write(
+            tmp.path().join("README.md"),
+            "# Hello\nThis is a project.\n",
+        )?;
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::GithubActions,
+            severity: None,
+            fail_on: None,
+            ci: false,
+        };
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_with_git_repo_exercises_repo_detectors() -> anyhow::Result<()> {
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        // Initialize a bare .git directory so is_git_repo returns true.
+        fs::create_dir_all(tmp.path().join(".git"))?;
+        fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: None,
+            fail_on: None,
+            ci: false,
+        };
+        // repo detectors run; they may return Ok([]) on a bare stub dir
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_fail_on_none_does_not_exit() -> anyhow::Result<()> {
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        // No findings expected, so even fail_on=Low should not call process::exit.
+        // We can't actually test that path without forking; but covering the match arms
+        // (lines 143-146) requires findings AND fail_on. Skip 149 (process::exit) safely
+        // by using a path with zero findings.
+        let args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: None,
+            fail_on: Some(SeverityArg::High),
+            ci: false,
+        };
+        // Empty dir produces zero findings → the `any` check is false → no exit
+        handle(&args)
+    }
+
+    #[test]
+    fn handle_with_severity_low_and_medium_filters() -> anyhow::Result<()> {
+        // Covers lines 77-78: SeverityArg::Low and SeverityArg::Medium match arms.
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
+        // Low filter
+        let args_low = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: Some(SeverityArg::Low),
+            fail_on: None,
+            ci: false,
+        };
+        handle(&args_low)?;
+        // Medium filter
+        let args_med = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: Some(SeverityArg::Medium),
+            fail_on: None,
+            ci: false,
+        };
+        handle(&args_med)
+    }
+
+    #[test]
+    fn handle_with_saved_baseline_uses_comment_config() -> anyhow::Result<()> {
+        // Covers lines 70-72: CommentDetectionConfig construction from baseline.
+        // Strategy: call handle_learn first to persist a baseline, then scan.
+        use crate::cli::learn::{LearnArgs, handle_learn};
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        fs::write(
+            tmp.path().join("lib.rs"),
+            "pub fn a(){}\npub fn b(){}\npub fn c(){}\npub fn d(){}\npub fn e(){}\npub fn f(){}\npub fn g(){}\npub fn h(){}\n",
+        )?;
+        // Generate and persist a baseline.
+        let learn_args = LearnArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+        };
+        handle_learn(&learn_args)?;
+        // Now scan — baseline.is_some() → exercises lines 70-72.
+        let scan_args = ScanArgs {
+            path: tmp.path().to_string_lossy().into_owned(),
+            format: OutputFormat::Text,
+            severity: None,
+            fail_on: None,
+            ci: false,
+        };
+        handle(&scan_args)
+    }
 }

@@ -1,0 +1,63 @@
+# .papertowel.toml — papertowel project configuration
+#
+# Place this file at the root of your repository as `.papertowel.toml`.
+# All sections and keys are optional; omitted values use the defaults shown here.
+
+# ── Detectors ─────────────────────────────────────────────────────────────────
+# Enable or disable individual fingerprint detectors.
+# Set to false to silence a detector project-wide (e.g. for test corpora that
+# intentionally contain slop vocabulary in fixtures).
+
+[detectors]
+lexical          = true   # Slop vocabulary and phrase clustering
+comments         = true   # Over-documentation and boilerplate docstrings
+structure        = true   # Suspiciously uniform code structure
+readme           = true   # Cookie-cutter README patterns
+metadata         = true   # CONTRIBUTING / CODE_OF_CONDUCT / SECURITY boilerplate
+commit_pattern   = true   # Unnaturally uniform or machine-paced commit history
+tests            = true   # Templated or trivially-generated test suites
+workflow         = true   # Boilerplate CI/CD workflow patterns
+maintenance      = true   # Auto-generated maintenance files (Dependabot, etc.)
+promotion        = true   # Marketing / superlative language in code comments
+name_credibility = true   # Implausible or generic identifier naming
+idiom_mismatch   = true   # Language idioms that don't match the project's style
+prompt           = true   # Probable prompt-leakage markers in source text
+
+# ── Severity ──────────────────────────────────────────────────────────────────
+# Minimum severity level to include in scan output and exit-code evaluation.
+# Choices: low | medium | high
+
+[severity]
+minimum = "medium"
+
+# ── Scrubber ──────────────────────────────────────────────────────────────────
+# Controls how aggressively the `scrub` command rewrites detected fingerprints.
+# Choices: gentle | moderate | aggressive
+#
+#   gentle     — only high-confidence, low-risk substitutions
+#   moderate   — balanced rewriting (default)
+#   aggressive — maximum transformation; review diffs carefully
+
+[scrubber]
+aggression = "moderate"
+
+# ── Wringer ───────────────────────────────────────────────────────────────────
+# Options for the git history humanization subsystem.
+
+[wringer]
+# Name of the persona profile to use when `--profile` is not passed on the CLI.
+# Profiles live in ~/.config/papertowel/profiles/<name>.toml.
+# Built-in options: "night-owl" | "nine-to-five"
+# default_persona = "night-owl"
+
+# ── Exclusions ────────────────────────────────────────────────────────────────
+# Glob patterns (gitignore syntax) to exclude from all analysis.
+# These are merged with any patterns in `.papertowelignore`.
+
+[exclude]
+paths = [
+    "vendor/**",
+    "third_party/**",
+    "**/*.generated.*",
+    "fixtures/**",
+]

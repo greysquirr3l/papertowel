@@ -320,4 +320,112 @@ mod tests {
         assert!(!raw.is_empty());
         Ok(())
     }
+
+    #[test]
+    fn validate_rejects_empty_name() {
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no built-in profiles"));
+        profile.name = String::new();
+        assert!(
+            profile.validate().is_err(),
+            "empty name should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_timezone() {
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no built-in profiles"));
+        profile.timezone = String::new();
+        assert!(
+            profile.validate().is_err(),
+            "empty timezone should fail validation"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_zero_commits_per_session() {
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no built-in profiles"));
+        profile.schedule.avg_commits_per_session = 0;
+        assert!(
+            profile.validate().is_err(),
+            "zero commits per session should fail"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_invalid_time_range_format() {
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no built-in profiles"));
+        profile.schedule.active_hours = vec![String::from("25:00-26:00")];
+        assert!(
+            profile.validate().is_err(),
+            "invalid time range should fail"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_active_hours_wrong_delimiter() {
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no built-in profiles"));
+        // Missing dash between start and end → wrong delimiter format
+        profile.schedule.active_hours = vec![String::from("09:00 17:00")];
+        assert!(
+            profile.validate().is_err(),
+            "missing dash delimiter should fail"
+        );
+    }
+
+    #[test]
+    fn default_impls_are_sane() {
+        use crate::profile::persona::{PersonaArchaeology, PersonaMessages, PersonaSchedule};
+        let sched = PersonaSchedule::default();
+        assert!(!sched.active_hours.is_empty());
+        let msgs = PersonaMessages::default();
+        assert!(msgs.wip_frequency > 0.0);
+        let arch = PersonaArchaeology::default();
+        assert!(arch.rename_chains);
+    }
+
+    #[test]
+    fn validate_rejects_empty_active_hours() {
+        // Covers line 203-205: empty active_hours → validation error.
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no built-in profiles"));
+        profile.schedule.active_hours = Vec::new();
+        assert!(
+            profile.validate().is_err(),
+            "empty active_hours should fail validation"
+        );
+    }
+
+    #[test]
+    fn is_valid_hhmm_rejects_missing_colon() {
+        // Covers line 249-250: parts.len() != 2 → false.
+        // A string without a colon → split by ':' gives 1 part.
+        use super::is_valid_hhmm;
+        assert!(!is_valid_hhmm("1200"), "no colon → invalid");
+        assert!(!is_valid_hhmm(""), "empty → invalid");
+    }
+
+    #[test]
+    fn is_valid_hhmm_rejects_non_numeric_parts() {
+        // Covers lines 253-255 (hour parse fails) and 256-257 (minute parse fails).
+        use super::is_valid_hhmm;
+        assert!(!is_valid_hhmm("ab:30"), "non-numeric hour → invalid");
+        assert!(!is_valid_hhmm("10:xy"), "non-numeric minute → invalid");
+    }
 }

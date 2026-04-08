@@ -229,4 +229,118 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn run_from_scrub_command_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → scrub::handle path.
+        use super::run_from;
+        run_from(["papertowel", "scrub", "./src"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_scan_command_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → Command::Scan (line 111).
+        use super::run_from;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        run_from(["papertowel", "scan", tmp.path().to_str().ok_or("bad path")?])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_learn_show_command_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → Command::Learn → LearnCommand::Show (lines 119-121).
+        use super::run_from;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        run_from([
+            "papertowel",
+            "learn",
+            "show",
+            tmp.path().to_str().ok_or("bad path")?,
+        ])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_learn_repo_command_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → Command::Learn → LearnCommand::Repo (line 120).
+        use super::run_from;
+        use std::fs;
+        use tempfile::TempDir;
+        let tmp = TempDir::new()?;
+        // Need ≥ 8 non-empty source lines for extract_baseline to succeed.
+        fs::write(
+            tmp.path().join("lib.rs"),
+            "pub fn a(){}\npub fn b(){}\npub fn c(){}\npub fn d(){}\npub fn e(){}\npub fn f(){}\npub fn g(){}\npub fn h(){}\n",
+        )?;
+        run_from([
+            "papertowel",
+            "learn",
+            "repo",
+            tmp.path().to_str().ok_or("bad path")?,
+        ])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_clean_command_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → Command::Clean placeholder path.
+        use super::run_from;
+        run_from(["papertowel", "clean", "./src"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_profile_create_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → ProfileCommand::Create path.
+        use super::run_from;
+        run_from(["papertowel", "profile", "create", "my-persona"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_profile_list_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → ProfileCommand::List path.
+        use super::run_from;
+        run_from(["papertowel", "profile", "list"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_profile_show_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → ProfileCommand::Show path.
+        use super::run_from;
+        run_from(["papertowel", "profile", "show", "night-owl"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_wring_queue_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → Command::Wring → WringCommand::Queue (line 115).
+        // handle_queue is a no-op placeholder, so it always returns Ok.
+        use super::run_from;
+        run_from(["papertowel", "wring", "queue"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_wring_status_returns_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers dispatch → Command::Wring → WringCommand::Status (line 117).
+        // handle_status reads current_dir() and config — no config → prints message, returns Ok.
+        use super::run_from;
+        run_from(["papertowel", "wring", "status"])?;
+        Ok(())
+    }
+
+    #[test]
+    fn run_from_wring_drip_dispatches_drip_handler() {
+        // Covers dispatch → Command::Wring → WringCommand::Drip (line 116).
+        // handle_drip opens current_dir as a git repo — it may fail if no wringer config exists
+        // but the line is still dispatched.
+        use super::run_from;
+        // We only care that the Drip branch in dispatch was reached, not whether it succeeded.
+        let _ = run_from(["papertowel", "wring", "drip"]);
+    }
 }

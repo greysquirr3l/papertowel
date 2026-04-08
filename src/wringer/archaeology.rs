@@ -363,4 +363,32 @@ mod tests {
         assert!(files.first().is_some_and(|f| f.ends_with("src/lib.rs")));
         Ok(())
     }
+
+    #[test]
+    fn relative_to_returns_error_when_outside_root() {
+        use std::path::Path;
+        use super::relative_to;
+        let root = Path::new("/tmp/worktree");
+        let outside = Path::new("/home/user/other/file.rs");
+        let result = relative_to(outside, root);
+        assert!(result.is_err(), "file outside worktree root should produce an error");
+    }
+
+    #[test]
+    fn inject_before_entry_returns_zero_for_empty_dir() -> Result<(), Box<dyn Error>> {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+        use crate::profile::persona::PersonaArchaeology;
+        // Directory with no .rs files → each injector returns 0 early.
+        let tmp = TempDir::new()?;
+        let settings = PersonaArchaeology {
+            todo_inject_rate: 1.0,
+            dead_code_rate: 1.0,
+            rename_chains: false,
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+        let count = inject_before_entry(tmp.path(), &dummy_entry(), &settings, &mut rng)?;
+        assert_eq!(count, 0);
+        Ok(())
+    }
 }

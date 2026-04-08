@@ -117,7 +117,8 @@ pub fn collect_pending_commits(
 
         let commit = repo.find_commit(oid)?;
         let changed_files = changed_files_for_commit(&repo, &commit)?;
-        let timestamp = DateTime::from_timestamp(commit.time().seconds(), 0).unwrap_or_else(Utc::now);
+        let timestamp =
+            DateTime::from_timestamp(commit.time().seconds(), 0).unwrap_or_else(Utc::now);
 
         commits.push(PendingCommit {
             oid: oid.to_string(),
@@ -409,7 +410,10 @@ fn time_in_window(t: NaiveTime, window: &ActiveWindow) -> bool {
 
 /// Compute a jitter duration in minutes based on persona session variance.
 /// Returns a `Duration` between `avg/2` and `avg * (1 + variance)`.
-#[expect(clippy::cast_possible_truncation, reason = "jitter is bounded by session minutes, fits i64")]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "jitter is bounded by session minutes, fits i64"
+)]
 fn jitter_minutes(schedule: &crate::profile::persona::PersonaSchedule) -> Duration {
     let avg = i64::from(schedule.avg_commits_per_session).max(1);
     // Spread commits roughly evenly across ~2 hour sessions.
@@ -495,7 +499,8 @@ mod tests {
     }
 
     #[test]
-    fn collect_pending_commits_returns_commits_from_branch() -> Result<(), Box<dyn std::error::Error>> {
+    fn collect_pending_commits_returns_commits_from_branch()
+    -> Result<(), Box<dyn std::error::Error>> {
         let (tmp, repo_path, branch_name) = make_repo_with_commit("initial commit", "README.md")?;
         let _keep = &tmp;
 
@@ -507,7 +512,8 @@ mod tests {
     }
 
     #[test]
-    fn build_queue_plan_produces_entries_for_pending_commits() -> Result<(), Box<dyn std::error::Error>> {
+    fn build_queue_plan_produces_entries_for_pending_commits()
+    -> Result<(), Box<dyn std::error::Error>> {
         let (tmp, repo_path, branch_name) = make_repo_with_commit("add feature", "src/lib.rs")?;
         let _keep = &tmp;
 
@@ -540,6 +546,45 @@ mod tests {
         let loaded: QueuePlan = load_queue_plan(&repo_path)?;
         assert_eq!(loaded.persona_name, plan.persona_name);
         assert_eq!(loaded.entries.len(), plan.entries.len());
+        Ok(())
+    }
+
+    #[test]
+    fn collect_pending_commits_stops_at_sync_oid()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Covers line 115 (break when stop_oid matches a commit in the walk).
+        let tmp = TempDir::new()?;
+        let repo_path = tmp.path().join("repo");
+        fs::create_dir_all(&repo_path)?;
+
+        let repo = Repository::init(&repo_path)?;
+        let sig = Signature::now("test", "test@example.com")?;
+
+        // First commit
+        fs::write(repo_path.join("a.rs"), "first\n")?;
+        let mut index = repo.index()?;
+        index.add_all(std::iter::once(&"*"), IndexAddOption::DEFAULT, None)?;
+        index.write()?;
+        let tree1 = repo.find_tree(index.write_tree()?)?;
+        let first_oid = repo.commit(Some("HEAD"), &sig, &sig, "first commit", &tree1, &[])?;
+
+        // Second commit on top
+        fs::write(repo_path.join("b.rs"), "second\n")?;
+        let mut index = repo.index()?;
+        index.add_all(std::iter::once(&"*"), IndexAddOption::DEFAULT, None)?;
+        index.write()?;
+        let tree2 = repo.find_tree(index.write_tree()?)?;
+        let parent = repo.find_commit(first_oid)?;
+        repo.commit(Some("HEAD"), &sig, &sig, "second commit", &tree2, &[&parent])?;
+
+        let head_ref = repo.head()?;
+        let branch_name = head_ref.shorthand().unwrap_or("main").to_owned();
+        let stop_oid_str = first_oid.to_string();
+
+        // With stop_oid = first commit, the walker should break and only return the second commit.
+        let commits = collect_pending_commits(&repo_path, &branch_name, Some(&stop_oid_str))?;
+        assert_eq!(commits.len(), 1, "should stop before first commit");
+        assert_eq!(commits[0].message, "second commit");
         Ok(())
     }
 
@@ -580,5 +625,149 @@ mod tests {
         let group = vec![&commit];
         // Both files are under "src" → 1 root → Replay
         assert_eq!(classify_action(&group), ReplayAction::Replay);
+    }
+
+    #[test]
+    fn replay_action_classifies_many_roots_as_split() {
+        use super::{PendingCommit, classify_action};
+
+        let commit = PendingCommit {
+            oid: "def".to_owned(),
+            message: "big change".to_owned(),
+            author: "dev".to_owned(),
+            timestamp: Utc::now(),
+            // 3 distinct top-level roots → > SPLIT_FILE_OVERLAP_THRESHOLD (2) → Split
+            changed_files: vec![
+                "src/foo.rs".to_owned(),
+                "docs/guide.md".to_owned(),
+                "tests/integration.rs".to_owned(),
+            ],
+        };
+        let group = vec![&commit];
+        assert_eq!(classify_action(&group), ReplayAction::Split);
+    }
+
+    #[test]
+    fn replay_action_classifies_multi_commit_group_as_squash() {
+        use super::{PendingCommit, classify_action};
+
+        let c1 = PendingCommit {
+            oid: "a".to_owned(),
+            message: "one".to_owned(),
+            author: "dev".to_owned(),
+            timestamp: Utc::now(),
+            changed_files: vec!["src/lib.rs".to_owned()],
+        };
+        let c2 = PendingCommit {
+            oid: "b".to_owned(),
+            message: "two".to_owned(),
+            author: "dev".to_owned(),
+            timestamp: Utc::now(),
+            changed_files: vec!["src/lib.rs".to_owned()],
+        };
+        let group = vec![&c1, &c2];
+        assert_eq!(classify_action(&group), ReplayAction::Squash);
+    }
+
+    #[test]
+    fn group_into_sessions_splits_on_large_gap() {
+        use super::{PendingCommit, group_into_sessions};
+        use chrono::Duration;
+
+        let t0 = Utc::now();
+        let t1 = t0 + Duration::seconds(60); // same session (< 600 s gap)
+        let t2 = t1 + Duration::seconds(700); // new session (> SESSION_GAP_SECONDS)
+        let commits = vec![
+            PendingCommit {
+                oid: "a".to_owned(),
+                message: "m".to_owned(),
+                author: "x".to_owned(),
+                timestamp: t0,
+                changed_files: vec![],
+            },
+            PendingCommit {
+                oid: "b".to_owned(),
+                message: "m".to_owned(),
+                author: "x".to_owned(),
+                timestamp: t1,
+                changed_files: vec![],
+            },
+            PendingCommit {
+                oid: "c".to_owned(),
+                message: "m".to_owned(),
+                author: "x".to_owned(),
+                timestamp: t2,
+                changed_files: vec![],
+            },
+        ];
+        let sessions = group_into_sessions(&commits);
+        assert_eq!(sessions.len(), 2, "large gap should produce two sessions");
+        assert_eq!(sessions[0].len(), 2);
+        assert_eq!(sessions[1].len(), 1);
+    }
+
+    #[test]
+    fn squash_groups_splits_on_non_overlapping_files() {
+        use super::{PendingCommit, squash_groups};
+
+        let c1 = PendingCommit {
+            oid: "a".to_owned(),
+            message: "m".to_owned(),
+            author: "x".to_owned(),
+            timestamp: Utc::now(),
+            changed_files: vec!["src/a.rs".to_owned()],
+        };
+        let c2 = PendingCommit {
+            oid: "b".to_owned(),
+            message: "m".to_owned(),
+            author: "x".to_owned(),
+            timestamp: Utc::now(),
+            changed_files: vec!["src/b.rs".to_owned()],
+        };
+        let session: Vec<&PendingCommit> = vec![&c1, &c2];
+        let groups = squash_groups(&session);
+        // No overlapping files → 2 separate groups
+        assert_eq!(groups.len(), 2);
+    }
+
+    #[test]
+    fn squash_groups_merges_overlapping_files() {
+        use super::{PendingCommit, squash_groups};
+
+        let c1 = PendingCommit {
+            oid: "a".to_owned(),
+            message: "m".to_owned(),
+            author: "x".to_owned(),
+            timestamp: Utc::now(),
+            changed_files: vec!["src/lib.rs".to_owned()],
+        };
+        let c2 = PendingCommit {
+            oid: "b".to_owned(),
+            message: "m".to_owned(),
+            author: "x".to_owned(),
+            timestamp: Utc::now(),
+            changed_files: vec!["src/lib.rs".to_owned()],
+        };
+        let session: Vec<&PendingCommit> = vec![&c1, &c2];
+        let groups = squash_groups(&session);
+        // Both touch src/lib.rs → merged into 1 group
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].len(), 2);
+    }
+
+    #[test]
+    fn next_active_time_empty_windows_returns_plus_one_hour() {
+        // Covers line 366: windows.is_empty() → from + 1 hour.
+        use super::next_active_time;
+        use chrono::Utc;
+        use chrono_tz::UTC;
+
+        let from = Utc::now();
+        let result = next_active_time(from, &[], UTC);
+        let diff = result - from;
+        assert!(
+            diff.num_seconds() >= 3599 && diff.num_seconds() <= 3601,
+            "empty windows should return from + 1 hour"
+        );
     }
 }

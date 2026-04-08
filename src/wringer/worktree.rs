@@ -185,6 +185,53 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn initialize_worktree_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
+        let repository_root = tmp.path().join("repo");
+        fs::create_dir_all(&repository_root)?;
+        init_repository_with_initial_commit(&repository_root)?;
+
+        let worktree_path = tmp.path().join("public-worktree");
+        let spec = WorktreeSpec {
+            name: String::from("public"),
+            branch: String::from("public"),
+            path: worktree_path.clone(),
+        };
+
+        // First call creates the worktree.
+        let status1 = initialize_worktree(&repository_root, &spec)?;
+        assert!(status1.exists);
+
+        // Second call should detect it already exists and return status without error.
+        let status2 = initialize_worktree(&repository_root, &spec)?;
+        assert!(status2.exists);
+        Ok(())
+    }
+
+    #[test]
+    fn remove_worktree_prunes_existing_worktree() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
+        let repository_root = tmp.path().join("repo");
+        fs::create_dir_all(&repository_root)?;
+        init_repository_with_initial_commit(&repository_root)?;
+
+        let worktree_path = tmp.path().join("wt-remove");
+        let spec = WorktreeSpec {
+            name: String::from("wt-remove"),
+            branch: String::from("wt-remove"),
+            path: worktree_path,
+        };
+
+        initialize_worktree(&repository_root, &spec)?;
+        let removed = remove_worktree(&repository_root, &spec.name)?;
+        assert!(
+            removed,
+            "existing worktree should be pruned and return true"
+        );
+        Ok(())
+    }
+
     fn init_repository_with_initial_commit(path: &Path) -> Result<Repository, git2::Error> {
         let repository = Repository::init(path)?;
         fs::write(path.join("README.md"), "# test\n")
@@ -209,5 +256,33 @@ mod tests {
         }
 
         Ok(repository)
+    }
+
+    #[test]
+    fn initialize_worktree_uses_existing_branch_when_present()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Covers line 91: ensure_branch_exists returns early when branch already exists.
+        // Strategy: manually create the branch before calling initialize_worktree so the
+        // worktree_exists guard is false but find_branch succeeds → early return on line 91.
+        let tmp = TempDir::new()?;
+        let repository_root = tmp.path().join("repo");
+        fs::create_dir_all(&repository_root)?;
+        let repo = init_repository_with_initial_commit(&repository_root)?;
+
+        // Pre-create the target branch pointing at HEAD so find_branch returns it.
+        let head_commit = repo.head()?.peel_to_commit()?;
+        repo.branch("pre-existing", &head_commit, false)?;
+
+        // initialize_worktree: worktree_exists("demo-wt") → false, so we reach
+        // ensure_branch_exists("pre-existing") → find_branch succeeds → line 91.
+        let worktree_path = tmp.path().join("demo-wt");
+        let spec = WorktreeSpec {
+            name: String::from("demo-wt"),
+            branch: String::from("pre-existing"),
+            path: worktree_path,
+        };
+        let status = initialize_worktree(&repository_root, &spec)?;
+        assert!(status.exists);
+        Ok(())
     }
 }

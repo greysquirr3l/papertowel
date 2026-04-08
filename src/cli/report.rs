@@ -369,7 +369,10 @@ fn category_label(c: FindingCategory) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{build_summary, write_github_actions_report, write_json_report, write_text_report};
+    use super::{
+        Ansi, build_summary, category_label, severity_label, write_github_actions_report,
+        write_json_report, write_text_report,
+    };
     use crate::detection::finding::{Finding, FindingCategory, Severity};
 
     fn make_finding(sev: Severity, path: &str) -> Finding {
@@ -389,6 +392,16 @@ mod tests {
         let summary = build_summary(&[]);
         let mut out = Vec::new();
         write_text_report(&mut out, &[], &summary, false).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("No findings."));
+    }
+
+    #[test]
+    fn empty_findings_with_color_uses_ansi_path() {
+        // Covers lines 136-137: writeln! inside if use_color { ... } when findings empty.
+        let summary = build_summary(&[]);
+        let mut out = Vec::new();
+        write_text_report(&mut out, &[], &summary, true).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("No findings."));
     }
@@ -477,5 +490,145 @@ mod tests {
             text.contains("100%25 AI-generated"),
             "percent must be escaped"
         );
+    }
+
+    #[test]
+    fn gha_report_escapes_cr_and_lf() {
+        let mut f = make_finding(Severity::High, "src/lib.rs");
+        f.description = "line one\r\nline two".to_owned();
+        let summary = build_summary(&[f.clone()]);
+        let mut out = Vec::new();
+        write_github_actions_report(&mut out, &[f], &summary).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("%0D%0A"), "CR+LF must be escaped");
+    }
+
+    #[test]
+    fn text_report_with_color_enabled_runs_without_error() {
+        let f = make_finding(Severity::High, ".");
+        let summary = build_summary(&[f.clone()]);
+        let mut out = Vec::new();
+        write_text_report(&mut out, &[f], &summary, true).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(!text.is_empty());
+    }
+
+    #[test]
+    fn text_report_repo_root_displays_as_friendly_label() {
+        let f = make_finding(Severity::Low, ".");
+        let summary = build_summary(&[f.clone()]);
+        let mut out = Vec::new();
+        write_text_report(&mut out, &[f], &summary, false).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(
+            text.contains("(repo root)"),
+            "path '.' should be displayed as (repo root)"
+        );
+    }
+
+    #[test]
+    fn category_label_covers_all_variants() {
+        use crate::detection::finding::FindingCategory;
+        assert_eq!(
+            category_label(FindingCategory::CommitPattern),
+            "commit_pattern"
+        );
+        assert_eq!(
+            category_label(FindingCategory::PromptLeakage),
+            "prompt_leakage"
+        );
+        assert_eq!(category_label(FindingCategory::TestPattern), "test_pattern");
+        assert_eq!(
+            category_label(FindingCategory::IdiomMismatch),
+            "idiom_mismatch"
+        );
+        assert_eq!(
+            category_label(FindingCategory::NameCredibility),
+            "name_credibility"
+        );
+        assert_eq!(category_label(FindingCategory::Promotion), "promotion");
+        assert_eq!(category_label(FindingCategory::Maintenance), "maintenance");
+        assert_eq!(category_label(FindingCategory::Workflow), "workflow");
+        assert_eq!(severity_label(Severity::High), "HIGH");
+        assert_eq!(severity_label(Severity::Medium), "MED");
+        assert_eq!(severity_label(Severity::Low), "LOW");
+    }
+
+    #[test]
+    fn text_report_with_medium_and_low_color_covers_badge_paths() {
+        // Covers Severity::Medium (line 97) and Severity::Low (line 98) color paths.
+        let med = make_finding(Severity::Medium, "src/lib.rs");
+        let low = make_finding(Severity::Low, "src/util.rs");
+        let findings = vec![med, low];
+        let summary = build_summary(&findings);
+        let mut out = Vec::new();
+        write_text_report(&mut out, &findings, &summary, true).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(!text.is_empty());
+    }
+
+    #[test]
+    fn text_report_with_line_range_and_suggestion_covers_location_paths() {
+        // Covers lines 181-184 (line_range) and 188 (suggestion).
+        let mut f = make_finding(Severity::High, "src/main.rs");
+        f.line_range = Some(crate::detection::finding::LineRange::new(10, 20).expect("range"));
+        f.suggestion = Some("remove this".to_owned());
+        let findings = vec![f];
+        let summary = build_summary(&findings);
+        let mut out = Vec::new();
+        write_text_report(&mut out, &findings, &summary, false).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("at src/main.rs:10"), "should show file:line");
+        assert!(text.contains("remove this"), "should show suggestion");
+    }
+
+    #[test]
+    fn gha_report_with_line_range_emits_line_annotation() {
+        // Covers lines 307-308: GHA report with a finding that has a line_range.
+        let mut f = make_finding(Severity::High, "src/main.rs");
+        f.line_range = Some(crate::detection::finding::LineRange::new(5, 5).expect("range"));
+        let findings = vec![f];
+        let summary = build_summary(&findings);
+        let mut out = Vec::new();
+        write_github_actions_report(&mut out, &findings, &summary).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(
+            text.contains("line=5"),
+            "GHA annotation should include line number"
+        );
+    }
+
+    #[test]
+    fn text_summary_with_color_and_med_low_findings() {
+        // Covers lines 224-225 (MED color) and 233-234 (LOW color) in write_text_summary.
+        // Also covers ai_prob_color YELLOW (line 113) and GREEN (line 115) paths.
+        let high = make_finding(Severity::High, ".");
+        let med = make_finding(Severity::Medium, ".");
+        let low = make_finding(Severity::Low, ".");
+        let findings = vec![high, med, low];
+        let summary = build_summary(&findings);
+        let mut out = Vec::new();
+        write_text_report(&mut out, &findings, &summary, true).expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(!text.is_empty());
+    }
+
+    #[test]
+    fn ai_prob_color_yellow_and_green_paths() {
+        // Covers line 113 (YELLOW: prob >= 0.50 && prob < 0.75) and line 115 (GREEN).
+        let a = Ansi { use_color: true };
+        // YELLOW path: prob in [0.50, 0.75)
+        assert_eq!(a.ai_prob_color(0.60), Ansi::YELLOW);
+        // GREEN path: prob < 0.50
+        assert_eq!(a.ai_prob_color(0.30), Ansi::GREEN);
+    }
+
+    #[test]
+    fn category_label_covers_comment_structure_readme_metadata() {
+        // Covers lines 350-353: Comment, Structure, Readme, Metadata variants.
+        assert_eq!(category_label(FindingCategory::Comment), "comment");
+        assert_eq!(category_label(FindingCategory::Structure), "structure");
+        assert_eq!(category_label(FindingCategory::Readme), "readme");
+        assert_eq!(category_label(FindingCategory::Metadata), "metadata");
     }
 }

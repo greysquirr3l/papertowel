@@ -130,7 +130,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::scrubber::metadata::{
-        DETECTOR_NAME, MetadataDetectionConfig, detect_repo_with_config,
+        DETECTOR_NAME, MetadataDetectionConfig, detect_repo, detect_repo_with_config,
     };
 
     #[test]
@@ -177,6 +177,37 @@ mod tests {
 
         let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn detect_repo_delegates_to_with_config() -> Result<(), Box<dyn std::error::Error>> {
+        use tempfile::TempDir;
+        let temp = TempDir::new()?;
+        let findings = detect_repo(temp.path())?;
+        let _ = findings;
+        Ok(())
+    }
+
+    #[test]
+    fn high_severity_when_four_files_and_eight_hits() -> Result<(), Box<dyn std::error::Error>> {
+        // Covers Severity::High path (line 69): present_files >= 4 AND boilerplate_hits >= 8.
+        use std::fs;
+        use tempfile::TempDir;
+        let temp = TempDir::new()?;
+
+        // Create 4 metadata files, each stuffed with multiple boilerplate markers.
+        let heavy_content = "All contributors are expected to follow the code of conduct.\nBy participating in this project you agree.\nSecurity policy: report a vulnerability unless otherwise noted.\nCode of conduct applies to all spaces.\n";
+        for name in ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "SUPPORT.md"] {
+            fs::write(temp.path().join(name), heavy_content)?;
+        }
+
+        let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig {
+            min_present_files: 4,
+            min_boilerplate_hits: 8,
+        })?;
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, crate::detection::finding::Severity::High);
         Ok(())
     }
 }
