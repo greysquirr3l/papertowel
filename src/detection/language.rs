@@ -41,9 +41,7 @@ impl LanguageKind {
     pub const fn fn_pattern(self) -> &'static str {
         match self {
             // Rust: optional visibility, optional async, `fn` keyword
-            Self::Rust | Self::Unknown => {
-                r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+\w+"
-            }
+            Self::Rust | Self::Unknown => r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+\w+",
             // Python: optional async, `def` keyword
             Self::Python => r"^\s*(?:async\s+)?def\s+\w+",
             // Go: `func` keyword, optional receiver in parens

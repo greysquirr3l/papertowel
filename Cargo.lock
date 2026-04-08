@@ -816,6 +816,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "papertowel-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "papertowel",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
