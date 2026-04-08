@@ -5,6 +5,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::errors::PapertowelError;
 
+/// Commit-cadence statistics extracted from git history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct CommitStats {
+    /// Total commits analysed.
+    pub commits_analysed: usize,
+    /// Average hour-of-day when commits land (0–23, local author time).
+    pub avg_commit_hour: f32,
+    /// Which weekdays are active (0 = Mon … 6 = Sun), represented as a
+    /// fraction of commits that fell on each day.
+    pub weekday_distribution: [f32; 7],
+    /// Average commit-message length in characters.
+    pub avg_message_length: f32,
+    /// Fraction of messages that follow Conventional Commits convention
+    /// (`type(scope)?:` prefix).
+    pub conventional_commit_rate: f32,
+    /// Fraction of messages that look like WIP / fixup messages.
+    pub wip_message_rate: f32,
+}
+
 /// A learned style baseline for a repository owner.
 ///
 /// Stores aggregate statistics extracted from existing source code so that
@@ -24,6 +43,10 @@ pub struct StyleBaseline {
     pub lines_analyzed: usize,
     /// Unix timestamp (seconds) when the baseline was recorded.
     pub created_at: u64,
+    /// Commit-cadence statistics derived from git history (absent when the
+    /// repo has no commits or is not a git repository).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_stats: Option<CommitStats>,
 }
 
 impl StyleBaseline {
@@ -92,6 +115,7 @@ mod tests {
             files_analyzed: 0,
             lines_analyzed: 0,
             created_at: 0,
+            commit_stats: None,
         };
         assert!(b.comment_density_threshold() >= 0.20);
     }
@@ -105,6 +129,7 @@ mod tests {
             files_analyzed: 0,
             lines_analyzed: 0,
             created_at: 0,
+            commit_stats: None,
         };
         assert!(b.comment_density_threshold() <= 0.80);
     }
@@ -118,10 +143,16 @@ mod tests {
             files_analyzed: 1,
             lines_analyzed: 100,
             created_at: 0,
+            commit_stats: None,
         };
         let high = StyleBaseline {
             avg_comment_density: 0.40,
-            ..low
+            avg_doc_ratio: 0.0,
+            slop_rate_per_hundred: 0.0,
+            files_analyzed: 1,
+            lines_analyzed: 100,
+            created_at: 0,
+            commit_stats: None,
         };
         assert!(
             high.comment_density_threshold() > low.comment_density_threshold(),

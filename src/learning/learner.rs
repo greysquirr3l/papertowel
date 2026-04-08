@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use chrono::{Datelike, TimeZone, Timelike, Utc};
+use git2::Repository;
 use tracing::debug;
 use walkdir::WalkDir;
 
@@ -9,7 +11,7 @@ use crate::domain::errors::PapertowelError;
 use crate::scrubber::comments::analyze_comments;
 use crate::scrubber::lexical::SLOP_PATTERNS;
 
-use super::baseline::{now_unix_secs, StyleBaseline};
+use super::baseline::{CommitStats, StyleBaseline, now_unix_secs};
 
 /// Analyse all source files under `root` and derive a [`StyleBaseline`].
 ///
@@ -105,7 +107,106 @@ pub fn extract_baseline(root: &Path) -> Result<StyleBaseline, PapertowelError> {
         files_analyzed: files_counted,
         lines_analyzed: total_lines,
         created_at: now_unix_secs(),
+        commit_stats: extract_commit_stats(root),
     })
+}
+
+/// Analyse git history under `root` and derive [`CommitStats`].
+///
+/// Returns `None` when the path is not a git repository or has no commits.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "commit counts: no meaningful precision loss at these scales"
+)]
+fn extract_commit_stats(root: &Path) -> Option<CommitStats> {
+    let repo = Repository::discover(root)
+        .map_err(|e| debug!(error = %e, "not a git repo; skipping commit stats"))
+        .ok()?;
+
+    let mut revwalk = repo.revwalk().ok()?;
+    revwalk.push_head().ok()?;
+
+    let mut hour_sum: u32 = 0;
+    let mut weekday_counts = [0u32; 7];
+    let mut msg_len_sum: usize = 0;
+    let mut conventional_count: usize = 0;
+    let mut wip_count: usize = 0;
+    let mut total: usize = 0;
+
+    for oid in revwalk.flatten() {
+        let Ok(commit) = repo.find_commit(oid) else {
+            continue;
+        };
+        let time = commit.author().when();
+        // git2 gives offset in minutes; apply to get local author time.
+        let offset_secs = i64::from(time.offset_minutes()) * 60;
+        let unix = time.seconds() + offset_secs;
+        if let Some(dt) = Utc.timestamp_opt(unix, 0).single() {
+            hour_sum += dt.hour();
+            // chrono weekday: Mon=0 … Sun=6
+            let wd = dt.weekday().num_days_from_monday() as usize;
+            if let Some(slot) = weekday_counts.get_mut(wd) {
+                *slot += 1;
+            }
+        }
+
+        let msg = commit.message().unwrap_or("").trim().to_owned();
+        msg_len_sum += msg.len();
+        if is_conventional_commit(&msg) {
+            conventional_count += 1;
+        }
+        if is_wip_message(&msg) {
+            wip_count += 1;
+        }
+        total += 1;
+    }
+
+    if total == 0 {
+        return None;
+    }
+
+    let weekday_distribution = {
+        let mut dist = [0.0_f32; 7];
+        for (slot, &count) in dist.iter_mut().zip(weekday_counts.iter()) {
+            *slot = count as f32 / total as f32;
+        }
+        dist
+    };
+
+    Some(CommitStats {
+        commits_analysed: total,
+        avg_commit_hour: hour_sum as f32 / total as f32,
+        weekday_distribution,
+        avg_message_length: msg_len_sum as f32 / total as f32,
+        conventional_commit_rate: conventional_count as f32 / total as f32,
+        wip_message_rate: wip_count as f32 / total as f32,
+    })
+}
+
+/// Returns `true` for Conventional Commits style: `type(scope)?: message`.
+#[expect(
+    clippy::panic,
+    reason = "static regex is a compile-time constant; panic is unreachable in practice"
+)]
+fn is_conventional_commit(msg: &str) -> bool {
+    static CONVENTIONAL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"^(?:feat|fix|refactor|test|docs|chore|style|perf|ci|build|revert)(?:\([^)]+\))?!?:",
+        )
+        .unwrap_or_else(|e| panic!("conventional commit regex is valid: {e}"))
+    });
+    CONVENTIONAL_RE.is_match(msg)
+}
+
+/// Returns `true` for WIP / fixup messages.
+fn is_wip_message(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.starts_with("wip")
+        || lower.starts_with("fixup!")
+        || lower.starts_with("squash!")
+        || lower.contains("work in progress")
+        || lower == "."
+        || lower == ".."
 }
 
 /// Count occurrences of slop vocabulary words in `content`.
@@ -133,7 +234,8 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::extract_baseline;
+    use super::{extract_baseline, extract_commit_stats, is_conventional_commit, is_wip_message};
+    use crate::learning::baseline::CommitStats;
 
     fn make_repo(files: &[(&str, &str)]) -> TempDir {
         let dir = TempDir::new().expect("tempdir");
@@ -161,5 +263,51 @@ mod tests {
         let dir = TempDir::new().expect("tempdir");
         let result = extract_baseline(dir.path());
         assert!(result.is_err(), "should error with no analysable files");
+    }
+
+    #[test]
+    fn commit_stats_default_is_zero() {
+        let cs = CommitStats::default();
+        assert_eq!(cs.commits_analysed, 0);
+        assert_eq!(cs.weekday_distribution, [0.0_f32; 7]);
+        assert!((cs.conventional_commit_rate - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn is_conventional_commit_recognises_types() {
+        assert!(is_conventional_commit("feat: add thing"));
+        assert!(is_conventional_commit("fix(scope): oops"));
+        assert!(is_conventional_commit("chore!: breaking"));
+        assert!(!is_conventional_commit("add thing"));
+        assert!(!is_conventional_commit("WIP stuff"));
+    }
+
+    #[test]
+    fn is_wip_message_recognises_wip() {
+        assert!(is_wip_message("wip: half done"));
+        assert!(is_wip_message("WIP half done"));
+        assert!(is_wip_message("fixup! previous commit"));
+        assert!(is_wip_message("."));
+        assert!(!is_wip_message("feat: complete thing"));
+    }
+
+    #[test]
+    fn extract_commit_stats_on_repo_with_commits() {
+        use git2::{Repository, Signature, Time};
+        let dir = TempDir::new().expect("tempdir");
+        let repo = Repository::init(dir.path()).expect("init");
+        let sig = Signature::new("Test", "t@t.com", &Time::new(1_700_000_000, 0)).expect("sig");
+        let tree_oid = {
+            let mut idx = repo.index().expect("index");
+            idx.write_tree().expect("tree")
+        };
+        let tree = repo.find_tree(tree_oid).expect("find tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "feat: initial", &tree, &[])
+            .expect("commit");
+
+        let stats = extract_commit_stats(dir.path()).expect("stats");
+        assert_eq!(stats.commits_analysed, 1);
+        assert!((stats.conventional_commit_rate - 1.0).abs() < f32::EPSILON);
+        assert!((stats.wip_message_rate - 0.0).abs() < f32::EPSILON);
     }
 }

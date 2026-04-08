@@ -225,13 +225,19 @@ mod tests {
 
         // Zig
         assert!(check(LanguageKind::Zig, "pub fn compute(x: i32) i32 {"));
-        assert!(check(LanguageKind::Zig, "fn helper(allocator: std.mem.Allocator) !void {"));
+        assert!(check(
+            LanguageKind::Zig,
+            "fn helper(allocator: std.mem.Allocator) !void {"
+        ));
         assert!(!check(LanguageKind::Zig, "const x = fn_value;"));
 
         // C++
         assert!(check(LanguageKind::Cpp, "int compute(int x) {"));
         assert!(check(LanguageKind::Cpp, "static void reset() {"));
         assert!(check(LanguageKind::Cpp, "virtual bool isValid() const {"));
-        assert!(check(LanguageKind::Cpp, "inline std::string getName() const {"));
+        assert!(check(
+            LanguageKind::Cpp,
+            "inline std::string getName() const {"
+        ));
     }
 }

@@ -54,4 +54,35 @@ fn print_baseline(b: &StyleBaseline) {
         "  Slop rate        : {:.2} hits / 100 lines",
         b.slop_rate_per_hundred
     );
+
+    if let Some(cs) = &b.commit_stats {
+        println!();
+        println!("  Commit history ({} commits):", cs.commits_analysed);
+        println!(
+            "    Avg commit hour          : {:.1}:00",
+            cs.avg_commit_hour
+        );
+        println!(
+            "    Avg message length       : {:.0} chars",
+            cs.avg_message_length
+        );
+        println!(
+            "    Conventional commit rate : {:.0}%",
+            cs.conventional_commit_rate * 100.0
+        );
+        println!(
+            "    WIP message rate         : {:.1}%",
+            cs.wip_message_rate * 100.0
+        );
+        let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let active: Vec<&str> = days
+            .iter()
+            .zip(cs.weekday_distribution.iter())
+            .filter(|&(_, &f)| f > 0.05)
+            .map(|(d, _)| *d)
+            .collect();
+        if !active.is_empty() {
+            println!("    Active weekdays          : {}", active.join(", "));
+        }
+    }
 }

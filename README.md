@@ -106,8 +106,6 @@ This tool helps you sidestep the purity police so you can focus on actually ship
 
 MIT. Do whatever you want.
 
-![The Joker](assets/img/joker_clap.gif)
-
 ---
 
 *Built with the assistance of machines. Obviously.*

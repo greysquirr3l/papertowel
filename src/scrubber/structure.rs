@@ -157,11 +157,9 @@ pub fn analyze_structure_for_language(
     lang: LanguageKind,
 ) -> Result<StructureMetrics, PapertowelError> {
     let fn_re = Regex::new(lang.fn_pattern())
-        .map_err(|e| PapertowelError::Validation(format!("invalid fn_pattern: {e}")))?
-        ;
+        .map_err(|e| PapertowelError::Validation(format!("invalid fn_pattern: {e}")))?;
     let doc_re = Regex::new(lang.doc_comment_pattern())
-        .map_err(|e| PapertowelError::Validation(format!("invalid doc_comment_pattern: {e}")))?
-        ;
+        .map_err(|e| PapertowelError::Validation(format!("invalid doc_comment_pattern: {e}")))?;
     let measures = extract_function_measures_with(content, &fn_re, &doc_re, lang);
 
     if measures.is_empty() {
@@ -264,10 +262,9 @@ fn extract_function_measures_with(
             // C++: no canonical visibility prefix on free functions; public class
             // methods use `public:` access specifiers elsewhere — treat as public.
             // Python/Go: same rationale.
-            LanguageKind::Python
-            | LanguageKind::Go
-            | LanguageKind::Cpp
-            | LanguageKind::Unknown => true,
+            LanguageKind::Python | LanguageKind::Go | LanguageKind::Cpp | LanguageKind::Unknown => {
+                true
+            }
         };
 
         // End-of-function detection strategy depends on language:
