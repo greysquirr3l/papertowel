@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::Args;
 
-use crate::wringer::config::{WringerConfig, load_wringer_config, save_wringer_config};
-use crate::wringer::worktree::{WorktreeSpec, initialize_worktree, status_worktree};
+use crate::wringer::config::{load_wringer_config, save_wringer_config, WringerConfig};
+use crate::wringer::drip::DripRunner;
+use crate::wringer::worktree::{initialize_worktree, status_worktree, WorktreeSpec};
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
@@ -30,10 +31,13 @@ pub struct StatusArgs;
 pub fn handle_init(args: InitArgs) -> Result<()> {
     let repo_root = std::env::current_dir()?;
     let branch = args.branch.unwrap_or_else(|| String::from("public"));
-    let worktree_path = repo_root.join("..").join(format!("{}-public", repo_root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("repo")));
+    let worktree_path = repo_root.join("..").join(format!(
+        "{}-public",
+        repo_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("repo")
+    ));
     let worktree_name = branch.clone();
 
     let spec = WorktreeSpec {
@@ -54,7 +58,11 @@ pub fn handle_init(args: InitArgs) -> Result<()> {
         .map_err(|error| anyhow::anyhow!("failed to save wringer config: {error}"))?;
 
     if status.exists {
-        println!("worktree '{}' ready at {}", status.name, status.path.display());
+        println!(
+            "worktree '{}' ready at {}",
+            status.name,
+            status.path.display()
+        );
     } else {
         println!("worktree '{}' not found after initialization", status.name);
     }
@@ -67,10 +75,35 @@ pub fn handle_queue(args: QueueArgs) -> Result<()> {
     Ok(())
 }
 
-#[expect(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
 pub fn handle_drip(args: DripArgs) -> Result<()> {
-    tracing::info!(daemon = args.daemon, profile = ?args.profile, "wring drip placeholder");
-    Ok(())
+    let repo_root = std::env::current_dir()?;
+    let runner = DripRunner::new(&repo_root)
+        .map_err(|e| anyhow::anyhow!("failed to initialise drip runner: {e}"))?;
+
+    if args.daemon {
+        tracing::info!("entering daemon mode — polling every 60 s");
+        loop {
+            let stats = runner
+                .tick()
+                .map_err(|e| anyhow::anyhow!("drip tick failed: {e}"))?;
+            if stats.applied > 0 {
+                println!(
+                    "applied {} commit(s), {} pending, {} already done",
+                    stats.applied, stats.pending, stats.already_done
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
+    } else {
+        let stats = runner
+            .tick()
+            .map_err(|e| anyhow::anyhow!("drip tick failed: {e}"))?;
+        println!(
+            "applied {} commit(s), {} pending, {} already done",
+            stats.applied, stats.pending, stats.already_done
+        );
+        Ok(())
+    }
 }
 
 pub fn handle_status(_: StatusArgs) -> Result<()> {

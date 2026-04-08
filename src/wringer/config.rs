@@ -34,11 +34,10 @@ pub fn save_wringer_config(
 ) -> Result<(), PapertowelError> {
     let path = config_path(repo_root);
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| PapertowelError::io_with_path(parent, error))?;
+        fs::create_dir_all(parent).map_err(|error| PapertowelError::io_with_path(parent, error))?;
     }
-    let content =
-        toml::to_string_pretty(config).map_err(|error| PapertowelError::Config(error.to_string()))?;
+    let content = toml::to_string_pretty(config)
+        .map_err(|error| PapertowelError::Config(error.to_string()))?;
     fs::write(&path, content).map_err(|error| PapertowelError::io_with_path(&path, error))
 }
 
