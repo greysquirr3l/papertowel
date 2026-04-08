@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::Args;
 
-use crate::wringer::config::{load_wringer_config, save_wringer_config, WringerConfig};
+use crate::wringer::config::{WringerConfig, load_wringer_config, save_wringer_config};
 use crate::wringer::drip::DripRunner;
-use crate::wringer::worktree::{initialize_worktree, status_worktree, WorktreeSpec};
+use crate::wringer::worktree::{WorktreeSpec, initialize_worktree, status_worktree};
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
