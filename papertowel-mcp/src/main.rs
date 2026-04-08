@@ -4,14 +4,13 @@
 //!
 //! # Transport
 //!
-//! Uses the MCP stdio transport: each message is framed with an
-//! LSP-style `Content-Length` header so that clients can parse
-//! variable-length JSON payloads:
+//! Implements the MCP stdio transport (spec `2025-11-25`). Each message is a
+//! single UTF-8 JSON object followed by a newline (`\n`). Embedded newlines
+//! are not permitted inside a message.
 //!
 //! ```text
-//! Content-Length: <n>\r\n
-//! \r\n
-//! <n bytes of UTF-8 JSON>
+//! {"jsonrpc":"2.0","id":1,"method":"initialize", ...}\n
+//! {"jsonrpc":"2.0","id":1,"result":{...}}\n
 //! ```
 //!
 //! # Tools
@@ -96,7 +95,7 @@ impl Response {
 
 // ─── MCP protocol constants ───────────────────────────────────────────────────
 
-const PROTOCOL_VERSION: &str = "2024-11-05";
+const PROTOCOL_VERSION: &str = "2025-11-25";
 const SERVER_NAME: &str = "papertowel";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -140,51 +139,35 @@ fn main() {
 
 // ─── I/O helpers ─────────────────────────────────────────────────────────────
 
-/// Read one framed message from `reader`.
+/// Read one newline-delimited JSON message from `reader`.
 ///
-/// Returns `Ok(None)` on EOF, `Ok(Some(json_string))` on success.
+/// Blank lines are skipped. Returns `Ok(None)` on EOF, `Ok(Some(line))` on
+/// success. Per the MCP 2025-11-25 stdio transport spec, each message is a
+/// single JSON object on its own line with no embedded newlines.
 fn read_message(reader: &mut impl BufRead) -> Result<Option<String>> {
-    // Read headers until blank line.
-    let mut content_length: Option<usize> = None;
-
     loop {
-        let mut header = String::new();
+        let mut line = String::new();
         let n = reader
-            .read_line(&mut header)
-            .context("reading header line")?;
+            .read_line(&mut line)
+            .context("reading message line")?;
         if n == 0 {
             return Ok(None); // EOF
         }
-        let header = header.trim_end_matches(['\r', '\n']);
-        if header.is_empty() {
-            break; // blank separator line
+        let trimmed = line.trim_end_matches(['\r', '\n']).to_owned();
+        if !trimmed.is_empty() {
+            return Ok(Some(trimmed));
         }
-        // Header format: `Name: value`
-        if let Some(value) = header.strip_prefix("Content-Length:") {
-            let trimmed = value.trim();
-            content_length = Some(
-                trimmed
-                    .parse::<usize>()
-                    .context("parsing Content-Length value")?,
-            );
-        }
-        // Ignore other headers (e.g. Content-Type).
+        // Skip blank lines between messages.
     }
-
-    let len = content_length.context("no Content-Length header")?;
-    let mut buf = vec![0u8; len];
-    reader
-        .read_exact(&mut buf)
-        .context("reading message body")?;
-    Ok(Some(
-        String::from_utf8(buf).context("message body is not UTF-8")?,
-    ))
 }
 
-/// Serialise `resp` and write it as a framed MCP message.
+/// Serialise `resp` as a compact single-line JSON object followed by `\n`.
+///
+/// Per the MCP 2025-11-25 stdio transport spec, each message must be a single
+/// newline-terminated JSON object with no embedded newlines.
 fn write_response(resp: &Response, writer: &mut impl Write) -> Result<()> {
     let body = serde_json::to_string(resp).context("serialising response")?;
-    write!(writer, "Content-Length: {}\r\n\r\n{}", body.len(), body).context("writing response")?;
+    writeln!(writer, "{body}").context("writing response")?;
     writer.flush().context("flushing response")
 }
 
@@ -258,16 +241,31 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
 
 // ─── Method handlers ──────────────────────────────────────────────────────────
 
-fn handle_initialize(_params: Option<&Value>) -> Value {
+fn handle_initialize(params: Option<&Value>) -> Value {
+    // Negotiate protocol version: echo the client's version if we support it,
+    // otherwise respond with the latest version we support.
+    const SUPPORTED_VERSIONS: &[&str] = &["2025-11-25", "2025-03-26", "2024-11-05"];
+    let requested = params
+        .and_then(|p| p.get("protocolVersion"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let negotiated = if SUPPORTED_VERSIONS.contains(&requested) {
+        requested
+    } else {
+        PROTOCOL_VERSION
+    };
+
     json!({
-        "protocolVersion": PROTOCOL_VERSION,
+        "protocolVersion": negotiated,
         "capabilities": {
             "tools": {}
         },
         "serverInfo": {
             "name": SERVER_NAME,
+            "title": "papertowel MCP Server",
             "version": SERVER_VERSION
-        }
+        },
+        "instructions": "Use papertowel_scan to detect AI-generated code fingerprints in a file or directory. Use papertowel_scrub for a dry-run view of suggested changes without modifying any files."
     })
 }
 
@@ -276,6 +274,7 @@ fn handle_tools_list() -> Value {
         "tools": [
             {
                 "name": "papertowel_scan",
+                "title": "AI Fingerprint Scanner",
                 "description": "Scan a file or directory for AI-generated code fingerprints. Returns a list of findings with severity, category, and suggested fixes.",
                 "inputSchema": {
                     "type": "object",
@@ -295,6 +294,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "papertowel_scrub",
+                "title": "AI Fingerprint Dry-Run Scrubber",
                 "description": "Dry-run scrub of a file: show what lexical and comment-density changes would be applied to reduce AI fingerprints, without modifying any files.",
                 "inputSchema": {
                     "type": "object",
