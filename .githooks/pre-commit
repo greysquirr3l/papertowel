@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# gitleaks pre-commit hook — scans staged changes for secrets before commit.
+# Install: cp .git/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "warning: gitleaks not found — skipping secret scan (install via: brew install gitleaks)"
+  exit 0
+fi
+
+gitleaks protect --staged --config .gitleaks.toml --redact --exit-code 1
+exit $?

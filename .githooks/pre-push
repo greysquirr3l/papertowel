@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# gitleaks pre-push hook — scans the full commit range being pushed for secrets.
+# Install: cp .git/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "warning: gitleaks not found — skipping secret scan (install via: brew install gitleaks)"
+  exit 0
+fi
+
+gitleaks detect --config .gitleaks.toml --redact --exit-code 1
+exit $?

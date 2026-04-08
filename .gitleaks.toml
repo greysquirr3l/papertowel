@@ -1,0 +1,18 @@
+# gitleaks configuration for papertowel
+# https://github.com/gitleaks/gitleaks
+
+title = "papertowel gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist"
+# Ignore test fixtures and snapshot files that intentionally contain fake tokens
+paths = [
+    '''tests/fixtures/''',
+]
+# Ignore lines that are clearly fake/example values
+regexes = [
+    '''(?i)(example|fake|dummy|test|placeholder)[-_]?(token|key|secret|password)''',
+]
