@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
+use crate::detection::language::LanguageKind;
 use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "tests";
@@ -27,10 +28,18 @@ impl Default for TestShapeDetectionConfig {
 }
 
 pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
+    detect_file_for_language(path, LanguageKind::Rust)
+}
+
+/// Language-aware variant of [`detect_file`].
+pub fn detect_file_for_language(
+    path: impl AsRef<Path>,
+    lang: LanguageKind,
+) -> Result<Vec<Finding>, PapertowelError> {
     let path = path.as_ref();
     let content =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
-    detect_in_text(path, &content, TestShapeDetectionConfig::default())
+    detect_in_text_for_language(path, &content, TestShapeDetectionConfig::default(), lang)
 }
 
 pub fn detect_in_text(
@@ -38,8 +47,18 @@ pub fn detect_in_text(
     content: &str,
     config: TestShapeDetectionConfig,
 ) -> Result<Vec<Finding>, PapertowelError> {
+    detect_in_text_for_language(file_path, content, config, LanguageKind::Rust)
+}
+
+/// Language-aware variant of [`detect_in_text`].
+pub fn detect_in_text_for_language(
+    file_path: impl Into<PathBuf>,
+    content: &str,
+    config: TestShapeDetectionConfig,
+    lang: LanguageKind,
+) -> Result<Vec<Finding>, PapertowelError> {
     let file_path = file_path.into();
-    let metrics = analyze_test_shape(content)?;
+    let metrics = analyze_test_shape_for_language(content, lang)?;
 
     if metrics.test_count < config.min_test_count
         || metrics.dominant_prefix_ratio < config.min_prefix_ratio
@@ -87,23 +106,105 @@ struct TestShapeMetrics {
     assert_density: f32,
 }
 
+/// Language configuration for test-name and assertion detection.
+struct LangTestConfig {
+    /// Regex to extract the test function name (capture group 1 = name).
+    test_fn_re: Regex,
+    /// Prefix/suffix the test name must have to be counted (empty = all fns).
+    name_filter: fn(&str) -> bool,
+    /// Returns `true` when the trimmed line contains an assertion.
+    assert_filter: fn(&str) -> bool,
+}
+
+impl LangTestConfig {
+    fn new(
+        pattern: &str,
+        name_filter: fn(&str) -> bool,
+        assert_filter: fn(&str) -> bool,
+    ) -> Result<Self, PapertowelError> {
+        let test_fn_re = Regex::new(pattern)
+            .map_err(|e| PapertowelError::Validation(format!("invalid test regex: {e}")))?;
+        Ok(Self {
+            test_fn_re,
+            name_filter,
+            assert_filter,
+        })
+    }
+}
+
+fn make_lang_test_config(lang: LanguageKind) -> Result<LangTestConfig, PapertowelError> {
+    match lang {
+        LanguageKind::Rust => LangTestConfig::new(
+            r"fn\s+([A-Za-z0-9_]+)",
+            |name| name.starts_with("test_"),
+            |line| {
+                line.contains("assert_")
+                    || line.starts_with("assert!(")
+                    || line.starts_with("assert_eq!(")
+            },
+        ),
+        LanguageKind::Python => LangTestConfig::new(
+            r"def\s+(test_[A-Za-z0-9_]+)",
+            |_| true, // regex already filters by prefix
+            |line| {
+                line.contains("assert ")
+                    || line.contains(".assert_")
+                    || line.contains(".assertEqual(")
+                    || line.contains(".assert_called")
+            },
+        ),
+        LanguageKind::Go => LangTestConfig::new(
+            r"func\s+(Test[A-Za-z0-9_]+)",
+            |_| true,
+            |line| {
+                line.contains("t.Error")
+                    || line.contains("t.Fatal")
+                    || line.contains("t.Fail")
+                    || line.contains("assert.")
+                    || line.contains("require.")
+            },
+        ),
+        LanguageKind::TypeScript => LangTestConfig::new(
+            r#"(?:it|test)\s*\(\s*['"]([A-Za-z0-9_ ]+)['"]"#,
+            |_| true,
+            |line| {
+                line.contains("expect(") || line.contains(".toBe(") || line.contains(".toEqual(")
+            },
+        ),
+        LanguageKind::CSharp => LangTestConfig::new(
+            r"(?:public\s+)?(?:void|Task)\s+(\w+)\s*\(",
+            |_| true,
+            |line| {
+                line.contains("Assert.")
+                    || line.contains("Xunit.Assert")
+                    || line.contains(".Should().")
+            },
+        ),
+        LanguageKind::Unknown => LangTestConfig::new(
+            r"fn\s+([A-Za-z0-9_]+)",
+            |name| name.starts_with("test_"),
+            |line| line.contains("assert"),
+        ),
+    }
+}
+
 #[expect(
     clippy::cast_precision_loss,
     reason = "density ratios: bounded usize counts"
 )]
-fn analyze_test_shape(content: &str) -> Result<TestShapeMetrics, PapertowelError> {
-    let regex = Regex::new(r"fn\s+([A-Za-z0-9_]+)")
-        .map_err(|error| PapertowelError::Validation(format!("invalid test regex: {error}")))?;
+fn analyze_test_shape_for_language(
+    content: &str,
+    lang: LanguageKind,
+) -> Result<TestShapeMetrics, PapertowelError> {
+    let cfg = make_lang_test_config(lang)?;
+    let regex = &cfg.test_fn_re;
 
     let mut test_names = Vec::new();
     let mut assert_count = 0_usize;
 
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.contains("assert_")
-            || trimmed.starts_with("assert!(")
-            || trimmed.starts_with("assert_eq!(")
-        {
+        if (cfg.assert_filter)(trimmed) {
             assert_count += 1;
         }
 
@@ -111,7 +212,7 @@ fn analyze_test_shape(content: &str) -> Result<TestShapeMetrics, PapertowelError
             let name = caps.get(1);
             if let Some(name) = name {
                 let as_str = name.as_str();
-                if as_str.starts_with("test_") {
+                if (cfg.name_filter)(as_str) {
                     test_names.push(as_str.to_owned());
                 }
             }

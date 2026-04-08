@@ -10,6 +10,7 @@ use super::{OutputFormat, SeverityArg};
 use crate::cli::report::{build_summary, write_json_report, write_text_report};
 use crate::config::{build_ignore_matcher, is_ignored, load_config};
 use crate::detection::finding::{Finding, Severity};
+use crate::detection::language::LanguageKind;
 use crate::scrubber::{
     comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
     structure, tests, workflow,
@@ -74,12 +75,20 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
             .unwrap_or_default()
             .to_lowercase();
 
-        if ext == "rs" {
+        let lang = LanguageKind::from_extension(ext);
+
+        if lang.is_analysable() {
             run_detector(&mut findings, || lexical::detect_file(path));
             run_detector(&mut findings, || comments::detect_file(path));
-            run_detector(&mut findings, || structure::detect_file(path));
-            run_detector(&mut findings, || idiom_mismatch::detect_file(path));
-            run_detector(&mut findings, || tests::detect_file(path));
+            run_detector(&mut findings, || {
+                structure::detect_file_for_language(path, lang)
+            });
+            run_detector(&mut findings, || {
+                tests::detect_file_for_language(path, lang)
+            });
+            if lang == LanguageKind::Rust {
+                run_detector(&mut findings, || idiom_mismatch::detect_file(path));
+            }
         }
 
         if ext == "md" {
@@ -87,7 +96,10 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
         }
 
         // Prompt leakage applies to any text file
-        if matches!(ext, "rs" | "md" | "toml" | "yaml" | "yml" | "txt") {
+        if matches!(
+            ext,
+            "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
+        ) {
             run_detector(&mut findings, || crate::scrubber::prompt::detect_file(path));
         }
 

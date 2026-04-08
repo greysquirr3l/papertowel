@@ -1,31 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
+use crate::detection::language::LanguageKind;
 use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "structure";
-
-/// Pattern that matches the start of a Rust function definition.
-#[expect(
-    clippy::expect_used,
-    reason = "LazyLock init — regex literal is a compile-time invariant"
-)]
-static FN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+\w+")
-        .expect("FN_PATTERN is a valid regex")
-});
-
-/// Pattern for `/// ` doc comments preceding function definitions.
-#[expect(
-    clippy::expect_used,
-    reason = "LazyLock init — regex literal is a compile-time invariant"
-)]
-static DOCSTRING_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s*///").expect("DOCSTRING_PATTERN is a valid regex"));
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StructureDetectionConfig {
@@ -82,10 +64,19 @@ impl FunctionMeasure {
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
+    detect_file_for_language(path, LanguageKind::Rust)
+}
+
+/// Language-aware variant of [`detect_file`].  Selects function and
+/// doc-comment patterns appropriate for `lang`.
+pub fn detect_file_for_language(
+    path: impl AsRef<Path>,
+    lang: LanguageKind,
+) -> Result<Vec<Finding>, PapertowelError> {
     let path = path.as_ref();
     let content =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
-    detect_in_text(path, &content, StructureDetectionConfig::default())
+    detect_in_text_for_language(path, &content, StructureDetectionConfig::default(), lang)
 }
 
 pub fn detect_in_text(
@@ -93,8 +84,18 @@ pub fn detect_in_text(
     content: &str,
     config: StructureDetectionConfig,
 ) -> Result<Vec<Finding>, PapertowelError> {
+    detect_in_text_for_language(file_path, content, config, LanguageKind::Rust)
+}
+
+/// Language-aware variant of [`detect_in_text`].
+pub fn detect_in_text_for_language(
+    file_path: impl Into<PathBuf>,
+    content: &str,
+    config: StructureDetectionConfig,
+    lang: LanguageKind,
+) -> Result<Vec<Finding>, PapertowelError> {
     let file_path = file_path.into();
-    let metrics = analyze_structure(content)?;
+    let metrics = analyze_structure_for_language(content, lang)?;
 
     if metrics.function_count < config.min_function_count {
         return Ok(Vec::new());
@@ -147,7 +148,21 @@ pub fn detect_in_text(
 }
 
 pub fn analyze_structure(content: &str) -> Result<StructureMetrics, PapertowelError> {
-    let measures = extract_function_measures(content);
+    analyze_structure_for_language(content, LanguageKind::Rust)
+}
+
+/// Language-aware variant of [`analyze_structure`].
+pub fn analyze_structure_for_language(
+    content: &str,
+    lang: LanguageKind,
+) -> Result<StructureMetrics, PapertowelError> {
+    let fn_re = Regex::new(lang.fn_pattern())
+        .map_err(|e| PapertowelError::Validation(format!("invalid fn_pattern: {e}")))?
+        ;
+    let doc_re = Regex::new(lang.doc_comment_pattern())
+        .map_err(|e| PapertowelError::Validation(format!("invalid doc_comment_pattern: {e}")))?
+        ;
+    let measures = extract_function_measures_with(content, &fn_re, &doc_re, lang);
 
     if measures.is_empty() {
         return Ok(StructureMetrics {
@@ -188,11 +203,13 @@ pub fn analyze_structure(content: &str) -> Result<StructureMetrics, PapertowelEr
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
-/// Walk source lines and extract per-function measurements using a simple
-/// brace-depth counter.  Results are approximate (strings and comments
-/// containing braces are not fully handled) but accurate enough for
-/// structural heuristics.
-fn extract_function_measures(content: &str) -> Vec<FunctionMeasure> {
+/// Language-parameterised inner implementation of function-measure extraction.
+fn extract_function_measures_with(
+    content: &str,
+    fn_re: &Regex,
+    doc_re: &Regex,
+    lang: LanguageKind,
+) -> Vec<FunctionMeasure> {
     let lines: Vec<&str> = content.lines().collect();
     let mut measures = Vec::new();
     let mut i = 0;
@@ -202,67 +219,136 @@ fn extract_function_measures(content: &str) -> Vec<FunctionMeasure> {
             break;
         };
 
-        if !FN_PATTERN.is_match(line) {
+        if !fn_re.is_match(line) {
             i += 1;
             continue;
         }
 
         // Determine whether the function has a preceding docstring.
+        // The look-behind marker depends on language: Rust uses `///`, Python
+        // uses triple-quotes, Go/TS/C# use `//` or `/**`.
+        let doc_prefix: &str = match lang {
+            LanguageKind::Python => r#"""""#,
+            _ => "//",
+        };
         let has_docstring = i > 0
             && lines.get(..i).is_some_and(|prev| {
                 prev.iter()
                     .rev()
                     .take_while(|l| {
-                        l.trim().starts_with("///")
-                            || l.trim().starts_with('#')
-                            || l.trim().is_empty()
+                        let t = l.trim();
+                        t.starts_with(doc_prefix)
+                            || t.starts_with('#')
+                            || t.starts_with('*')
+                            || t.starts_with("/**")
+                            || t.starts_with("/*")
+                            || t.is_empty()
                     })
-                    .any(|l| DOCSTRING_PATTERN.is_match(l))
+                    .any(|l| doc_re.is_match(l))
             });
 
-        let is_pub = line.trim_start().starts_with("pub");
-
-        // Track brace depth to find the end of this function.
-        let start = i;
-        let mut depth: i32 = 0;
-        let mut found_open = false;
-
-        let end = 'outer: {
-            while i < lines.len() {
-                let Some(line_str) = lines.get(i).copied() else {
-                    break;
-                };
-                for ch in line_str.chars() {
-                    match ch {
-                        '{' => {
-                            depth += 1;
-                            found_open = true;
-                        }
-                        '}' => {
-                            depth -= 1;
-                            if found_open && depth == 0 {
-                                break 'outer i;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                i += 1;
+        // `is_pub`: language-specific visibility marker.
+        // Rust uses `pub`, TypeScript/C# use `export`/`public`.
+        let is_pub = match lang {
+            LanguageKind::Rust => line.trim_start().starts_with("pub"),
+            LanguageKind::TypeScript => {
+                let t = line.trim_start();
+                t.starts_with("export ") || t.starts_with("export\n")
             }
-            // If we never closed, use the last line we reached.
-            i.saturating_sub(1)
+            LanguageKind::CSharp => {
+                let t = line.trim_start();
+                t.starts_with("public ") || t.starts_with("public\n")
+            }
+            // Python/Go do not have a visibility prefix — everything is public
+            // by convention, so treat as public.
+            LanguageKind::Python | LanguageKind::Go | LanguageKind::Unknown => true,
         };
+
+        // End-of-function detection strategy depends on language:
+        // Python uses indent-based blocks; Rust/Go/TS/C# use braces.
+        let start = i;
+        let (end, next_i) = if lang == LanguageKind::Python {
+            find_python_function_end(&lines, start)
+        } else {
+            find_brace_function_end(&lines, start)
+        };
+        i = next_i + 1;
 
         measures.push(FunctionMeasure {
             line_range: (start, end),
             has_docstring,
             is_pub,
         });
-
-        i += 1;
     }
 
     measures
+}
+
+/// Brace-depth function-end finder (Rust / Go / TypeScript / C#).
+///
+/// Returns `(end_line_index, end_line_index)` — the line where the closing
+/// brace was found and the same value as the next iteration start.
+fn find_brace_function_end(lines: &[&str], start: usize) -> (usize, usize) {
+    let mut depth: i32 = 0;
+    let mut found_open = false;
+    let mut i = start;
+
+    loop {
+        let Some(line_str) = lines.get(i).copied() else {
+            break;
+        };
+        for ch in line_str.chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    found_open = true;
+                }
+                '}' => {
+                    depth -= 1;
+                    if found_open && depth == 0 {
+                        return (i, i);
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    // Never closed; use the last line reached.
+    let end = i.saturating_sub(1);
+    (end, end)
+}
+
+/// Indent-based function-end finder for Python.
+///
+/// Finds the last contiguous line at indentation strictly greater than the
+/// `def` line.  Returns `(end_line_index, end_line_index)`.
+fn find_python_function_end(lines: &[&str], start: usize) -> (usize, usize) {
+    let def_indent = lines
+        .get(start)
+        .map_or(0, |l| l.len() - l.trim_start().len());
+
+    let mut end = start;
+    let mut i = start + 1;
+
+    while i < lines.len() {
+        let Some(line) = lines.get(i).copied() else {
+            break;
+        };
+        // Blank lines are included in the function body.
+        if line.trim().is_empty() {
+            i += 1;
+            continue;
+        }
+        let indent = line.len() - line.trim_start().len();
+        if indent <= def_indent {
+            // De-indented back to or beyond the `def`: function is over.
+            break;
+        }
+        end = i;
+        i += 1;
+    }
+    (end, end)
 }
 
 /// Compute the coefficient of variation (`std_dev` / mean) for a slice of
