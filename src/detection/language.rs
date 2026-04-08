@@ -10,6 +10,8 @@ pub enum LanguageKind {
     Go,
     TypeScript,
     CSharp,
+    Zig,
+    Cpp,
     /// Not a language papertowel analyses structurally; lexical scan still runs.
     Unknown,
 }
@@ -24,6 +26,8 @@ impl LanguageKind {
             "go" => Self::Go,
             "ts" | "tsx" | "mts" => Self::TypeScript,
             "cs" => Self::CSharp,
+            "zig" => Self::Zig,
+            "cpp" | "cc" | "cxx" | "hpp" | "hxx" => Self::Cpp,
             _ => Self::Unknown,
         }
     }
@@ -54,6 +58,12 @@ impl LanguageKind {
             Self::CSharp => {
                 r"^\s*(?:(?:public|private|protected|internal|static|virtual|override|abstract|async|readonly|sealed|extern|new)\s+)+\w[\w<>\[\]]*\s+\w+\s*\("
             }
+            // Zig: optional `pub`, `fn` keyword
+            Self::Zig => r"^\s*(?:pub\s+)?fn\s+\w+",
+            // C++: optional storage/cv/virtual qualifiers, return type, function name, `(`
+            Self::Cpp => {
+                r"^\s*(?:(?:inline|static|virtual|constexpr|consteval|explicit|friend|override)\s+)*[\w:~*&<>\[\] ]+\s+[\w:~]+\s*\("
+            }
         }
     }
 
@@ -69,6 +79,10 @@ impl LanguageKind {
             Self::Go => r"^\s*//",
             // TypeScript: JSDoc `/** ... */` opening line
             Self::TypeScript => r"^\s*/\*\*",
+            // Zig: `///` doc comments
+            Self::Zig => r"^\s*///",
+            // C++: Doxygen `///`, `//!`, or `/** */` opening
+            Self::Cpp => r"^\s*(?://[/!]|/\*\*)",
         }
     }
 
@@ -77,6 +91,16 @@ impl LanguageKind {
     #[must_use]
     pub const fn hash_comments(self) -> bool {
         matches!(self, Self::Python)
+    }
+
+    /// Comment-line prefix used by this language for inline comments.
+    /// C++ `#` is a preprocessor directive, not a comment.
+    #[must_use]
+    pub const fn line_comment_prefix(self) -> &'static str {
+        match self {
+            Self::Python => "#",
+            _ => "//",
+        }
     }
 }
 
@@ -97,6 +121,11 @@ mod tests {
             LanguageKind::TypeScript
         );
         assert_eq!(LanguageKind::from_extension("cs"), LanguageKind::CSharp);
+        assert_eq!(LanguageKind::from_extension("zig"), LanguageKind::Zig);
+        assert_eq!(LanguageKind::from_extension("cpp"), LanguageKind::Cpp);
+        assert_eq!(LanguageKind::from_extension("cc"), LanguageKind::Cpp);
+        assert_eq!(LanguageKind::from_extension("cxx"), LanguageKind::Cpp);
+        assert_eq!(LanguageKind::from_extension("hpp"), LanguageKind::Cpp);
         assert_eq!(LanguageKind::from_extension("rb"), LanguageKind::Unknown);
         assert_eq!(LanguageKind::from_extension(""), LanguageKind::Unknown);
     }
@@ -108,6 +137,8 @@ mod tests {
         assert!(LanguageKind::Go.is_analysable());
         assert!(LanguageKind::TypeScript.is_analysable());
         assert!(LanguageKind::CSharp.is_analysable());
+        assert!(LanguageKind::Zig.is_analysable());
+        assert!(LanguageKind::Cpp.is_analysable());
         assert!(!LanguageKind::Unknown.is_analysable());
     }
 
@@ -119,6 +150,8 @@ mod tests {
             LanguageKind::Go,
             LanguageKind::TypeScript,
             LanguageKind::CSharp,
+            LanguageKind::Zig,
+            LanguageKind::Cpp,
             LanguageKind::Unknown,
         ] {
             let pattern = lang.fn_pattern();
@@ -138,6 +171,8 @@ mod tests {
             LanguageKind::Go,
             LanguageKind::TypeScript,
             LanguageKind::CSharp,
+            LanguageKind::Zig,
+            LanguageKind::Cpp,
             LanguageKind::Unknown,
         ] {
             let pattern = lang.doc_comment_pattern();
@@ -187,5 +222,16 @@ mod tests {
             "public async Task<int> ComputeAsync("
         ));
         assert!(check(LanguageKind::CSharp, "private static string Format("));
+
+        // Zig
+        assert!(check(LanguageKind::Zig, "pub fn compute(x: i32) i32 {"));
+        assert!(check(LanguageKind::Zig, "fn helper(allocator: std.mem.Allocator) !void {"));
+        assert!(!check(LanguageKind::Zig, "const x = fn_value;"));
+
+        // C++
+        assert!(check(LanguageKind::Cpp, "int compute(int x) {"));
+        assert!(check(LanguageKind::Cpp, "static void reset() {"));
+        assert!(check(LanguageKind::Cpp, "virtual bool isValid() const {"));
+        assert!(check(LanguageKind::Cpp, "inline std::string getName() const {"));
     }
 }

@@ -259,9 +259,15 @@ fn extract_function_measures_with(
                 let t = line.trim_start();
                 t.starts_with("public ") || t.starts_with("public\n")
             }
-            // Python/Go do not have a visibility prefix — everything is public
-            // by convention, so treat as public.
-            LanguageKind::Python | LanguageKind::Go | LanguageKind::Unknown => true,
+            // Zig: `pub fn` prefix
+            LanguageKind::Zig => line.trim_start().starts_with("pub "),
+            // C++: no canonical visibility prefix on free functions; public class
+            // methods use `public:` access specifiers elsewhere — treat as public.
+            // Python/Go: same rationale.
+            LanguageKind::Python
+            | LanguageKind::Go
+            | LanguageKind::Cpp
+            | LanguageKind::Unknown => true,
         };
 
         // End-of-function detection strategy depends on language:

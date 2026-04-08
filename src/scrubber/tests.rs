@@ -180,6 +180,18 @@ fn make_lang_test_config(lang: LanguageKind) -> Result<LangTestConfig, Papertowe
                     || line.contains(".Should().")
             },
         ),
+        LanguageKind::Zig => LangTestConfig::new(
+            r#"test\s+"([^"]+)""#,
+            |_| true,
+            |line| line.contains("try std.testing.expect") || line.contains("testing.expect"),
+        ),
+        LanguageKind::Cpp => LangTestConfig::new(
+            r"TEST(?:_F|_P)?\s*\(\s*\w+\s*,\s*(\w+)\s*\)",
+            |_| true,
+            |line| {
+                line.contains("EXPECT_") || line.contains("ASSERT_") || line.contains("CHECK(")
+            },
+        ),
         LanguageKind::Unknown => LangTestConfig::new(
             r"fn\s+([A-Za-z0-9_]+)",
             |name| name.starts_with("test_"),
