@@ -121,7 +121,7 @@ mod tests {
         };
         let high = StyleBaseline {
             avg_comment_density: 0.40,
-            ..low.clone()
+            ..low
         };
         assert!(
             high.comment_density_threshold() > low.comment_density_threshold(),

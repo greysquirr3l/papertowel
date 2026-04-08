@@ -349,7 +349,10 @@ fn call_scan(args: &Value) -> Result<Value> {
 
     let min_severity = parse_severity(min_severity_str)?;
 
-    let path = PathBuf::from(raw_path);
+    let path = match validate_mcp_path(raw_path) {
+        Ok(p) => p,
+        Err(msg) => return Ok(tool_error(msg)),
+    };
     if !path.exists() {
         return Ok(tool_error(format!("path does not exist: {raw_path}")));
     }
@@ -451,7 +454,10 @@ fn call_scrub(args: &Value) -> Result<Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow::anyhow!("invalid params: 'path' is required"))?;
 
-    let path = PathBuf::from(raw_path);
+    let path = match validate_mcp_path(raw_path) {
+        Ok(p) => p,
+        Err(msg) => return Ok(tool_error(msg)),
+    };
     if !path.exists() {
         return Ok(tool_error(format!("path does not exist: {raw_path}")));
     }
@@ -574,4 +580,130 @@ fn tool_error(message: impl Into<String>) -> Value {
         "content": [{ "type": "text", "text": message.into() }],
         "isError": true
     })
+}
+
+/// Validate that `raw_path` is safe for the MCP server to operate on.
+///
+/// Rejects:
+/// - Paths containing null bytes (potential injection).
+/// - Paths that canonicalize to well-known sensitive system directories
+///   (`/etc`, `/proc`, `/sys`, `/dev`) or common secret-bearing home
+///   sub-directories (`.ssh`, `.gnupg`, `.aws`, `.config/gcloud`).
+///
+/// Returns the canonicalized [`PathBuf`] on success.
+fn validate_mcp_path(raw_path: &str) -> Result<PathBuf, String> {
+    const DENIED_PREFIXES: &[&str] = &[
+        "/etc",
+        "/private/etc", // macOS: /etc is a symlink to /private/etc
+        "/proc",
+        "/sys",
+        "/dev",
+        "/private/tmp/../etc", // paranoia
+    ];
+    const DENIED_SEGMENTS: &[&str] = &[
+        ".ssh",
+        ".gnupg",
+        ".pgp",
+        ".aws",
+        ".azure",
+        ".config/gcloud",
+        ".kube",
+        "Library/Keychains",
+        "Library/Credentials",
+    ];
+
+    // Null-byte check.
+    if raw_path.contains('\0') {
+        return Err("path contains a null byte".to_owned());
+    }
+
+    let path = PathBuf::from(raw_path);
+
+    // Canonicalize to resolve `..` and symlinks before the sensitive-prefix check.
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("path is invalid or does not exist: {e}"))?;
+
+    for denied in DENIED_PREFIXES {
+        if canonical.starts_with(denied) {
+            return Err(format!(
+                "scanning '{denied}' is not permitted by the MCP server"
+            ));
+        }
+    }
+
+    let canonical_str = canonical.to_string_lossy();
+    for segment in DENIED_SEGMENTS {
+        if canonical_str.contains(segment) {
+            return Err(format!(
+                "path contains sensitive segment '{segment}'; scanning is not permitted"
+            ));
+        }
+    }
+
+    Ok(canonical)
+}
+
+#[cfg(test)]
+#[expect(clippy::expect_used, reason = "test assertions")]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::validate_mcp_path;
+
+    #[test]
+    fn valid_project_path_passes() {
+        let dir = TempDir::new().expect("tempdir");
+        let result = validate_mcp_path(dir.path().to_str().expect("utf8 path"));
+        assert!(result.is_ok(), "a normal temp dir should pass: {result:?}");
+    }
+
+    #[test]
+    fn null_byte_is_rejected() {
+        let result = validate_mcp_path("/tmp/foo\0bar");
+        assert!(result.is_err());
+        assert!(result.err().expect("err").contains("null byte"));
+    }
+
+    #[test]
+    fn etc_prefix_is_rejected() {
+        // /etc/hosts exists on both Linux and macOS (/etc → /private/etc on macOS).
+        let result = validate_mcp_path("/etc/hosts");
+        assert!(result.is_err());
+        let msg = result.err().expect("err");
+        // Could be "not permitted" (prefix matched) or "does not exist" on unusual systems.
+        assert!(
+            msg.contains("not permitted") || msg.contains("does not exist"),
+            "unexpected msg: {msg}"
+        );
+    }
+
+    #[test]
+    fn ssh_segment_is_rejected() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+        let ssh_path = format!("{home}/.ssh");
+        // Only test if the directory actually exists so canonicalize succeeds.
+        if std::path::Path::new(&ssh_path).exists() {
+            let result = validate_mcp_path(&ssh_path);
+            assert!(result.is_err());
+            let msg = result.err().expect("err");
+            assert!(msg.contains(".ssh"), "msg: {msg}");
+        }
+    }
+
+    #[test]
+    fn nonexistent_path_is_rejected() {
+        let result = validate_mcp_path("/tmp/this-path-should-not-exist-papertowel-test-12345");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn nested_project_under_home_passes() {
+        let dir = TempDir::new().expect("tempdir");
+        fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
+        let result = validate_mcp_path(dir.path().to_str().expect("utf8 path"));
+        assert!(result.is_ok());
+    }
 }

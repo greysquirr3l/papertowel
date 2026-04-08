@@ -40,13 +40,14 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 
     // Load personalised style baseline if one exists.
     let baseline = StyleBaseline::load(&root).ok().flatten();
-    let comment_config = baseline.as_ref().map_or_else(
-        CommentDetectionConfig::default,
-        |b| CommentDetectionConfig {
-            high_density_threshold: b.comment_density_threshold(),
-            ..CommentDetectionConfig::default()
-        },
-    );
+    let comment_config = baseline
+        .as_ref()
+        .map_or_else(CommentDetectionConfig::default, |b| {
+            CommentDetectionConfig {
+                high_density_threshold: b.comment_density_threshold(),
+                ..CommentDetectionConfig::default()
+            }
+        });
 
     let min_severity = args.severity.map(|s| match s {
         SeverityArg::Low => Severity::Low,
@@ -127,7 +128,11 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>, comment_config: CommentDetectionConfig) {
+fn run_file_detectors(
+    path: &Path,
+    findings: &mut Vec<Finding>,
+    comment_config: CommentDetectionConfig,
+) {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -136,7 +141,9 @@ fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>, comment_config: 
 
     if lang.is_analysable() {
         run_detector(findings, || lexical::detect_file(path));
-        run_detector(findings, || comments::detect_file_with_config(path, comment_config));
+        run_detector(findings, || {
+            comments::detect_file_with_config(path, comment_config)
+        });
         run_detector(findings, || structure::detect_file_for_language(path, lang));
         run_detector(findings, || tests::detect_file_for_language(path, lang));
         if lang == LanguageKind::Rust {
@@ -157,7 +164,9 @@ fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>, comment_config: 
 }
 
 fn run_repo_detectors(root: &Path, findings: &mut Vec<Finding>) {
-    run_detector(findings, || crate::scrubber::commit_pattern::detect_repo(root));
+    run_detector(findings, || {
+        crate::scrubber::commit_pattern::detect_repo(root)
+    });
     run_detector(findings, || workflow::detect_repo(root));
     run_detector(findings, || promotion::detect_repo(root));
     run_detector(findings, || metadata::detect_repo(root));
