@@ -11,7 +11,7 @@ use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "lexical";
 
-const SLOP_PATTERNS: [&str; 32] = [
+pub const SLOP_PATTERNS: [&str; 32] = [
     "robust",
     "comprehensive",
     "streamlined",

@@ -1,5 +1,7 @@
 # papertowel
 
+![Papertowl](assets/img/papertowel_logo.png)
+
 Cleaning up the slop.
 
 ---
@@ -10,7 +12,7 @@ Yeah. This tool exists because of them.
 
 **papertowel** detects and removes the stylistic fingerprints that scream "an AI wrote this." It's a specialized linter for the tells that have become forensic evidence in spaces where AI-assisted development is treated as original sin rather than tool use.
 
-The irony of using AI to build a tool that hides AI involvement is not lost on us. We're leaning into it.
+The irony of using AI to build a tool that hides AI involvement is not lost on me. I'm leaning into it.
 
 ## What it does
 

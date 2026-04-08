@@ -1,3 +1,4 @@
+mod learn;
 mod profile;
 pub mod report;
 mod scan;
@@ -39,7 +40,22 @@ enum Command {
     Scrub(scrub::ScrubArgs),
     Wring(WringArgs),
     Clean(CleanArgs),
+    Learn(LearnArgs),
     Profile(ProfileArgs),
+}
+
+#[derive(Debug, Args)]
+struct LearnArgs {
+    #[command(subcommand)]
+    command: LearnCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum LearnCommand {
+    /// Analyse a repository and write a personalised style baseline.
+    Repo(learn::LearnArgs),
+    /// Display the existing style baseline for a repository.
+    Show(learn::LearnShowArgs),
 }
 
 #[derive(Debug, Args)]
@@ -98,6 +114,10 @@ fn dispatch(cli: Cli) -> Result<()> {
             WringCommand::Queue(queue_args) => wring::handle_queue(queue_args),
             WringCommand::Drip(drip_args) => wring::handle_drip(&drip_args),
             WringCommand::Status(status_args) => wring::handle_status(status_args),
+        },
+        Command::Learn(args) => match args.command {
+            LearnCommand::Repo(repo_args) => learn::handle_learn(&repo_args),
+            LearnCommand::Show(show_args) => learn::handle_show(&show_args),
         },
         Command::Clean(args) => {
             tracing::info!(path = %args.path, dry_run = args.dry_run, "clean placeholder");

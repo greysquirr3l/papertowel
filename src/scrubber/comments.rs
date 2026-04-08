@@ -68,10 +68,17 @@ pub struct CommentTransformResult {
 }
 
 pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
+    detect_file_with_config(path, CommentDetectionConfig::default())
+}
+
+pub fn detect_file_with_config(
+    path: impl AsRef<Path>,
+    config: CommentDetectionConfig,
+) -> Result<Vec<Finding>, PapertowelError> {
     let path = path.as_ref();
     let content =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
-    detect_in_text(path, &content, CommentDetectionConfig::default())
+    detect_in_text(path, &content, config)
 }
 
 #[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]

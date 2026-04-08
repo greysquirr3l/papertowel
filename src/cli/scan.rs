@@ -13,6 +13,8 @@ use crate::cli::report::{
 use crate::config::{build_ignore_matcher, is_ignored, load_config};
 use crate::detection::finding::{Finding, Severity};
 use crate::detection::language::LanguageKind;
+use crate::learning::StyleBaseline;
+use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::{
     comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
     structure, tests, workflow,
@@ -35,6 +37,16 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let config = load_config(&root).unwrap_or_default();
     let ignore = build_ignore_matcher(&root, &config)?;
+
+    // Load personalised style baseline if one exists.
+    let baseline = StyleBaseline::load(&root).ok().flatten();
+    let comment_config = baseline.as_ref().map_or_else(
+        CommentDetectionConfig::default,
+        |b| CommentDetectionConfig {
+            high_density_threshold: b.comment_density_threshold(),
+            ..CommentDetectionConfig::default()
+        },
+    );
 
     let min_severity = args.severity.map(|s| match s {
         SeverityArg::Low => Severity::Low,
@@ -75,7 +87,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
             .and_then(|n| n.to_str())
             .unwrap_or_default()
             .to_lowercase();
-        run_file_detectors(path, &mut findings);
+        run_file_detectors(path, &mut findings, comment_config);
     }
 
     bar.finish_and_clear();
@@ -115,7 +127,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>) {
+fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>, comment_config: CommentDetectionConfig) {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -124,7 +136,7 @@ fn run_file_detectors(path: &Path, findings: &mut Vec<Finding>) {
 
     if lang.is_analysable() {
         run_detector(findings, || lexical::detect_file(path));
-        run_detector(findings, || comments::detect_file(path));
+        run_detector(findings, || comments::detect_file_with_config(path, comment_config));
         run_detector(findings, || structure::detect_file_for_language(path, lang));
         run_detector(findings, || tests::detect_file_for_language(path, lang));
         if lang == LanguageKind::Rust {
