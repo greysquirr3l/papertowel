@@ -269,7 +269,11 @@ mod tests {
     fn commit_stats_default_is_zero() {
         let cs = CommitStats::default();
         assert_eq!(cs.commits_analysed, 0);
-        assert_eq!(cs.weekday_distribution, [0.0_f32; 7]);
+        assert!(
+            cs.weekday_distribution
+                .iter()
+                .all(|&f| f.abs() < f32::EPSILON)
+        );
         assert!((cs.conventional_commit_rate - 0.0).abs() < f32::EPSILON);
     }
 

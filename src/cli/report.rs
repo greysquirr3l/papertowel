@@ -55,25 +55,108 @@ pub fn build_summary(findings: &[Finding]) -> ScanSummary {
 
 // ─── Text formatting ──────────────────────────────────────────────────────────
 
-/// Write a human-readable scan report to `out`.  Findings are grouped by file
-/// and sorted high→low within each group.
+/// ANSI colour helpers — all no-ops when `use_color` is false.
+struct Ansi {
+    use_color: bool,
+}
+
+impl Ansi {
+    const RESET: &'static str = "\x1b[0m";
+    const BOLD: &'static str = "\x1b[1m";
+    const DIM: &'static str = "\x1b[2m";
+    const RED: &'static str = "\x1b[31m";
+    const YELLOW: &'static str = "\x1b[33m";
+    const CYAN: &'static str = "\x1b[36m";
+    const GREEN: &'static str = "\x1b[32m";
+
+    fn wrap<'a>(&self, codes: &'static str, s: &'a str) -> std::borrow::Cow<'a, str> {
+        if self.use_color {
+            format!("{codes}{s}{reset}", reset = Self::RESET).into()
+        } else {
+            s.into()
+        }
+    }
+
+    fn bold<'a>(&self, s: &'a str) -> std::borrow::Cow<'a, str> {
+        self.wrap(Self::BOLD, s)
+    }
+
+    fn dim<'a>(&self, s: &'a str) -> std::borrow::Cow<'a, str> {
+        self.wrap(Self::DIM, s)
+    }
+
+    fn severity_badge(&self, s: Severity) -> String {
+        let label = match s {
+            Severity::High => "HIGH",
+            Severity::Medium => " MED",
+            Severity::Low => " LOW",
+        };
+        if self.use_color {
+            let color = match s {
+                Severity::High => Self::RED,
+                Severity::Medium => Self::YELLOW,
+                Severity::Low => Self::CYAN,
+            };
+            format!("{}{}{}{}", Self::BOLD, color, label, Self::RESET)
+        } else {
+            label.to_owned()
+        }
+    }
+
+    fn ai_prob_color(&self, prob: f32) -> &'static str {
+        if !self.use_color {
+            return "";
+        }
+        if prob >= 0.75 {
+            Self::RED
+        } else if prob >= 0.50 {
+            Self::YELLOW
+        } else {
+            Self::GREEN
+        }
+    }
+}
+
+/// Write a human-readable scan report to `out`.
+///
+/// Pass `use_color = true` when the sink is an interactive terminal.
+/// Findings are grouped by file and sorted high→low within each group.
 pub fn write_text_report(
     out: &mut impl Write,
     findings: &[Finding],
     summary: &ScanSummary,
+    use_color: bool,
 ) -> io::Result<()> {
+    let a = Ansi { use_color };
+
     if findings.is_empty() {
-        writeln!(out, "No findings.")?;
-        writeln!(out)?;
-        writeln!(
-            out,
-            "AI probability: {:.0}%",
-            summary.ai_probability * 100.0
-        )?;
+        let pct = summary.ai_probability * 100.0;
+        let color = a.ai_prob_color(summary.ai_probability);
+        if use_color {
+            writeln!(
+                out,
+                "{}No findings.{}  AI likelihood {}{}{:.0}%{}",
+                Ansi::BOLD,
+                Ansi::RESET,
+                color,
+                Ansi::BOLD,
+                pct,
+                Ansi::RESET
+            )?;
+        } else {
+            writeln!(out, "No findings.  AI likelihood {pct:.0}%")?;
+        }
         return Ok(());
     }
 
-    // Group by file path, preserving insertion order via BTreeMap
+    write_text_findings(out, findings, &a)?;
+    write_text_summary(out, summary, &a)?;
+    writeln!(out, "{}", a.dim(&"─".repeat(52)))?;
+
+    Ok(())
+}
+
+fn write_text_findings(out: &mut impl Write, findings: &[Finding], a: &Ansi) -> io::Result<()> {
     let mut by_file: std::collections::BTreeMap<String, Vec<&Finding>> =
         std::collections::BTreeMap::new();
     for f in findings {
@@ -82,43 +165,100 @@ pub fn write_text_report(
             .or_default()
             .push(f);
     }
-
     for (file, mut group) in by_file {
-        writeln!(out, "─── {file}")?;
-        // Sort within the group: High > Medium > Low
-        group.sort_by(|a, b| b.severity.cmp(&a.severity));
+        let display_file = if file == "." {
+            "(repo root)".to_owned()
+        } else {
+            file.clone()
+        };
+        writeln!(out, "{}", a.bold(&display_file))?;
+        group.sort_by(|x, y| y.severity.cmp(&x.severity));
         for f in group {
-            let loc = f
-                .line_range
-                .map_or_else(String::new, |r| format!(":{}", r.start));
-            writeln!(
-                out,
-                "  [{sev}] {cat} — {desc}",
-                sev = severity_label(f.severity),
-                cat = category_label(f.category),
-                desc = f.description,
-            )?;
-            if !loc.is_empty() {
-                writeln!(out, "         at {file}{loc}")?;
+            let badge = a.severity_badge(f.severity);
+            let cat = category_label(f.category);
+            writeln!(out, "  [{badge}] {cat} — {desc}", desc = f.description)?;
+            if let Some(range) = f.line_range {
+                writeln!(
+                    out,
+                    "         {}",
+                    a.dim(&format!("at {file}:{}", range.start))
+                )?;
             }
             if let Some(ref suggestion) = f.suggestion {
-                writeln!(out, "         hint: {suggestion}")?;
+                writeln!(out, "         {} {suggestion}", a.dim("→"))?;
             }
         }
         writeln!(out)?;
     }
+    Ok(())
+}
 
-    writeln!(out, "Summary")?;
-    writeln!(out, "  Total findings : {}", summary.total_findings)?;
-    for (sev, count) in &summary.by_severity {
-        writeln!(out, "  {sev:8} : {count}")?;
+fn write_text_summary(out: &mut impl Write, summary: &ScanSummary, a: &Ansi) -> io::Result<()> {
+    let high = summary.by_severity.get("HIGH").copied().unwrap_or(0);
+    let med = summary.by_severity.get("MED").copied().unwrap_or(0);
+    let low = summary.by_severity.get("LOW").copied().unwrap_or(0);
+    let pct = summary.ai_probability * 100.0;
+    let pct_color = a.ai_prob_color(summary.ai_probability);
+
+    writeln!(out, "{}", a.dim(&"─".repeat(52)))?;
+
+    if a.use_color {
+        write!(
+            out,
+            "  {}{} findings{}  {}  ",
+            Ansi::BOLD,
+            summary.total_findings,
+            Ansi::RESET,
+            a.dim("·"),
+        )?;
+        if high > 0 {
+            write!(
+                out,
+                "{}{}HIGH {high}{}  ",
+                Ansi::BOLD,
+                Ansi::RED,
+                Ansi::RESET
+            )?;
+        }
+        if med > 0 {
+            write!(
+                out,
+                "{}{}MED {med}{}  ",
+                Ansi::BOLD,
+                Ansi::YELLOW,
+                Ansi::RESET
+            )?;
+        }
+        if low > 0 {
+            write!(
+                out,
+                "{}{}LOW {low}{}  ",
+                Ansi::BOLD,
+                Ansi::CYAN,
+                Ansi::RESET
+            )?;
+        }
+        writeln!(
+            out,
+            "{}  AI likelihood {}{}{pct:.0}%{}",
+            a.dim("·"),
+            pct_color,
+            Ansi::BOLD,
+            Ansi::RESET
+        )?;
+    } else {
+        write!(out, "  {} findings  ·  ", summary.total_findings)?;
+        if high > 0 {
+            write!(out, "HIGH {high}  ")?;
+        }
+        if med > 0 {
+            write!(out, "MED {med}  ")?;
+        }
+        if low > 0 {
+            write!(out, "LOW {low}  ")?;
+        }
+        writeln!(out, "·  AI likelihood {pct:.0}%")?;
     }
-    writeln!(
-        out,
-        "AI probability : {:.0}%",
-        summary.ai_probability * 100.0
-    )?;
-
     Ok(())
 }
 
@@ -248,7 +388,7 @@ mod tests {
     fn empty_findings_produces_no_finding_output() {
         let summary = build_summary(&[]);
         let mut out = Vec::new();
-        write_text_report(&mut out, &[], &summary).expect("write");
+        write_text_report(&mut out, &[], &summary, false).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("No findings."));
     }
@@ -262,7 +402,7 @@ mod tests {
         ];
         let summary = build_summary(&findings);
         let mut out = Vec::new();
-        write_text_report(&mut out, &findings, &summary).expect("write");
+        write_text_report(&mut out, &findings, &summary, false).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("src/main.rs"));
         assert!(text.contains("src/lib.rs"));
@@ -315,8 +455,14 @@ mod tests {
         let mut out = Vec::new();
         write_github_actions_report(&mut out, &findings, &summary).expect("write");
         let text = String::from_utf8(out).expect("utf8");
-        assert!(text.contains("::error file=src/main.rs"), "expected ::error annotation");
-        assert!(text.contains("::notice title=papertowel summary::"), "expected summary notice");
+        assert!(
+            text.contains("::error file=src/main.rs"),
+            "expected ::error annotation"
+        );
+        assert!(
+            text.contains("::notice title=papertowel summary::"),
+            "expected summary notice"
+        );
     }
 
     #[test]
@@ -327,6 +473,9 @@ mod tests {
         let mut out = Vec::new();
         write_github_actions_report(&mut out, &[f], &summary).expect("write");
         let text = String::from_utf8(out).expect("utf8");
-        assert!(text.contains("100%25 AI-generated"), "percent must be escaped");
+        assert!(
+            text.contains("100%25 AI-generated"),
+            "percent must be escaped"
+        );
     }
 }

@@ -129,10 +129,11 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 
     let summary = build_summary(&findings);
     let stdout = io::stdout();
+    let use_color = std::io::IsTerminal::is_terminal(&stdout);
     let mut out = BufWriter::new(stdout.lock());
 
     match effective_format {
-        OutputFormat::Text => write_text_report(&mut out, &findings, &summary)?,
+        OutputFormat::Text => write_text_report(&mut out, &findings, &summary, use_color)?,
         OutputFormat::Json => write_json_report(&mut out, &findings, &summary)?,
         OutputFormat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
     }
