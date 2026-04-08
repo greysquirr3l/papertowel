@@ -1,0 +1,13 @@
+pub mod comments;
+pub mod commit_pattern;
+pub mod idiom_mismatch;
+pub mod lexical;
+pub mod maintenance;
+pub mod metadata;
+pub mod name_credibility;
+pub mod promotion;
+pub mod prompt;
+pub mod readme;
+pub mod structure;
+pub mod tests;
+pub mod workflow;

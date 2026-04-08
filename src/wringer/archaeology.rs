@@ -1,0 +1,1 @@
+pub const COMPONENT_NAME: &str = "archaeology";

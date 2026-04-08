@@ -1,0 +1,1 @@
+pub const DETECTOR_NAME: &str = "maintenance";
