@@ -153,7 +153,8 @@ impl PersonaProfile {
 
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, PapertowelError> {
         let path = path.as_ref();
-        let raw = fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
+        let raw =
+            fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
         Self::from_toml_str(&raw)
     }
 
@@ -188,7 +189,10 @@ impl PersonaProfile {
             "archaeology.todo_inject_rate",
             self.archaeology.todo_inject_rate,
         )?;
-        validate_probability("archaeology.dead_code_rate", self.archaeology.dead_code_rate)?;
+        validate_probability(
+            "archaeology.dead_code_rate",
+            self.archaeology.dead_code_rate,
+        )?;
 
         if self.schedule.avg_commits_per_session == 0 {
             return Err(PapertowelError::Validation(

@@ -22,6 +22,8 @@ pub enum PapertowelError {
     TomlDeserialize(#[from] toml::de::Error),
     #[error("failed to serialize TOML: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
+    #[error("failed to process JSON: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl PapertowelError {
