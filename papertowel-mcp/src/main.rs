@@ -664,7 +664,7 @@ mod tests {
     fn null_byte_is_rejected() {
         let result = validate_mcp_path("/tmp/foo\0bar");
         assert!(result.is_err());
-        assert!(result.err().expect("err").contains("null byte"));
+        assert!(result.expect_err("err").contains("null byte"));
     }
 
     #[test]
@@ -672,7 +672,7 @@ mod tests {
         // /etc/hosts exists on both Linux and macOS (/etc → /private/etc on macOS).
         let result = validate_mcp_path("/etc/hosts");
         assert!(result.is_err());
-        let msg = result.err().expect("err");
+        let msg = result.expect_err("err");
         // Could be "not permitted" (prefix matched) or "does not exist" on unusual systems.
         assert!(
             msg.contains("not permitted") || msg.contains("does not exist"),
@@ -688,7 +688,7 @@ mod tests {
         if std::path::Path::new(&ssh_path).exists() {
             let result = validate_mcp_path(&ssh_path);
             assert!(result.is_err());
-            let msg = result.err().expect("err");
+            let msg = result.expect_err("err");
             assert!(msg.contains(".ssh"), "msg: {msg}");
         }
     }
