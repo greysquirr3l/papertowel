@@ -8,7 +8,9 @@ use crate::domain::errors::PapertowelError;
 
 const CORALINE_DIR: &str = ".coraline";
 const CORALINE_FILE_LIST_CANDIDATES: [&str; 2] = ["files.list", "files.txt"];
-const SOURCE_EXTENSIONS: [&str; 10] = ["rs", "go", "py", "ts", "tsx", "js", "jsx", "cs", "zig", "md"];
+const SOURCE_EXTENSIONS: [&str; 10] = [
+    "rs", "go", "py", "ts", "tsx", "js", "jsx", "cs", "zig", "md",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepoAnalysisBackend {
@@ -38,7 +40,9 @@ pub fn resolve_backend(repo_root: impl AsRef<Path>) -> BackendSelection {
     }
 }
 
-pub fn collect_candidate_files(repo_root: impl AsRef<Path>) -> Result<Vec<PathBuf>, PapertowelError> {
+pub fn collect_candidate_files(
+    repo_root: impl AsRef<Path>,
+) -> Result<Vec<PathBuf>, PapertowelError> {
     let repo_root = repo_root.as_ref();
     let selection = resolve_backend(repo_root);
 
@@ -116,7 +120,9 @@ fn scan_repo_filesystem(repo_root: &Path) -> Result<Vec<PathBuf>, PapertowelErro
 fn is_ignored_dir(path: &Path) -> bool {
     path.components().any(|component| {
         let name = component.as_os_str();
-        name == OsStr::new(".git") || name == OsStr::new(CORALINE_DIR) || name == OsStr::new("target")
+        name == OsStr::new(".git")
+            || name == OsStr::new(CORALINE_DIR)
+            || name == OsStr::new("target")
     })
 }
 
@@ -131,91 +137,53 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{collect_candidate_files, resolve_backend, RepoAnalysisBackend};
+    use super::{RepoAnalysisBackend, collect_candidate_files, resolve_backend};
 
     #[test]
-    fn resolve_backend_prefers_coraline_when_present() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn resolve_backend_prefers_coraline_when_present() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
 
         let coraline_dir = tmp.path().join(".coraline");
-        let created = fs::create_dir_all(&coraline_dir);
-        assert!(created.is_ok());
+        fs::create_dir_all(&coraline_dir)?;
 
         let selection = resolve_backend(tmp.path());
         assert_eq!(selection.backend, RepoAnalysisBackend::CoralineIndex);
+        Ok(())
     }
 
     #[test]
-    fn collect_candidate_files_falls_back_to_filesystem_scan() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn collect_candidate_files_falls_back_to_filesystem_scan()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
 
-        let write_result = fs::write(tmp.path().join("main.rs"), "fn main() {}\n");
-        assert!(write_result.is_ok());
+        fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
 
-        let files = collect_candidate_files(tmp.path());
-        assert!(files.is_ok());
-        let files = match files {
-            Ok(files) => files,
-            Err(error) => panic!("unexpected collection error: {error}"),
-        };
-
+        let files = collect_candidate_files(tmp.path())?;
         assert_eq!(files.len(), 1);
-        let first = files.first();
-        assert!(first.is_some());
-        let first = match first {
-            Some(first) => first,
-            None => panic!("expected one file"),
-        };
+        let first = files.first().ok_or("expected one file")?;
         assert!(first.ends_with("main.rs"));
+        Ok(())
     }
 
     #[test]
-    fn collect_candidate_files_uses_coraline_manifest_when_available() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn collect_candidate_files_uses_coraline_manifest_when_available()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
 
         let src_path = tmp.path().join("src");
-        let created_src = fs::create_dir_all(&src_path);
-        assert!(created_src.is_ok());
-        let write_source = fs::write(src_path.join("lib.rs"), "pub fn x() {}\n");
-        assert!(write_source.is_ok());
+        fs::create_dir_all(&src_path)?;
+        fs::write(src_path.join("lib.rs"), "pub fn x() {}\n")?;
 
         let coraline_dir = tmp.path().join(".coraline");
-        let created_coraline = fs::create_dir_all(&coraline_dir);
-        assert!(created_coraline.is_ok());
+        fs::create_dir_all(&coraline_dir)?;
 
         let manifest = "src/lib.rs\n# comment\n\n";
-        let write_manifest = fs::write(coraline_dir.join("files.list"), manifest);
-        assert!(write_manifest.is_ok());
+        fs::write(coraline_dir.join("files.list"), manifest)?;
 
-        let files = collect_candidate_files(tmp.path());
-        assert!(files.is_ok());
-        let files = match files {
-            Ok(files) => files,
-            Err(error) => panic!("unexpected collection error: {error}"),
-        };
-
+        let files = collect_candidate_files(tmp.path())?;
         assert_eq!(files.len(), 1);
-        let first = files.first();
-        assert!(first.is_some());
-        let first = match first {
-            Some(first) => first,
-            None => panic!("expected one file"),
-        };
+        let first = files.first().ok_or("expected one file")?;
         assert!(first.ends_with("lib.rs"));
+        Ok(())
     }
 }

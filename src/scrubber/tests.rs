@@ -154,21 +154,23 @@ mod tests {
     }
 
     #[test]
-	fn test_shape_detector_ignores_varied_tests() -> Result<(), Box<dyn std::error::Error>> {
-		let content = "\
+    fn test_shape_detector_ignores_varied_tests() -> Result<(), Box<dyn std::error::Error>> {
+        let content = "\
 fn test_parse_valid() { assert!(true); }\n\
 fn test_parse_invalid() { assert!(true); }\n\
 fn test_roundtrip_csv() { assert!(true); }\n\
 fn test_roundtrip_json() { assert!(true); }\n\
 ";
-		let findings = detect_in_text("tests/mod.rs", content, TestShapeDetectionConfig::default())?;
-		assert!(findings.is_empty());
-		Ok(())
-	}
+        let findings =
+            detect_in_text("tests/mod.rs", content, TestShapeDetectionConfig::default())?;
+        assert!(findings.is_empty());
+        Ok(())
+    }
 
-	#[test]
-	fn test_shape_detector_flags_repeated_template_style() -> Result<(), Box<dyn std::error::Error>> {
-		let content = "\
+    #[test]
+    fn test_shape_detector_flags_repeated_template_style() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let content = "\
 fn test_case_001() { assert_eq!(1, 1); }\n\
 fn test_case_002() { assert_eq!(1, 1); }\n\
 fn test_case_003() { assert_eq!(1, 1); }\n\
@@ -177,8 +179,12 @@ fn test_case_005() { assert_eq!(1, 1); }\n\
 fn test_case_006() { assert_eq!(1, 1); }\n\
 ";
 
-		let findings = detect_in_text("tests/generated.rs", content, TestShapeDetectionConfig::default())?;
-		assert_eq!(findings.len(), 1);
-		Ok(())
-	}
+        let findings = detect_in_text(
+            "tests/generated.rs",
+            content,
+            TestShapeDetectionConfig::default(),
+        )?;
+        assert_eq!(findings.len(), 1);
+        Ok(())
+    }
 }

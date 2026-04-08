@@ -125,24 +125,13 @@ mod tests {
     };
 
     #[test]
-    fn initialize_worktree_creates_worktree_and_branch() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn initialize_worktree_creates_worktree_and_branch() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
 
         let repository_root = tmp.path().join("repo");
-        let create_repo_dir = fs::create_dir_all(&repository_root);
-        assert!(create_repo_dir.is_ok());
+        fs::create_dir_all(&repository_root)?;
 
-        let repository = init_repository_with_initial_commit(&repository_root);
-        assert!(repository.is_ok());
-        let repository = match repository {
-            Ok(repository) => repository,
-            Err(error) => panic!("failed to initialize repository: {error}"),
-        };
+        let repository = init_repository_with_initial_commit(&repository_root)?;
 
         let worktree_path = tmp.path().join("public-worktree");
         let spec = WorktreeSpec {
@@ -151,13 +140,7 @@ mod tests {
             path: worktree_path.clone(),
         };
 
-        let status = initialize_worktree(&repository_root, &spec);
-        assert!(status.is_ok());
-        let status = match status {
-            Ok(status) => status,
-            Err(error) => panic!("unexpected worktree init error: {error}"),
-        };
-
+        let status = initialize_worktree(&repository_root, &spec)?;
         assert!(status.exists);
         assert!(worktree_path.exists());
         assert!(
@@ -165,44 +148,31 @@ mod tests {
                 .find_branch("public", git2::BranchType::Local)
                 .is_ok()
         );
+        Ok(())
     }
 
     #[test]
-    fn remove_worktree_returns_false_when_missing() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn remove_worktree_returns_false_when_missing() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
 
         let repository_root = tmp.path().join("repo");
-        let create_repo_dir = fs::create_dir_all(&repository_root);
-        assert!(create_repo_dir.is_ok());
+        fs::create_dir_all(&repository_root)?;
 
-        let repository = init_repository_with_initial_commit(&repository_root);
-        assert!(repository.is_ok());
+        init_repository_with_initial_commit(&repository_root)?;
 
-        let removed = remove_worktree(&repository_root, "missing");
-        assert!(removed.is_ok());
-        assert!(!matches!(removed, Ok(true)));
+        let removed = remove_worktree(&repository_root, "missing")?;
+        assert!(!removed);
+        Ok(())
     }
 
     #[test]
-    fn status_reports_nonexistent_worktree() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn status_reports_nonexistent_worktree() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
 
         let repository_root = tmp.path().join("repo");
-        let create_repo_dir = fs::create_dir_all(&repository_root);
-        assert!(create_repo_dir.is_ok());
+        fs::create_dir_all(&repository_root)?;
 
-        let repository = init_repository_with_initial_commit(&repository_root);
-        assert!(repository.is_ok());
+        init_repository_with_initial_commit(&repository_root)?;
 
         let spec = WorktreeSpec {
             name: String::from("public"),
@@ -210,14 +180,9 @@ mod tests {
             path: tmp.path().join("public-worktree"),
         };
 
-        let status = status_worktree(&repository_root, &spec);
-        assert!(status.is_ok());
-        let status = match status {
-            Ok(status) => status,
-            Err(error) => panic!("unexpected status error: {error}"),
-        };
-
+        let status = status_worktree(&repository_root, &spec)?;
         assert!(!status.exists);
+        Ok(())
     }
 
     fn init_repository_with_initial_commit(path: &Path) -> Result<Repository, git2::Error> {
@@ -226,7 +191,7 @@ mod tests {
             .map_err(|error| git2::Error::from_str(&error.to_string()))?;
 
         let mut index = repository.index()?;
-        index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
+        index.add_all(std::iter::once(&"*"), IndexAddOption::DEFAULT, None)?;
         index.write()?;
 
         let tree_oid = index.write_tree()?;

@@ -117,7 +117,7 @@ pub fn collect_pending_commits(
 
         let commit = repo.find_commit(oid)?;
         let changed_files = changed_files_for_commit(&repo, &commit)?;
-        let timestamp = DateTime::from_timestamp(commit.time().seconds(), 0).unwrap_or(Utc::now());
+        let timestamp = DateTime::from_timestamp(commit.time().seconds(), 0).unwrap_or_else(Utc::now);
 
         commits.push(PendingCommit {
             oid: oid.to_string(),
@@ -311,7 +311,9 @@ fn squash_groups<'a>(session: &[&'a PendingCommit]) -> Vec<Vec<&'a PendingCommit
 /// - Everything else → `Replay`
 fn classify_action(group: &[&PendingCommit]) -> ReplayAction {
     if group.len() == 1 {
-        let commit = group[0];
+        let Some(commit) = group.first() else {
+            return ReplayAction::Replay;
+        };
         // Count distinct top-level paths (module roots).
         let roots: HashSet<&str> = commit
             .changed_files
@@ -407,6 +409,7 @@ fn time_in_window(t: NaiveTime, window: &ActiveWindow) -> bool {
 
 /// Compute a jitter duration in minutes based on persona session variance.
 /// Returns a `Duration` between `avg/2` and `avg * (1 + variance)`.
+#[expect(clippy::cast_possible_truncation, reason = "jitter is bounded by session minutes, fits i64")]
 fn jitter_minutes(schedule: &crate::profile::persona::PersonaSchedule) -> Duration {
     let avg = i64::from(schedule.avg_commits_per_session).max(1);
     // Spread commits roughly evenly across ~2 hour sessions.
@@ -459,85 +462,85 @@ mod tests {
     };
     use crate::profile::persona::PersonaProfile;
 
-    /// Create a minimal repository with one commit and return (TempDir,
-    /// repo_path, default_branch_name).
-    fn make_repo_with_commit(msg: &str, file: &str) -> (TempDir, std::path::PathBuf, String) {
-        let tmp = TempDir::new().expect("tempdir");
+    /// Create a minimal repository with one commit and return (`TempDir`,
+    /// `repo_path`, `default_branch_name`).
+    fn make_repo_with_commit(
+        msg: &str,
+        file: &str,
+    ) -> Result<(TempDir, std::path::PathBuf, String), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let repo_path = tmp.path().join("repo");
-        fs::create_dir_all(&repo_path).expect("repo dir");
+        fs::create_dir_all(&repo_path)?;
 
-        let repo = Repository::init(&repo_path).expect("init");
+        let repo = Repository::init(&repo_path)?;
         let file_path = repo_path.join(file);
         if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent).expect("create parent dirs");
+            fs::create_dir_all(parent)?;
         }
-        fs::write(file_path, "content\n").expect("write");
+        fs::write(file_path, "content\n")?;
 
-        let mut index = repo.index().expect("index");
-        index
-            .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
-            .expect("add");
-        index.write().expect("write index");
+        let mut index = repo.index()?;
+        index.add_all(std::iter::once(&"*"), IndexAddOption::DEFAULT, None)?;
+        index.write()?;
 
-        let tree_oid = index.write_tree().expect("tree");
-        let tree = repo.find_tree(tree_oid).expect("find tree");
-        let sig = Signature::now("test", "test@example.com").expect("sig");
-        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[])
-            .expect("commit");
+        let tree_oid = index.write_tree()?;
+        let tree = repo.find_tree(tree_oid)?;
+        let sig = Signature::now("test", "test@example.com")?;
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[])?;
 
-        let head_ref = repo.head().expect("head");
+        let head_ref = repo.head()?;
         let branch_name = head_ref.shorthand().unwrap_or("main").to_owned();
 
-        (tmp, repo_path, branch_name)
+        Ok((tmp, repo_path, branch_name))
     }
 
     #[test]
-    fn collect_pending_commits_returns_commits_from_branch() {
-        let (tmp, repo_path, branch_name) = make_repo_with_commit("initial commit", "README.md");
+    fn collect_pending_commits_returns_commits_from_branch() -> Result<(), Box<dyn std::error::Error>> {
+        let (tmp, repo_path, branch_name) = make_repo_with_commit("initial commit", "README.md")?;
         let _keep = &tmp;
 
-        let pending = collect_pending_commits(&repo_path, &branch_name, None);
-        assert!(pending.is_ok(), "collect failed: {:?}", pending.err());
-        let commits = pending.expect("pending");
+        let commits = collect_pending_commits(&repo_path, &branch_name, None)?;
         assert!(!commits.is_empty(), "expected at least one commit");
-        assert_eq!(commits[0].message, "initial commit");
+        let first = commits.first().ok_or("expected at least one commit")?;
+        assert_eq!(first.message, "initial commit");
+        Ok(())
     }
 
     #[test]
-    fn build_queue_plan_produces_entries_for_pending_commits() {
-        let (tmp, repo_path, branch_name) = make_repo_with_commit("add feature", "src/lib.rs");
+    fn build_queue_plan_produces_entries_for_pending_commits() -> Result<(), Box<dyn std::error::Error>> {
+        let (tmp, repo_path, branch_name) = make_repo_with_commit("add feature", "src/lib.rs")?;
         let _keep = &tmp;
 
-        let pending = collect_pending_commits(&repo_path, &branch_name, None).expect("collect");
+        let pending = collect_pending_commits(&repo_path, &branch_name, None)?;
         let profiles = PersonaProfile::built_in_profiles();
-        let persona = &profiles[0]; // night-owl
+        let persona = profiles.first().ok_or("no built-in profiles")?; // night-owl
 
         let now = Utc::now();
-        let plan = build_queue_plan(&pending, persona, None, now);
-        assert!(plan.is_ok(), "build_queue_plan failed: {:?}", plan.err());
-        let plan = plan.expect("plan");
+        let plan = build_queue_plan(&pending, persona, None, now)?;
 
         assert!(!plan.entries.is_empty());
         assert_eq!(plan.persona_name, persona.name);
+        Ok(())
     }
 
     #[test]
-    fn queue_plan_roundtrips_json() {
-        let (tmp, repo_path, branch_name) = make_repo_with_commit("feat: something", "main.rs");
+    fn queue_plan_roundtrips_json() -> Result<(), Box<dyn std::error::Error>> {
+        let (tmp, repo_path, branch_name) = make_repo_with_commit("feat: something", "main.rs")?;
         let _keep = &tmp;
 
-        let pending = collect_pending_commits(&repo_path, &branch_name, None).expect("collect");
+        let pending = collect_pending_commits(&repo_path, &branch_name, None)?;
         let profiles = PersonaProfile::built_in_profiles();
-        let persona = &profiles[1]; // nine-to-five
+        let persona = profiles.get(1).ok_or("expected nine-to-five profile")?; // nine-to-five
 
         let now = Utc::now();
-        let plan = build_queue_plan(&pending, persona, None, now).expect("plan");
+        let plan = build_queue_plan(&pending, persona, None, now)?;
 
-        save_queue_plan(&repo_path, &plan).expect("save");
+        save_queue_plan(&repo_path, &plan)?;
 
-        let loaded: QueuePlan = load_queue_plan(&repo_path).expect("load");
+        let loaded: QueuePlan = load_queue_plan(&repo_path)?;
         assert_eq!(loaded.persona_name, plan.persona_name);
         assert_eq!(loaded.entries.len(), plan.entries.len());
+        Ok(())
     }
 
     #[test]

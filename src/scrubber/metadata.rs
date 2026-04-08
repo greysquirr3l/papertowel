@@ -48,7 +48,10 @@ pub fn detect_repo(repo_root: impl AsRef<Path>) -> Result<Vec<Finding>, Papertow
     detect_repo_with_config(repo_root, MetadataDetectionConfig::default())
 }
 
-#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "confidence score: bounded usize counts"
+)]
 pub fn detect_repo_with_config(
     repo_root: impl AsRef<Path>,
     config: MetadataDetectionConfig,

@@ -33,7 +33,7 @@ pub fn humanize_queue_plan(
     pending: &[PendingCommit],
     persona: &PersonaProfile,
 ) {
-    let mut rng = StdRng::seed_from_u64(0xC0FFEE_u64);
+    let mut rng = StdRng::seed_from_u64(0x00C0_FFEE_u64);
     humanize_queue_plan_with_rng(plan, pending, persona, &mut rng);
 }
 
@@ -147,16 +147,13 @@ fn infer_scope(files: &[String]) -> String {
 }
 
 fn summarize_subject(messages: &[String], squashed: bool) -> String {
-    let first = messages
-        .first()
-        .map(String::as_str)
-        .unwrap_or("update code");
+    let first = messages.first().map_or("update code", String::as_str);
     let first_line = first.lines().next().unwrap_or("update code").trim();
 
     let normalized = normalize_subject(first_line);
 
     if squashed {
-        return format!("{} and related updates", normalized);
+        return format!("{normalized} and related updates");
     }
     normalized
 }
@@ -252,13 +249,12 @@ fn random_capitalization(input: String, rng: &mut impl Rng) -> String {
         return input.to_lowercase();
     }
     let mut chars = input.chars();
-    match chars.next() {
-        Some(first) => {
-            let head = first.to_uppercase().collect::<String>();
-            format!("{head}{}", chars.collect::<String>())
-        }
-        None => input,
-    }
+    let Some(first) = chars.next() else {
+        return input;
+    };
+    let head: String = first.to_uppercase().collect();
+    let tail: String = chars.collect();
+    format!("{head}{tail}")
 }
 
 #[cfg(test)]
@@ -341,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn humanize_queue_plan_updates_entry_messages() {
+    fn humanize_queue_plan_updates_entry_messages() -> Result<(), Box<dyn std::error::Error>> {
         let profile = persona_with(CommitMessageStyle::Conventional);
         let pending = vec![PendingCommit {
             oid: String::from("abc"),
@@ -365,6 +361,8 @@ mod tests {
         };
 
         humanize_queue_plan_with_seed(&mut plan, &pending, &profile, 42);
-        assert_ne!(plan.entries[0].message, "placeholder");
+        let entry = plan.entries.first().ok_or("expected queue entry")?;
+        assert_ne!(entry.message, "placeholder");
+        Ok(())
     }
 }

@@ -136,34 +136,26 @@ mod tests {
     }
 
     #[test]
-    fn idiom_detector_ignores_non_rust_files() {
+    fn idiom_detector_ignores_non_rust_files() -> Result<(), Box<dyn std::error::Error>> {
         let findings = detect_in_text(
             "script.py",
             "def run():\n    print('hello')\n",
             IdiomMismatchConfig::default(),
-        );
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected idiom mismatch detector error: {error}"),
-        };
+        )?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn idiom_detector_ignores_idiomatic_rust() {
+    fn idiom_detector_ignores_idiomatic_rust() -> Result<(), Box<dyn std::error::Error>> {
         let content = "fn run() -> Result<(), anyhow::Error> { if let Some(x) = Some(1) { println!(\"{x}\"); } Ok(()) }";
-        let findings = detect_in_text("src/lib.rs", content, IdiomMismatchConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected idiom mismatch detector error: {error}"),
-        };
+        let findings = detect_in_text("src/lib.rs", content, IdiomMismatchConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn idiom_detector_flags_cross_language_rust_file() {
+    fn idiom_detector_flags_cross_language_rust_file() -> Result<(), Box<dyn std::error::Error>> {
         let content = "\
 package main\n\
 public static void main(String[] args) {}\n\
@@ -171,12 +163,8 @@ console.log('hello')\n\
 fmt.println(\"hello\")\n\
 pip install foo\n\
 ";
-        let findings = detect_in_text("src/lib.rs", content, IdiomMismatchConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected idiom mismatch detector error: {error}"),
-        };
+        let findings = detect_in_text("src/lib.rs", content, IdiomMismatchConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 }
