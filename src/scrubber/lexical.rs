@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use aho_corasick::AhoCorasick;
+use regex::Regex;
 
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
@@ -45,6 +46,51 @@ const SLOP_PATTERNS: [&str; 32] = [
     "synergy",
 ];
 
+const SLOP_REPLACEMENTS: [&str; 32] = [
+    "solid",
+    "detailed",
+    "simplified",
+    "use",
+    "help",
+    "use",
+    "smooth",
+    "examine",
+    "flexible",
+    "scaffold",
+    "fine-grained",
+    "purpose-built",
+    "",
+    "",
+    "for",
+    "to",
+    "this means",
+    "function to",
+    "this module offers",
+    "",
+    "internally",
+    "by default",
+    "ultimately",
+    "usable",
+    "ready for production",
+    "hardened",
+    "clear",
+    "scalable",
+    "high-quality",
+    "new",
+    "advanced",
+    "coordination",
+];
+
+static EXTRA_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(r"[ ]{2,}") {
+    Ok(regex) => regex,
+    Err(error) => panic!("failed to compile spacing regex: {error}"),
+});
+static SPACE_BEFORE_PUNCT_RE: LazyLock<Regex> =
+    LazyLock::new(|| match Regex::new(r"\s+([,.;:!?])") {
+        Ok(regex) => regex,
+        Err(error) => panic!("failed to compile punctuation regex: {error}"),
+    });
+
 static MATCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
     let built = AhoCorasick::builder()
         .ascii_case_insensitive(true)
@@ -83,6 +129,48 @@ pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelErr
     let content =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
     detect_in_text(path, &content, LexicalDetectionConfig::default())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LexicalTransformResult {
+    pub transformed_text: String,
+    pub replacements_applied: usize,
+    pub changed: bool,
+}
+
+pub fn transform_file(path: impl AsRef<Path>, dry_run: bool) -> Result<LexicalTransformResult, PapertowelError> {
+    let path = path.as_ref();
+    let original = fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
+    let transformed = transform_text(&original);
+
+    if !dry_run && transformed.changed {
+        fs::write(path, &transformed.transformed_text)
+            .map_err(|error| PapertowelError::io_with_path(path, error))?;
+    }
+
+    Ok(transformed)
+}
+
+#[must_use]
+pub fn transform_text(content: &str) -> LexicalTransformResult {
+    let replacements_applied = MATCHER.find_iter(content).count();
+    if replacements_applied == 0 {
+        return LexicalTransformResult {
+            transformed_text: content.to_owned(),
+            replacements_applied: 0,
+            changed: false,
+        };
+    }
+
+    let replaced = MATCHER.replace_all(content, &SLOP_REPLACEMENTS);
+    let cleaned = normalize_transformed_text(&replaced);
+    let changed = cleaned != content;
+
+    LexicalTransformResult {
+        transformed_text: cleaned,
+        replacements_applied,
+        changed,
+    }
 }
 
 pub fn detect_in_text(
@@ -175,6 +263,18 @@ fn line_number_at_offset(content: &str, offset: usize) -> usize {
         )
 }
 
+fn normalize_transformed_text(content: &str) -> String {
+    let mut normalized_lines = Vec::new();
+
+    for line in content.lines() {
+        let squashed = EXTRA_SPACES_RE.replace_all(line, " ");
+        let punctuation = SPACE_BEFORE_PUNCT_RE.replace_all(&squashed, "$1");
+        normalized_lines.push(punctuation.trim_end().to_owned());
+    }
+
+    normalized_lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -184,6 +284,7 @@ mod tests {
     use crate::detection::finding::Severity;
     use crate::scrubber::lexical::{
         DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text,
+        transform_file, transform_text,
     };
 
     #[test]
@@ -215,10 +316,10 @@ mod tests {
     #[test]
     fn detect_in_text_flags_clustered_slop() {
         let sample = "\
-			This module provides a comprehensive and robust approach.\n\
-			It's worth noting that we can see that the design is streamlined.\n\
-			In order to facilitate a seamless experience, this ensures that things work out of the box.\n\
-		";
+            This module provides a comprehensive and robust approach.\n\
+            It's worth noting that we can see that the design is streamlined.\n\
+            In order to facilitate a seamless experience, this ensures that things work out of the box.\n\
+        ";
 
         let findings = detect_in_text("src/lib.rs", sample, LexicalDetectionConfig::default());
         assert!(findings.is_ok());
@@ -261,5 +362,46 @@ mod tests {
             Err(error) => panic!("unexpected detector error: {error}"),
         };
         assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn transform_text_rewrites_slop_phrases() {
+        let sample = "This module provides a comprehensive and robust approach. It is best-in-class.";
+        let transformed = transform_text(sample);
+
+        assert!(transformed.changed);
+        assert!(transformed.replacements_applied >= 3);
+        assert!(transformed.transformed_text.contains("this module offers"));
+        assert!(!transformed.transformed_text.to_ascii_lowercase().contains("best-in-class"));
+    }
+
+    #[test]
+    fn transform_file_honors_dry_run() {
+        let tmp = TempDir::new();
+        assert!(tmp.is_ok());
+        let tmp = match tmp {
+            Ok(tmp) => tmp,
+            Err(error) => panic!("failed to create tempdir: {error}"),
+        };
+        let file_path = tmp.path().join("sample.md");
+
+        let write_result = fs::write(&file_path, "A robust and comprehensive guide.");
+        assert!(write_result.is_ok());
+
+        let transform_result = transform_file(&file_path, true);
+        assert!(transform_result.is_ok());
+        let transform_result = match transform_result {
+            Ok(result) => result,
+            Err(error) => panic!("unexpected transform error: {error}"),
+        };
+        assert!(transform_result.changed);
+
+        let disk_content = fs::read_to_string(&file_path);
+        assert!(disk_content.is_ok());
+        let disk_content = match disk_content {
+            Ok(content) => content,
+            Err(error) => panic!("unexpected read error: {error}"),
+        };
+        assert!(disk_content.contains("robust"));
     }
 }
