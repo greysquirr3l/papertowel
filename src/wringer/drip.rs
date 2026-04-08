@@ -2,10 +2,14 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use git2::{Repository, Signature};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use crate::{
     domain::errors::PapertowelError,
+    profile::persona::PersonaArchaeology,
     wringer::{
+        archaeology::inject_before_entry,
         config::{load_wringer_config, WringerConfig},
         queue::{load_queue_plan, save_queue_plan, QueueEntry},
     },
@@ -30,6 +34,10 @@ pub struct DripStats {
 pub struct DripRunner {
     repo_root: PathBuf,
     config: WringerConfig,
+    /// Optional archaeology settings; when present, synthetic commits are
+    /// injected into the worktree before each real entry is applied.
+    archaeology: Option<PersonaArchaeology>,
+    rng: StdRng,
 }
 
 impl DripRunner {
@@ -41,7 +49,23 @@ impl DripRunner {
         Ok(Self {
             repo_root: root,
             config,
+            archaeology: None,
+            rng: StdRng::from_entropy(),
         })
+    }
+
+    /// Enable archaeology injection with the given persona settings.
+    #[must_use]
+    pub fn with_archaeology(mut self, settings: PersonaArchaeology) -> Self {
+        self.archaeology = Some(settings);
+        self
+    }
+
+    /// Override the RNG seed for deterministic testing.
+    #[must_use]
+    pub fn with_rng_seed(mut self, seed: u64) -> Self {
+        self.rng = StdRng::seed_from_u64(seed);
+        self
     }
 
     /// Apply all queue entries whose `target_time` is in the past and that
@@ -49,13 +73,13 @@ impl DripRunner {
     /// persists the updated plan.
     ///
     /// Returns statistics for the current tick.
-    pub fn tick(&self) -> Result<DripStats, PapertowelError> {
+    pub fn tick(&mut self) -> Result<DripStats, PapertowelError> {
         self.tick_at(Utc::now())
     }
 
     /// Like [`tick`], but uses `now` as the reference timestamp.  Useful for
     /// deterministic testing.
-    pub fn tick_at(&self, now: DateTime<Utc>) -> Result<DripStats, PapertowelError> {
+    pub fn tick_at(&mut self, now: DateTime<Utc>) -> Result<DripStats, PapertowelError> {
         let mut plan = load_queue_plan(&self.repo_root)?;
 
         let mut applied: usize = 0;
@@ -71,6 +95,17 @@ impl DripRunner {
             if entry.target_time > now {
                 pending += 1;
                 continue;
+            }
+
+            // Optionally inject synthetic archaeology commits before the real
+            // cherry-pick so the public history looks more organic.
+            if let Some(ref settings) = self.archaeology.clone() {
+                let _ = inject_before_entry(
+                    &self.config.worktree_path,
+                    entry,
+                    settings,
+                    &mut self.rng,
+                );
             }
 
             apply_entry(&self.config.worktree_path, entry)?;
@@ -219,7 +254,7 @@ mod tests {
         save_wringer_config(tmp.path(), &minimal_config(&tmp))?;
         save_queue_plan(tmp.path(), &no_entry_plan())?;
 
-        let runner = DripRunner::new(tmp.path())?;
+        let mut runner = DripRunner::new(tmp.path())?;
         let stats = runner.tick_at(Utc::now())?;
 
         assert_eq!(stats.applied, 0);
@@ -247,7 +282,7 @@ mod tests {
         };
         save_queue_plan(tmp.path(), &plan)?;
 
-        let runner = DripRunner::new(tmp.path())?;
+        let mut runner = DripRunner::new(tmp.path())?;
         let stats = runner.tick_at(Utc::now())?;
 
         assert_eq!(stats.applied, 0, "future entries must not be applied");
@@ -275,7 +310,7 @@ mod tests {
         };
         save_queue_plan(tmp.path(), &plan)?;
 
-        let runner = DripRunner::new(tmp.path())?;
+        let mut runner = DripRunner::new(tmp.path())?;
         let stats = runner.tick_at(Utc::now())?;
 
         assert_eq!(stats.applied, 0);
@@ -319,7 +354,7 @@ mod tests {
         save_queue_plan(tmp.path(), &plan)?;
 
         let runner = DripRunner::new(tmp.path())?;
-        assert_eq!(runner.pending_count()?, 2);
+        assert_eq!(runner.pending_count()?, 2, "2 future uncompleted entries");
         Ok(())
     }
 }

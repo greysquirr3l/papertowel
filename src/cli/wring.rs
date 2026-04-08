@@ -77,7 +77,7 @@ pub fn handle_queue(args: QueueArgs) -> Result<()> {
 
 pub fn handle_drip(args: DripArgs) -> Result<()> {
     let repo_root = std::env::current_dir()?;
-    let runner = DripRunner::new(&repo_root)
+    let mut runner = DripRunner::new(&repo_root)
         .map_err(|e| anyhow::anyhow!("failed to initialise drip runner: {e}"))?;
 
     if args.daemon {
