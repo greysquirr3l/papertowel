@@ -12,6 +12,7 @@ pub struct ScanArgs {
     pub severity: Option<SeverityArg>,
 }
 
+#[expect(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
 pub fn handle(args: ScanArgs) -> Result<()> {
     tracing::info!(path = %args.path, format = ?args.format, severity = ?args.severity, "scan placeholder");
     Ok(())

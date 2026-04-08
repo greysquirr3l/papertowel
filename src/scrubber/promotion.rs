@@ -27,7 +27,7 @@ const PROMOTIONAL_MARKERS: [&str; 12] = [
 const CODE_EXTENSIONS: [&str; 8] = ["rs", "go", "py", "ts", "tsx", "js", "cs", "zig"];
 const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PromotionDetectionConfig {
     pub min_promotional_hits: usize,
     pub min_image_count: usize,
@@ -55,6 +55,7 @@ pub fn detect_repo(repo_root: impl AsRef<Path>) -> Result<Vec<Finding>, Papertow
     detect_repo_with_config(repo_root, PromotionDetectionConfig::default())
 }
 
+#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
 pub fn detect_repo_with_config(
     repo_root: impl AsRef<Path>,
     config: PromotionDetectionConfig,
@@ -75,13 +76,18 @@ pub fn detect_repo_with_config(
         Severity::Medium
     };
 
-    let confidence = ((metrics.promotional_hits as f32 / 10.0) * 0.5
-        + (metrics.image_files as f32 / 6.0) * 0.3
-        + ((config
-            .max_code_files_for_flag
-            .saturating_sub(metrics.code_files)) as f32
-            / config.max_code_files_for_flag.max(1) as f32)
-            * 0.2)
+    let confidence = (metrics.promotional_hits as f32 / 10.0)
+        .mul_add(
+            0.5,
+            (metrics.image_files as f32 / 6.0).mul_add(
+                0.3,
+                ((config
+                    .max_code_files_for_flag
+                    .saturating_sub(metrics.code_files)) as f32
+                    / config.max_code_files_for_flag.max(1) as f32)
+                    * 0.2,
+            ),
+        )
         .min(1.0);
 
     let mut finding = Finding::new(
@@ -170,64 +176,42 @@ mod tests {
     }
 
     #[test]
-    fn promotion_detector_ignores_balanced_repo() {
-        let temp = TempDir::new();
-        assert!(temp.is_ok());
-        let temp = match temp {
-            Ok(temp) => temp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn promotion_detector_ignores_balanced_repo() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
 
         let src = temp.path().join("src");
-        assert!(fs::create_dir_all(&src).is_ok());
-        assert!(fs::write(src.join("lib.rs"), "pub fn run() {}\n").is_ok());
-        assert!(fs::write(src.join("engine.rs"), "pub fn work() {}\n").is_ok());
-        assert!(
-            fs::write(
-                temp.path().join("README.md"),
-                "Technical architecture and usage details.\n"
-            )
-            .is_ok()
-        );
+        fs::create_dir_all(&src)?;
+        fs::write(src.join("lib.rs"), "pub fn run() {}\n")?;
+        fs::write(src.join("engine.rs"), "pub fn work() {}\n")?;
+        fs::write(
+            temp.path().join("README.md"),
+            "Technical architecture and usage details.\n",
+        )?;
 
-        let findings = detect_repo_with_config(temp.path(), PromotionDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected promotion detector error: {error}"),
-        };
+        let findings = detect_repo_with_config(temp.path(), PromotionDetectionConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn promotion_detector_flags_showcase_stack() {
-        let temp = TempDir::new();
-        assert!(temp.is_ok());
-        let temp = match temp {
-            Ok(temp) => temp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn promotion_detector_flags_showcase_stack() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
 
         let assets = temp.path().join("assets");
         let src = temp.path().join("src");
-        assert!(fs::create_dir_all(&assets).is_ok());
-        assert!(fs::create_dir_all(&src).is_ok());
-        assert!(fs::write(src.join("main.rs"), "fn main() {}\n").is_ok());
+        fs::create_dir_all(&assets)?;
+        fs::create_dir_all(&src)?;
+        fs::write(src.join("main.rs"), "fn main() {}\n")?;
 
-        assert!(fs::write(assets.join("hero.png"), "binary").is_ok());
-        assert!(fs::write(assets.join("demo.gif"), "binary").is_ok());
-        assert!(fs::write(
+        fs::write(assets.join("hero.png"), "binary")?;
+        fs::write(assets.join("demo.gif"), "binary")?;
+        fs::write(
 			temp.path().join("README.md"),
 			"Revolutionary next-generation launch demo. Best-in-class and production-ready one-click showcase."
-		)
-		.is_ok());
+		)?;
 
-        let findings = detect_repo_with_config(temp.path(), PromotionDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected promotion detector error: {error}"),
-        };
+        let findings = detect_repo_with_config(temp.path(), PromotionDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 }

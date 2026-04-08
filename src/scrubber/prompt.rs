@@ -37,6 +37,10 @@ pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelErr
     detect_in_text(path, &content, PromptDetectionConfig::default())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "confidence score: bounded usize counts"
+)]
 pub fn detect_in_text(
     file_path: impl Into<PathBuf>,
     content: &str,
@@ -68,10 +72,7 @@ pub fn detect_in_text(
         severity,
         confidence,
         file_path,
-        format!(
-            "Detected probable prompt leakage markers ({} matched phrases).",
-            hits
-        ),
+        format!("Detected probable prompt leakage markers ({hits} matched phrases)."),
     )?;
     finding.line_range = Some(LineRange::new(1, lines)?);
     finding.suggestion = Some(
@@ -92,27 +93,19 @@ mod tests {
     }
 
     #[test]
-    fn prompt_detector_ignores_clean_text() {
+    fn prompt_detector_ignores_clean_text() -> Result<(), Box<dyn std::error::Error>> {
         let content = "This repository implements a lexical detector for source files.";
-        let findings = detect_in_text("README.md", content, PromptDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected prompt detector error: {error}"),
-        };
+        let findings = detect_in_text("README.md", content, PromptDetectionConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn prompt_detector_flags_leakage_markers() {
+    fn prompt_detector_flags_leakage_markers() -> Result<(), Box<dyn std::error::Error>> {
         let content =
             "As an AI language model, let's break this down. Assistant: here's the updated patch.";
-        let findings = detect_in_text("README.md", content, PromptDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected prompt detector error: {error}"),
-        };
+        let findings = detect_in_text("README.md", content, PromptDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 }

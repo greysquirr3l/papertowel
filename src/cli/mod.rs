@@ -20,7 +20,11 @@ pub enum SeverityArg {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "papertowel", version, about = "Clean up AI fingerprints and humanize git history")]
+#[command(
+    name = "papertowel",
+    version,
+    about = "Clean up AI fingerprints and humanize git history"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -111,7 +115,7 @@ mod tests {
     use super::{Cli, Command, OutputFormat, ProfileCommand, SeverityArg, WringCommand};
 
     #[test]
-    fn parses_scan_command_with_options() {
+    fn parses_scan_command_with_options() -> Result<(), Box<dyn std::error::Error>> {
         let cli = Cli::try_parse_from([
             "papertowel",
             "scan",
@@ -120,13 +124,7 @@ mod tests {
             "json",
             "--severity",
             "high",
-        ]);
-        assert!(cli.is_ok());
-
-        let cli = match cli {
-            Ok(cli) => cli,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
+        ])?;
 
         match cli.command {
             Command::Scan(args) => {
@@ -134,12 +132,13 @@ mod tests {
                 assert_eq!(args.format, OutputFormat::Json);
                 assert_eq!(args.severity, Some(SeverityArg::High));
             }
-            _ => panic!("expected scan command"),
+            _ => unreachable!("expected scan command"),
         }
+        Ok(())
     }
 
     #[test]
-    fn parses_scrub_command_with_detectors() {
+    fn parses_scrub_command_with_detectors() -> Result<(), Box<dyn std::error::Error>> {
         let cli = Cli::try_parse_from([
             "papertowel",
             "scrub",
@@ -147,86 +146,63 @@ mod tests {
             "--dry-run",
             "--detectors",
             "lexical,comments",
-        ]);
-        assert!(cli.is_ok());
-
-        let cli = match cli {
-            Ok(cli) => cli,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
+        ])?;
 
         match cli.command {
             Command::Scrub(args) => {
                 assert!(args.dry_run);
                 assert_eq!(args.detectors, vec!["lexical", "comments"]);
             }
-            _ => panic!("expected scrub command"),
+            _ => unreachable!("expected scrub command"),
         }
+        Ok(())
     }
 
     #[test]
-    fn parses_wring_subcommands() {
-        let init = Cli::try_parse_from(["papertowel", "wring", "init", "--branch", "public"]);
-        assert!(init.is_ok());
-        let init = match init {
-            Ok(cli) => cli,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
+    fn parses_wring_subcommands() -> Result<(), Box<dyn std::error::Error>> {
+        let init = Cli::try_parse_from(["papertowel", "wring", "init", "--branch", "public"])?;
         match init.command {
             Command::Wring(args) => match args.command {
                 WringCommand::Init(init_args) => {
                     assert_eq!(init_args.branch.as_deref(), Some("public"));
                 }
-                _ => panic!("expected wring init"),
+                _ => unreachable!("expected wring init"),
             },
-            _ => panic!("expected wring command"),
+            _ => unreachable!("expected wring command"),
         }
 
-        let status = Cli::try_parse_from(["papertowel", "wring", "status"]);
-        assert!(status.is_ok());
-        let status = match status {
-            Ok(cli) => cli,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
+        let status = Cli::try_parse_from(["papertowel", "wring", "status"])?;
         match status.command {
             Command::Wring(args) => match args.command {
                 WringCommand::Status(_) => {}
-                _ => panic!("expected wring status"),
+                _ => unreachable!("expected wring status"),
             },
-            _ => panic!("expected wring command"),
+            _ => unreachable!("expected wring command"),
         }
+        Ok(())
     }
 
     #[test]
-    fn parses_clean_and_profile_commands() {
-        let clean = Cli::try_parse_from(["papertowel", "clean", "./repo", "--dry-run"]);
-        assert!(clean.is_ok());
-        let clean = match clean {
-            Ok(cli) => cli,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
+    fn parses_clean_and_profile_commands() -> Result<(), Box<dyn std::error::Error>> {
+        let clean = Cli::try_parse_from(["papertowel", "clean", "./repo", "--dry-run"])?;
         match clean.command {
             Command::Clean(args) => {
                 assert_eq!(args.path, "./repo");
                 assert!(args.dry_run);
             }
-            _ => panic!("expected clean command"),
+            _ => unreachable!("expected clean command"),
         }
 
-        let show = Cli::try_parse_from(["papertowel", "profile", "show", "night-owl"]);
-        assert!(show.is_ok());
-        let show = match show {
-            Ok(cli) => cli,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
+        let show = Cli::try_parse_from(["papertowel", "profile", "show", "night-owl"])?;
         match show.command {
             Command::Profile(profile) => match profile.command {
                 ProfileCommand::Show(show_args) => {
                     assert_eq!(show_args.name, "night-owl");
                 }
-                _ => panic!("expected profile show"),
+                _ => unreachable!("expected profile show"),
             },
-            _ => panic!("expected profile command"),
+            _ => unreachable!("expected profile command"),
         }
+        Ok(())
     }
 }

@@ -56,7 +56,7 @@ mod tests {
             history_score: 0.5,
         };
 
-        assert_eq!(score.total(), 4.0);
+        assert!((score.total() - 4.0_f32).abs() < f32::EPSILON);
     }
 
     #[test]

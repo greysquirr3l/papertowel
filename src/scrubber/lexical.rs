@@ -81,25 +81,21 @@ const SLOP_REPLACEMENTS: [&str; 32] = [
     "coordination",
 ];
 
-static EXTRA_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(r"[ ]{2,}") {
-    Ok(regex) => regex,
-    Err(error) => panic!("failed to compile spacing regex: {error}"),
+static EXTRA_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| {
+    #[expect(clippy::expect_used, reason = "static regex: pattern is validated by tests")]
+    Regex::new(r"[ ]{2,}").expect("valid spacing regex")
 });
-static SPACE_BEFORE_PUNCT_RE: LazyLock<Regex> =
-    LazyLock::new(|| match Regex::new(r"\s+([,.;:!?])") {
-        Ok(regex) => regex,
-        Err(error) => panic!("failed to compile punctuation regex: {error}"),
-    });
+static SPACE_BEFORE_PUNCT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    #[expect(clippy::expect_used, reason = "static regex: pattern is validated by tests")]
+    Regex::new(r"\s+([,.;:!?])").expect("valid punctuation regex")
+});
 
 static MATCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
-    let built = AhoCorasick::builder()
+    #[expect(clippy::expect_used, reason = "static matcher: patterns are validated by tests")]
+    AhoCorasick::builder()
         .ascii_case_insensitive(true)
-        .build(SLOP_PATTERNS);
-
-    match built {
-        Ok(matcher) => matcher,
-        Err(error) => panic!("failed to build lexical matcher: {error}"),
-    }
+        .build(SLOP_PATTERNS)
+        .expect("valid lexical matcher patterns")
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +116,7 @@ impl Default for LexicalDetectionConfig {
 }
 
 #[must_use]
-pub fn corpus() -> &'static [&'static str] {
+pub const fn corpus() -> &'static [&'static str] {
     &SLOP_PATTERNS
 }
 
@@ -173,6 +169,7 @@ pub fn transform_text(content: &str) -> LexicalTransformResult {
     }
 }
 
+#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
 pub fn detect_in_text(
     file_path: impl Into<PathBuf>,
     content: &str,
@@ -294,74 +291,53 @@ mod tests {
 
     #[test]
     fn corpus_contains_key_reference_phrase() {
-        assert!(corpus().iter().any(|term| *term == "it's worth noting"));
+        assert!(corpus().contains(&"it's worth noting"));
     }
 
     #[test]
-    fn detect_in_text_returns_empty_for_sparse_terms() {
+    fn detect_in_text_returns_empty_for_sparse_terms() -> Result<(), Box<dyn std::error::Error>> {
         let findings = detect_in_text(
             "src/lib.rs",
             "This module is robust in exactly one spot.",
             LexicalDetectionConfig::default(),
-        );
+        )?;
 
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected detector error: {error}"),
-        };
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn detect_in_text_flags_clustered_slop() {
+    fn detect_in_text_flags_clustered_slop() -> Result<(), Box<dyn std::error::Error>> {
         let sample = "\
             This module provides a comprehensive and robust approach.\n\
             It's worth noting that we can see that the design is streamlined.\n\
             In order to facilitate a seamless experience, this ensures that things work out of the box.\n\
         ";
 
-        let findings = detect_in_text("src/lib.rs", sample, LexicalDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected detector error: {error}"),
-        };
+        let findings = detect_in_text("src/lib.rs", sample, LexicalDetectionConfig::default())?;
 
         assert_eq!(findings.len(), 1);
-        let first = findings.first();
-        assert!(first.is_some());
-        let first = match first {
-            Some(first) => first,
-            None => panic!("expected first finding"),
+        let Some(first) = findings.first() else {
+            return Err("expected first finding".into());
         };
         assert!(matches!(first.severity, Severity::Medium | Severity::High));
         assert!(first.line_range.is_some());
+        Ok(())
     }
 
     #[test]
-    fn detect_file_reads_and_processes_content() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn detect_file_reads_and_processes_content() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let file_path = tmp.path().join("sample.rs");
 
-        let write_result = fs::write(
+        fs::write(
             &file_path,
             "this module provides a comprehensive approach that is streamlined and robust",
-        );
-        assert!(write_result.is_ok());
+        )?;
 
-        let findings = detect_file(&file_path);
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected detector error: {error}"),
-        };
+        let findings = detect_file(&file_path)?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -376,32 +352,17 @@ mod tests {
     }
 
     #[test]
-    fn transform_file_honors_dry_run() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn transform_file_honors_dry_run() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let file_path = tmp.path().join("sample.md");
 
-        let write_result = fs::write(&file_path, "A robust and comprehensive guide.");
-        assert!(write_result.is_ok());
+        fs::write(&file_path, "A robust and comprehensive guide.")?;
 
-        let transform_result = transform_file(&file_path, true);
-        assert!(transform_result.is_ok());
-        let transform_result = match transform_result {
-            Ok(result) => result,
-            Err(error) => panic!("unexpected transform error: {error}"),
-        };
+        let transform_result = transform_file(&file_path, true)?;
         assert!(transform_result.changed);
 
-        let disk_content = fs::read_to_string(&file_path);
-        assert!(disk_content.is_ok());
-        let disk_content = match disk_content {
-            Ok(content) => content,
-            Err(error) => panic!("unexpected read error: {error}"),
-        };
+        let disk_content = fs::read_to_string(&file_path)?;
         assert!(disk_content.contains("robust"));
+        Ok(())
     }
 }

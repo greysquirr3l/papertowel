@@ -34,7 +34,7 @@ pub struct PersonaMessages {
     pub emoji_rate: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum CommitMessageStyle {
     Conventional,
@@ -233,7 +233,9 @@ fn validate_time_range(value: &str) -> Result<(), PapertowelError> {
         )));
     }
 
-    if is_valid_hhmm(parts[0]) && is_valid_hhmm(parts[1]) {
+    let valid = parts.first().is_some_and(|p| is_valid_hhmm(p))
+        && parts.get(1).is_some_and(|p| is_valid_hhmm(p));
+    if valid {
         Ok(())
     } else {
         Err(PapertowelError::Validation(format!(
@@ -248,13 +250,11 @@ fn is_valid_hhmm(value: &str) -> bool {
         return false;
     }
 
-    let hour = match parts.first().and_then(|part| part.parse::<u8>().ok()) {
-        Some(hour) => hour,
-        None => return false,
+    let Some(hour) = parts.first().and_then(|part| part.parse::<u8>().ok()) else {
+        return false;
     };
-    let minute = match parts.get(1).and_then(|part| part.parse::<u8>().ok()) {
-        Some(minute) => minute,
-        None => return false,
+    let Some(minute) = parts.get(1).and_then(|part| part.parse::<u8>().ok()) else {
+        return false;
     };
 
     hour < 24 && minute < 60
@@ -276,69 +276,48 @@ mod tests {
     }
 
     #[test]
-    fn profile_roundtrips_toml() {
-        let profile = match PersonaProfile::built_in_profiles().first() {
-            Some(profile) => profile.clone(),
-            None => panic!("expected built-in profile"),
-        };
+    fn profile_roundtrips_toml() -> Result<(), Box<dyn std::error::Error>> {
+        let profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .ok_or("no built-in profiles")?;
 
-        let rendered = profile.to_toml_string();
-        assert!(rendered.is_ok());
-        let rendered = match rendered {
-            Ok(rendered) => rendered,
-            Err(error) => panic!("unexpected render error: {error}"),
-        };
-
-        let parsed = PersonaProfile::from_toml_str(&rendered);
-        assert!(parsed.is_ok());
-        let parsed = match parsed {
-            Ok(parsed) => parsed,
-            Err(error) => panic!("unexpected parse error: {error}"),
-        };
-
+        let rendered = profile.to_toml_string()?;
+        let parsed = PersonaProfile::from_toml_str(&rendered)?;
         assert_eq!(parsed, profile);
+        Ok(())
     }
 
     #[test]
-    fn invalid_probability_rejected() {
-        let mut profile = match PersonaProfile::built_in_profiles().first() {
-            Some(profile) => profile.clone(),
-            None => panic!("expected built-in profile"),
-        };
+    fn invalid_probability_rejected() -> Result<(), Box<dyn std::error::Error>> {
+        let mut profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .ok_or("no built-in profiles")?;
         profile.messages.emoji_rate = 1.5;
 
         let validate = profile.validate();
         assert!(validate.is_err());
+        Ok(())
     }
 
     #[test]
-    fn save_and_load_profile_file() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
-
+    fn save_and_load_profile_file() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let file_path = tmp.path().join("night-owl.toml");
-        let profile = match PersonaProfile::built_in_profiles().first() {
-            Some(profile) => profile.clone(),
-            None => panic!("expected built-in profile"),
-        };
+        let profile = PersonaProfile::built_in_profiles()
+            .into_iter()
+            .next()
+            .ok_or("no built-in profiles")?;
 
-        let save = profile.save_to_file(&file_path);
-        assert!(save.is_ok());
+        profile.save_to_file(&file_path)?;
         assert!(file_path.exists());
 
-        let loaded = PersonaProfile::load_from_file(&file_path);
-        assert!(loaded.is_ok());
-        let loaded = match loaded {
-            Ok(loaded) => loaded,
-            Err(error) => panic!("unexpected load error: {error}"),
-        };
+        let loaded = PersonaProfile::load_from_file(&file_path)?;
         assert_eq!(loaded, profile);
 
-        let raw = fs::read_to_string(&file_path);
-        assert!(raw.is_ok());
+        let raw = fs::read_to_string(&file_path)?;
+        assert!(!raw.is_empty());
+        Ok(())
     }
 }

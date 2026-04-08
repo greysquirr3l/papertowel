@@ -45,6 +45,10 @@ pub fn detect_repo(repo_root: impl AsRef<Path>) -> Result<Vec<Finding>, Papertow
     detect_repo_with_config(repo_root, WorkflowDetectionConfig::default())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "confidence score: bounded usize counts"
+)]
 pub fn detect_repo_with_config(
     repo_root: impl AsRef<Path>,
     config: WorkflowDetectionConfig,
@@ -79,8 +83,8 @@ pub fn detect_repo_with_config(
     } else {
         Severity::Medium
     };
-    let confidence = ((present_files.len() as f32 / WORKFLOW_FILES.len() as f32) * 0.7
-        + (marker_hits as f32 / 10.0) * 0.3)
+    let confidence = (present_files.len() as f32 / WORKFLOW_FILES.len() as f32)
+        .mul_add(0.7, (marker_hits as f32 / 10.0) * 0.3)
         .min(1.0);
 
     let mut finding = Finding::new(
@@ -121,37 +125,21 @@ mod tests {
     }
 
     #[test]
-    fn workflow_detector_ignores_small_real_setup() {
-        let temp = TempDir::new();
-        assert!(temp.is_ok());
-        let temp = match temp {
-            Ok(temp) => temp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn workflow_detector_ignores_small_real_setup() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
 
         let workflows = temp.path().join(".github/workflows");
-        let created = fs::create_dir_all(&workflows);
-        assert!(created.is_ok());
-        let written = fs::write(workflows.join("ci.yml"), "name: ci\n");
-        assert!(written.is_ok());
+        fs::create_dir_all(&workflows)?;
+        fs::write(workflows.join("ci.yml"), "name: ci\n")?;
 
-        let findings = detect_repo_with_config(temp.path(), WorkflowDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected workflow detector error: {error}"),
-        };
+        let findings = detect_repo_with_config(temp.path(), WorkflowDetectionConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn workflow_detector_flags_template_burst() {
-        let temp = TempDir::new();
-        assert!(temp.is_ok());
-        let temp = match temp {
-            Ok(temp) => temp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn workflow_detector_flags_template_burst() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
 
         let files = [
             (
@@ -171,19 +159,13 @@ mod tests {
         for (file, content) in files {
             let absolute = temp.path().join(file);
             if let Some(parent) = absolute.parent() {
-                let created = fs::create_dir_all(parent);
-                assert!(created.is_ok());
+                fs::create_dir_all(parent)?;
             }
-            let write = fs::write(absolute, content);
-            assert!(write.is_ok());
+            fs::write(absolute, content)?;
         }
 
-        let findings = detect_repo_with_config(temp.path(), WorkflowDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected workflow detector error: {error}"),
-        };
+        let findings = detect_repo_with_config(temp.path(), WorkflowDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 }

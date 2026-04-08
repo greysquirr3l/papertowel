@@ -28,7 +28,7 @@ const GENERIC_NAME_TOKENS: [&str; 14] = [
 
 const CODE_EXTENSIONS: [&str; 8] = ["rs", "go", "py", "ts", "tsx", "js", "cs", "zig"];
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NameCredibilityConfig {
 	pub min_generic_token_hits: usize,
 	pub max_code_files_for_flag: usize,
@@ -49,6 +49,7 @@ pub fn detect_repo(repo_root: impl AsRef<Path>) -> Result<Vec<Finding>, Papertow
 	detect_repo_with_config(repo_root, NameCredibilityConfig::default())
 }
 
+#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
 pub fn detect_repo_with_config(
 	repo_root: impl AsRef<Path>,
 	config: NameCredibilityConfig,
@@ -74,11 +75,16 @@ pub fn detect_repo_with_config(
 		Severity::Medium
 	};
 
-	let confidence = ((generic_hits as f32 / 5.0) * 0.4
-		+ (repetition_hits as f32 / 8.0) * 0.4
-		+ ((config.max_code_files_for_flag.saturating_sub(code_files)) as f32
-			/ config.max_code_files_for_flag.max(1) as f32)
-			* 0.2)
+	let confidence = (generic_hits as f32 / 5.0)
+		.mul_add(
+			0.4,
+			(repetition_hits as f32 / 8.0).mul_add(
+				0.4,
+				((config.max_code_files_for_flag.saturating_sub(code_files)) as f32
+					/ config.max_code_files_for_flag.max(1) as f32)
+					* 0.2,
+			),
+		)
 		.min(1.0);
 
 	let mut finding = Finding::new(
@@ -193,64 +199,42 @@ mod tests {
 	}
 
 	#[test]
-	fn name_detector_ignores_specific_names() {
-		let temp = TempDir::new();
-		assert!(temp.is_ok());
-		let temp = match temp {
-			Ok(temp) => temp,
-			Err(error) => panic!("failed to create tempdir: {error}"),
-		};
+	fn name_detector_ignores_specific_names() -> Result<(), Box<dyn std::error::Error>> {
+		let temp = TempDir::new()?;
 
-		assert!(fs::create_dir_all(temp.path().join("src")).is_ok());
-		assert!(fs::write(temp.path().join("src/lib.rs"), "pub fn run() {}\n").is_ok());
-		assert!(fs::write(
+		fs::create_dir_all(temp.path().join("src"))?;
+		fs::write(temp.path().join("src/lib.rs"), "pub fn run() {}\n")?;
+		fs::write(
 			temp.path().join("Cargo.toml"),
 			"[package]\nname = \"domain-parser\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
-		)
-		.is_ok());
-		assert!(fs::write(
+		)?;
+		fs::write(
 			temp.path().join("README.md"),
 			"domain-parser focuses on structured parsing and validation workflows.\n",
-		)
-		.is_ok());
+		)?;
 
-		let findings = detect_repo_with_config(temp.path(), NameCredibilityConfig::default());
-		assert!(findings.is_ok());
-		let findings = match findings {
-			Ok(findings) => findings,
-			Err(error) => panic!("unexpected detector error: {error}"),
-		};
+		let findings = detect_repo_with_config(temp.path(), NameCredibilityConfig::default())?;
 		assert!(findings.is_empty());
+		Ok(())
 	}
 
 	#[test]
-	fn name_detector_flags_generic_repetitive_names() {
-		let temp = TempDir::new();
-		assert!(temp.is_ok());
-		let temp = match temp {
-			Ok(temp) => temp,
-			Err(error) => panic!("failed to create tempdir: {error}"),
-		};
+	fn name_detector_flags_generic_repetitive_names() -> Result<(), Box<dyn std::error::Error>> {
+		let temp = TempDir::new()?;
 
-		assert!(fs::create_dir_all(temp.path().join("src")).is_ok());
-		assert!(fs::write(temp.path().join("src/main.rs"), "fn main() {}\n").is_ok());
-		assert!(fs::write(
+		fs::create_dir_all(temp.path().join("src"))?;
+		fs::write(temp.path().join("src/main.rs"), "fn main() {}\n")?;
+		fs::write(
 			temp.path().join("Cargo.toml"),
 			"[package]\nname = \"ai-tool-app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
-		)
-		.is_ok());
-		assert!(fs::write(
+		)?;
+		fs::write(
 			temp.path().join("README.md"),
 			"ai-tool-app is a revolutionary showcase. ai-tool-app is instant. ai-tool-app is next-generation. ai-tool-app helps everyone.",
-		)
-		.is_ok());
+		)?;
 
-		let findings = detect_repo_with_config(temp.path(), NameCredibilityConfig::default());
-		assert!(findings.is_ok());
-		let findings = match findings {
-			Ok(findings) => findings,
-			Err(error) => panic!("unexpected detector error: {error}"),
-		};
+		let findings = detect_repo_with_config(temp.path(), NameCredibilityConfig::default())?;
 		assert_eq!(findings.len(), 1);
+		Ok(())
 	}
 }

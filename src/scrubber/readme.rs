@@ -67,6 +67,10 @@ pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelErr
     detect_in_text(path, &content, ReadmeDetectionConfig::default())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "confidence score: bounded usize counts"
+)]
 pub fn detect_in_text(
     file_path: impl Into<PathBuf>,
     content: &str,
@@ -94,8 +98,9 @@ pub fn detect_in_text(
     } else {
         Severity::Medium
     };
-    let confidence =
-        ((section_hits as f32 / 9.0) * 0.7 + (phrase_hits as f32 / 6.0) * 0.3).min(1.0);
+    let confidence = (section_hits as f32 / 9.0)
+        .mul_add(0.7, (phrase_hits as f32 / 6.0) * 0.3)
+        .min(1.0);
 
     let end_line = content.lines().count().max(1);
     let mut finding = Finding::new(
@@ -105,8 +110,7 @@ pub fn detect_in_text(
         confidence,
         file_path,
         format!(
-            "README appears template-heavy ({} boilerplate sections, {} template phrases).",
-            section_hits, phrase_hits
+            "README appears template-heavy ({section_hits} boilerplate sections, {phrase_hits} template phrases).",
         ),
     )?;
     finding.line_range = Some(LineRange::new(1, end_line)?);
@@ -118,9 +122,13 @@ pub fn detect_in_text(
     Ok(vec![finding])
 }
 
-pub fn transform_file(path: impl AsRef<Path>, dry_run: bool) -> Result<ReadmeTransformResult, PapertowelError> {
+pub fn transform_file(
+    path: impl AsRef<Path>,
+    dry_run: bool,
+) -> Result<ReadmeTransformResult, PapertowelError> {
     let path = path.as_ref();
-    let original = fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
+    let original =
+        fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
     let (transformed, result) = transform_text(&original);
 
     if !dry_run && result.changed {
@@ -168,21 +176,21 @@ pub fn transform_text(content: &str) -> (String, ReadmeTransformResult) {
     }
 
     for (position, heading_idx) in heading_indices.iter().enumerate() {
-        let heading_line = lines.get(*heading_idx).map(|line| line.trim()).unwrap_or("");
+        let heading_line = lines.get(*heading_idx).map_or("", |line| line.trim());
         let normalized_heading = heading_line
             .trim_start_matches('#')
             .trim()
             .to_ascii_lowercase();
 
-        let next_heading = heading_indices.get(position + 1).copied().unwrap_or(lines.len());
-        let content_line_count = section_content_line_count(
-            &lines,
-            heading_idx + 1,
-            next_heading,
-            &drop_indices,
-        );
+        let next_heading = heading_indices
+            .get(position + 1)
+            .copied()
+            .unwrap_or(lines.len());
+        let content_line_count =
+            section_content_line_count(&lines, heading_idx + 1, next_heading, &drop_indices);
 
-        if SECTION_DROP_CANDIDATES.contains(&normalized_heading.as_str()) && content_line_count == 0 {
+        if SECTION_DROP_CANDIDATES.contains(&normalized_heading.as_str()) && content_line_count == 0
+        {
             drop_indices.insert(*heading_idx);
         }
     }
@@ -269,20 +277,16 @@ mod tests {
     }
 
     #[test]
-    fn readme_detector_ignores_repo_specific_content() {
+    fn readme_detector_ignores_repo_specific_content() -> Result<(), Box<dyn std::error::Error>> {
         let content =
             "# papertowel\n\n## Architecture\nReal details here.\n## Commands\nActual examples.\n";
-        let findings = detect_in_text("README.md", content, ReadmeDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected readme detector error: {error}"),
-        };
+        let findings = detect_in_text("README.md", content, ReadmeDetectionConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn readme_detector_flags_template_bundles() {
+    fn readme_detector_flags_template_bundles() -> Result<(), Box<dyn std::error::Error>> {
         let content = "\
 # My Project\n\
 ## Installation\n\
@@ -297,13 +301,9 @@ Pull requests are welcome.\n\
 This project was bootstrapped from a template.\n\
 ";
 
-        let findings = detect_in_text("README.md", content, ReadmeDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected readme detector error: {error}"),
-        };
+        let findings = detect_in_text("README.md", content, ReadmeDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 
     #[test]
@@ -328,32 +328,20 @@ This project was bootstrapped from a template.\n";
     }
 
     #[test]
-    fn transform_file_honors_dry_run() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn transform_file_honors_dry_run() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let file_path = tmp.path().join("README.md");
 
-        let write_result = fs::write(&file_path, "# Demo\nThis project was bootstrapped from a template.\n");
-        assert!(write_result.is_ok());
+        fs::write(
+            &file_path,
+            "# Demo\nThis project was bootstrapped from a template.\n",
+        )?;
 
-        let result = transform_file(&file_path, true);
-        assert!(result.is_ok());
-        let result = match result {
-            Ok(result) => result,
-            Err(error) => panic!("unexpected transform error: {error}"),
-        };
+        let result = transform_file(&file_path, true)?;
         assert!(result.changed);
 
-        let disk_content = fs::read_to_string(&file_path);
-        assert!(disk_content.is_ok());
-        let disk_content = match disk_content {
-            Ok(content) => content,
-            Err(error) => panic!("unexpected read error: {error}"),
-        };
+        let disk_content = fs::read_to_string(&file_path)?;
         assert!(disk_content.contains("bootstrapped"));
+        Ok(())
     }
 }

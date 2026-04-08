@@ -51,7 +51,7 @@ impl LineRange {
         Ok(Self { start, end })
     }
 
-    pub fn contains(self, line: usize) -> bool {
+    pub const fn contains(self, line: usize) -> bool {
         line >= self.start && line <= self.end
     }
 }
@@ -127,36 +127,28 @@ mod tests {
     }
 
     #[test]
-    fn line_range_contains_expected_lines() {
-        let range_result = LineRange::new(10, 12);
-        assert!(range_result.is_ok());
-        let range = match range_result {
-            Ok(range) => range,
-            Err(error) => panic!("unexpected line range error: {error}"),
-        };
+    fn line_range_contains_expected_lines() -> Result<(), Box<dyn std::error::Error>> {
+        let range = LineRange::new(10, 12)?;
         assert!(range.contains(10));
         assert!(range.contains(12));
         assert!(!range.contains(13));
+        Ok(())
     }
 
     #[test]
-    fn finding_constructor_validates_fields() {
-        let finding_result = Finding::new(
+    fn finding_constructor_validates_fields() -> Result<(), Box<dyn std::error::Error>> {
+        let finding = Finding::new(
             "lexical.cluster",
             FindingCategory::Lexical,
             Severity::High,
             0.9,
             "src/lib.rs",
             "High-density slop phrase cluster detected",
-        );
-        assert!(finding_result.is_ok());
-        let finding = match finding_result {
-            Ok(finding) => finding,
-            Err(error) => panic!("unexpected finding error: {error}"),
-        };
+        )?;
 
         assert!(finding.is_high_confidence());
         assert_eq!(finding.category, FindingCategory::Lexical);
+        Ok(())
     }
 
     #[test]

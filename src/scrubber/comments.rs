@@ -74,6 +74,7 @@ pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelErr
     detect_in_text(path, &content, CommentDetectionConfig::default())
 }
 
+#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
 pub fn detect_in_text(
     file_path: impl Into<PathBuf>,
     content: &str,
@@ -102,9 +103,13 @@ pub fn detect_in_text(
         Severity::Medium
     };
 
-    let confidence = (analysis.density * 0.5
-        + (analysis.tutorial_phrase_hits as f32 / 8.0) * 0.3
-        + analysis.dominant_prefix_ratio * 0.2)
+    let confidence = analysis
+        .density
+        .mul_add(
+            0.5,
+            (analysis.tutorial_phrase_hits as f32 / 8.0)
+                .mul_add(0.3, analysis.dominant_prefix_ratio * 0.2),
+        )
         .min(1.0);
 
     let line_range = comment_line_range(content)?;
@@ -205,6 +210,7 @@ pub fn transform_text(content: &str) -> (String, CommentTransformResult) {
 }
 
 #[must_use]
+#[expect(clippy::cast_precision_loss, reason = "density ratios: bounded usize counts")]
 pub fn analyze_comments(content: &str) -> CommentMetrics {
     let mut non_empty_lines = 0_usize;
     let mut comment_lines = 0_usize;
@@ -283,7 +289,7 @@ fn comment_line_range(content: &str) -> Result<Option<LineRange>, PapertowelErro
 fn is_comment_line(line: &str) -> bool {
     line.starts_with("//")
         || line.starts_with("///")
-        || line.starts_with("#")
+        || line.starts_with('#')
         || line.starts_with("/*")
         || line.starts_with('*')
 }
@@ -368,19 +374,15 @@ mod tests {
     }
 
     #[test]
-    fn detect_in_text_skips_light_commenting() {
+    fn detect_in_text_skips_light_commenting() -> Result<(), Box<dyn std::error::Error>> {
         let content = "fn one() {}\nfn two() {}\n// tiny note\nfn three() {}\n";
-        let findings = detect_in_text("src/lib.rs", content, CommentDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected detector error: {error}"),
-        };
+        let findings = detect_in_text("src/lib.rs", content, CommentDetectionConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn detect_in_text_flags_tutorial_heavy_comments() {
+    fn detect_in_text_flags_tutorial_heavy_comments() -> Result<(), Box<dyn std::error::Error>> {
         let sample = "\
 			// This module provides a robust interface\n\
 			// This function computes a value in order to help users\n\
@@ -396,46 +398,29 @@ mod tests {
             ..CommentDetectionConfig::default()
         };
 
-        let findings = detect_in_text("src/lib.rs", sample, config);
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected detector error: {error}"),
-        };
+        let findings = detect_in_text("src/lib.rs", sample, config)?;
 
         assert_eq!(findings.len(), 1);
-        let first = findings.first();
-        assert!(first.is_some());
-        let first = match first {
-            Some(first) => first,
-            None => panic!("expected one finding"),
+        let Some(first) = findings.first() else {
+            return Err("expected one finding".into());
         };
         assert!(matches!(first.severity, Severity::Medium | Severity::High));
+        Ok(())
     }
 
     #[test]
-    fn detect_file_processes_real_file() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn detect_file_processes_real_file() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let file_path = tmp.path().join("sample.rs");
 
-        let write_result = fs::write(
+        fs::write(
             &file_path,
             "// This function does a\n// This function does b\n// This function does c\n// This function does d\nfn run() {}\n",
-        );
-        assert!(write_result.is_ok());
+        )?;
 
-        let findings = detect_file(&file_path);
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected detector error: {error}"),
-        };
+        let findings = detect_file(&file_path)?;
         assert_eq!(findings.len(), 0);
+        Ok(())
     }
 
     #[test]
@@ -455,32 +440,17 @@ fn run() {}\n";
     }
 
     #[test]
-    fn transform_file_honors_dry_run() {
-        let tmp = TempDir::new();
-        assert!(tmp.is_ok());
-        let tmp = match tmp {
-            Ok(tmp) => tmp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn transform_file_honors_dry_run() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp = TempDir::new()?;
         let file_path = tmp.path().join("sample.rs");
 
-        let write_result = fs::write(&file_path, "// This function does x\nfn x() {}\n");
-        assert!(write_result.is_ok());
+        fs::write(&file_path, "// This function does x\nfn x() {}\n")?;
 
-        let result = transform_file(&file_path, true);
-        assert!(result.is_ok());
-        let result = match result {
-            Ok(result) => result,
-            Err(error) => panic!("unexpected transform error: {error}"),
-        };
+        let result = transform_file(&file_path, true)?;
         assert!(result.changed);
 
-        let disk_content = fs::read_to_string(&file_path);
-        assert!(disk_content.is_ok());
-        let disk_content = match disk_content {
-            Ok(content) => content,
-            Err(error) => panic!("unexpected read error: {error}"),
-        };
+        let disk_content = fs::read_to_string(&file_path)?;
         assert!(disk_content.contains("This function does x"));
+        Ok(())
     }
 }

@@ -10,6 +10,7 @@ pub struct ScrubArgs {
     pub detectors: Vec<String>,
 }
 
+#[expect(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
 pub fn handle(args: ScrubArgs) -> Result<()> {
     tracing::info!(path = %args.path, dry_run = args.dry_run, detectors = ?args.detectors, "scrub placeholder");
     Ok(())

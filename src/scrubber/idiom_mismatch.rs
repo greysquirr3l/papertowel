@@ -58,6 +58,10 @@ pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelErr
     detect_in_text(path, &content, IdiomMismatchConfig::default())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "confidence score: bounded usize counts"
+)]
 pub fn detect_in_text(
     file_path: impl Into<PathBuf>,
     content: &str,
@@ -93,10 +97,13 @@ pub fn detect_in_text(
     } else {
         Severity::Medium
     };
-    let confidence = ((foreign_hits as f32 / 8.0) * 0.7
-        + ((config.max_rust_hits_for_flag.saturating_sub(rust_hits)) as f32
-            / config.max_rust_hits_for_flag.max(1) as f32)
-            * 0.3)
+    let confidence = (foreign_hits as f32 / 8.0)
+        .mul_add(
+            0.7,
+            ((config.max_rust_hits_for_flag.saturating_sub(rust_hits)) as f32
+                / config.max_rust_hits_for_flag.max(1) as f32)
+                * 0.3,
+        )
         .min(1.0);
 
     let end_line = content.lines().count().max(1);

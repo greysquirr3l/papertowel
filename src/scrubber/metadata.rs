@@ -48,6 +48,7 @@ pub fn detect_repo(repo_root: impl AsRef<Path>) -> Result<Vec<Finding>, Papertow
     detect_repo_with_config(repo_root, MetadataDetectionConfig::default())
 }
 
+#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
 pub fn detect_repo_with_config(
     repo_root: impl AsRef<Path>,
     config: MetadataDetectionConfig,
@@ -67,8 +68,8 @@ pub fn detect_repo_with_config(
         Severity::Medium
     };
 
-    let confidence = ((scan.present_files.len() as f32 / METADATA_FILES.len() as f32) * 0.6
-        + (scan.boilerplate_hits as f32 / 12.0) * 0.4)
+    let confidence = (scan.present_files.len() as f32 / METADATA_FILES.len() as f32)
+        .mul_add(0.6, (scan.boilerplate_hits as f32 / 12.0) * 0.4)
         .min(1.0);
 
     let mut finding = Finding::new(
@@ -135,37 +136,22 @@ mod tests {
     }
 
     #[test]
-    fn metadata_detector_ignores_sparse_docs() {
-        let temp = TempDir::new();
-        assert!(temp.is_ok());
-        let temp = match temp {
-            Ok(temp) => temp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn metadata_detector_ignores_sparse_docs() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
 
-        let write = fs::write(
+        fs::write(
             temp.path().join("CONTRIBUTING.md"),
             "Repository-specific contribution workflow.",
-        );
-        assert!(write.is_ok());
+        )?;
 
-        let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected metadata detector error: {error}"),
-        };
+        let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig::default())?;
         assert!(findings.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn metadata_detector_flags_policy_bundle() {
-        let temp = TempDir::new();
-        assert!(temp.is_ok());
-        let temp = match temp {
-            Ok(temp) => temp,
-            Err(error) => panic!("failed to create tempdir: {error}"),
-        };
+    fn metadata_detector_flags_policy_bundle() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TempDir::new()?;
 
         let files = [
             (
@@ -183,17 +169,11 @@ mod tests {
         ];
 
         for (name, content) in files {
-            let write = fs::write(temp.path().join(name), content);
-            assert!(write.is_ok());
+            fs::write(temp.path().join(name), content)?;
         }
 
-        let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig::default());
-        assert!(findings.is_ok());
-        let findings = match findings {
-            Ok(findings) => findings,
-            Err(error) => panic!("unexpected metadata detector error: {error}"),
-        };
-
+        let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig::default())?;
         assert_eq!(findings.len(), 1);
+        Ok(())
     }
 }
