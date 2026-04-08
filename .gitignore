@@ -1,0 +1,61 @@
+# Rust
+/target/
+debug/
+release/
+*.pdb
+*.profraw
+*.profdata
+
+# Cargo
+.cargo/
+
+# Editors
+.vscode/
+.idea/
+*.code-workspace
+
+# GitHub local / generated
+.github/.cache/
+
+# Coraline / Serena
+.coraline/
+.serena/
+
+# Wiggum generated artifacts
+tasks/
+IMPLEMENTATION_PLAN.md
+PROGRESS.md
+features.json
+AGENTS.md
+plan.toml
+
+# Wiggum prompts and generated editor files
+.vscode/orchestrator.prompt.md
+.vscode/evaluator.prompt.md
+
+# Project-local generated notes
+rust-catchup-*.md
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux / Unix
+*~
+.directory
+.Trash-*/
+.nfs*
+
+# Patch / merge leftovers
+*.orig
+*.rej
+*.bak

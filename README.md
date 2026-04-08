@@ -1,0 +1,111 @@
+# papertowel
+
+Cleaning up the slop.
+
+---
+
+You know how some communities have decided that *how* code was written matters more than *whether it's any good*? How the same people who happily accept copy-pasted Stack Overflow answers and half-remembered blog post patterns suddenly care deeply about provenance when an LLM enters the loop?
+
+Yeah. This tool exists because of them.
+
+**papertowel** detects and removes the stylistic fingerprints that scream "an AI wrote this." It's a specialized linter for the tells that have become forensic evidence in spaces where AI-assisted development is treated as original sin rather than tool use.
+
+The irony of using AI to build a tool that hides AI involvement is not lost on us. We're leaning into it.
+
+## What it does
+
+**The Scrubber** — static analysis of your codebase to find and fix the obvious tells:
+
+- Slop vocabulary ("robust," "comprehensive," "streamlined," "utilize," "leverage")
+- Over-documentation (comments that restate what code obviously does)  
+- Cookie-cutter README structure (you know the one: emoji headers, checkmark features, Getting Started → Prerequisites → Installation → Usage → Contributing → License)
+- Suspiciously uniform code organization
+- Metadata artifacts (CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, and perfect issue templates all appearing in commit one)
+
+**The Wringer** — git history humanization via worktrees:
+
+Nothing says "I definitely hand-typed this" like 47 commits in 6 hours, each one a perfectly scoped unit of work with zero WIP messages and no 45-minute gaps where someone got distracted.
+
+The wringer doesn't rewrite history (that leaves forensic traces). Instead, it maintains a public branch in a git worktree and drip-feeds commits on a realistic human schedule. Your dev branch keeps the real history. Your public branch accumulates commits organically, with realistic timestamps, variable gaps, occasional `wip` and `fix the fix` messages, and the general entropy of someone who sometimes works at 2am and sometimes takes a three-hour lunch.
+
+## Installation
+
+```sh
+cargo install papertowel
+```
+
+## Usage
+
+```sh
+# See what you're working with
+papertowel scan .
+
+# Fix the code fingerprints
+papertowel scrub .
+papertowel scrub . --dry-run  # preview first
+
+# Set up the git humanizer
+papertowel wring init --branch public
+papertowel wring queue --from dev
+papertowel wring drip --daemon --profile night-owl
+
+# Check on things
+papertowel wring status
+```
+
+## Persona profiles
+
+The wringer is driven by persona profiles that define how your fake human works:
+
+```toml
+[persona]
+name = "night-owl"
+timezone = "America/Detroit"
+
+[persona.schedule]
+active_hours = ["10:00-14:00", "21:00-03:00"]
+peak_productivity = "22:00-01:00"
+avg_commits_per_session = 8
+session_variance = 0.4
+
+[persona.messages]
+style = "mixed"              # conventional | lazy | mixed
+wip_frequency = 0.15
+profanity_frequency = 0.05
+typo_rate = 0.02
+
+[persona.archaeology]
+todo_inject_rate = 0.1       # TODOs that get resolved later
+dead_code_rate = 0.05        # code that gets cleaned up
+rename_chains = true         # functions that get renamed across commits
+```
+
+Two profiles ship built-in: `night-owl` and `nine-to-five`. Create your own with `papertowel profile create`.
+
+## The philosophy, if you want to call it that
+
+Bad code was bad code before LLMs existed. Untested, unreviewed dumps into help threads were a problem when people were copying from w3schools, and they're the same problem now. The failure mode isn't "a robot touched it" — it's "the human didn't understand or verify the code they shipped."
+
+The crowd most exercised about AI code tends to treat coding as identity rather than craft. If your self-worth is tied to being The Person Who Writes Code, a tool that democratizes that skill feels existential. Which, honestly, tracks.
+
+Meanwhile, the line is already impossible to draw. Copilot tab-completion — is that AI slop? Claude refactoring a function you wrote — is the result yours or the machine's? You write the architecture, types, and tests while an LLM fills in boilerplate — who's the author? It's like arguing whether a photograph is "real art" because the camera calculated the exposure.
+
+Code quality is about *quality*. Ship working code, understand what it does, verify it solves the problem. Origin is incidental.
+
+This tool helps you sidestep the purity police so you can focus on actually shipping things.
+
+## Configuration
+
+- `.papertowel.toml` — repo-level configuration
+- `.papertowelignore` — paths to skip (gitignore syntax)
+- `~/.config/papertowel/profiles/*.toml` — persona profiles
+
+## License
+
+MIT. Do whatever you want.
+
+![The Joker](assets/img/joker_clap.gif)
+
+---
+
+*Built with the assistance of machines. Obviously.*
