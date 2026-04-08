@@ -27,6 +27,7 @@ pub enum SeverityArg {
 #[command(
     name = "papertowel",
     version,
+    long_version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("PAPERTOWEL_GIT_SHA"), ")"),
     about = "Clean up AI fingerprints and humanize git history"
 )]
 struct Cli {
