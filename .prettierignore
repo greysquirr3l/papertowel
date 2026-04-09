@@ -1,0 +1,3 @@
+# Prettier does not understand Rust — keep it away from .rs files
+*.rs
+target/

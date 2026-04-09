@@ -114,14 +114,14 @@ fn apply_transforms(path: &Path, args: &ScrubArgs) -> FileResult {
     };
 
     if lang.is_analysable() {
-        if wants_detector(&args.detectors, lexical::DETECtoR_NAME) {
+        if wants_detector(&args.detectors, lexical::DETECTOR_NAME) {
             match lexical::transform_file(path, args.dry_run) {
                 Ok(r) if r.changed => result.lexical = Some(r.replacements_applied),
                 Ok(_) => {}
                 Err(e) => tracing::warn!(path = %path.display(), "lexical transform error: {e}"),
             }
         }
-        if wants_detector(&args.detectors, comments::DETECtoR_NAME) {
+        if wants_detector(&args.detectors, comments::DETECTOR_NAME) {
             match comments::transform_file(path, args.dry_run) {
                 Ok(r) if r.changed => result.comments = Some(r.removed_comment_lines),
                 Ok(_) => {}
@@ -130,7 +130,7 @@ fn apply_transforms(path: &Path, args: &ScrubArgs) -> FileResult {
         }
     }
 
-    if ext == "md" && wants_detector(&args.detectors, readme::DETECtoR_NAME) {
+    if ext == "md" && wants_detector(&args.detectors, readme::DETECTOR_NAME) {
         match readme::transform_file(path, args.dry_run) {
             Ok(r) if r.changed => result.readme = Some(r.removed_lines),
             Ok(_) => {}

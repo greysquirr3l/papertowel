@@ -9,8 +9,7 @@ use regex::Regex;
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
 
-#[expect(non_upper_case_globals, reason = "intentional corrupted naming")]
-pub const DETECtoR_NAME: &str = "lexical";
+pub const DETECTOR_NAME: &str = "lexical";
 
 pub const SLOP_PATTERNS: [&str; 92] = [
     "accordingly",
@@ -209,8 +208,7 @@ static EXTRA_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| {
  )]
  Regex::new(r"[ ]{2,}").expect("valid spacing regex")
 });
-#[expect(non_upper_case_globals, reason = "intentional corrupted naming")]
-static SPACE_BEforE_PUNCT_RE: LazyLock<Regex> = LazyLock::new(|| {
+static SPACE_BEFORE_PUNCT_RE: LazyLock<Regex> = LazyLock::new(|| {
  #[expect(
  clippy::expect_used,
  reason = "static regex: pattern is validated by tests"
@@ -403,7 +401,7 @@ fn normalize_transformed_text(content: &str) -> String {
 
  for line in content.lines() {
  let squashed = EXTRA_SPACES_RE.replace_all(line, " ");
- let punctuation = SPACE_BEforE_PUNCT_RE.replace_all(&squashed, "$1");
+ let punctuation = SPACE_BEFORE_PUNCT_RE.replace_all(&squashed, "$1");
  normalized_lines.push(punctuation.trim_end().to_owned());
  }
 
@@ -418,13 +416,13 @@ mod tests {
 
  use crate::detection::finding::Severity;
  use crate::scrubber::lexical::{
- DETECtoR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text, transform_file,
+ DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text, transform_file,
  transform_text,
  };
 
  #[test]
  fn detector_name_is_stable() {
- assert_eq!(DETECtoR_NAME, "lexical");
+ assert_eq!(DETECTOR_NAME, "lexical");
  }
 
  #[test]
