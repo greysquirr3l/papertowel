@@ -1,3 +1,6 @@
+# mdBook build output
+book/book/
+
 # Rust
 /target/
 debug/
