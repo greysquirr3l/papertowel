@@ -30,8 +30,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-check-v3-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-check-v3-
+          key: ${{ runner.os }}-cargo-check-v4-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-check-v4-
 
       - name: cargo check
         run: cargo check --workspace --all-features
@@ -52,8 +52,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-test-v3-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-test-v3-
+          key: ${{ runner.os }}-cargo-test-v4-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-v4-
 
       - name: Run tests
         run: cargo test --workspace
@@ -76,8 +76,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-clippy-v3-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-clippy-v3-
+          key: ${{ runner.os }}-cargo-clippy-v4-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-clippy-v4-
 
       - name: Run clippy
         run: cargo clippy --workspace -- -D warnings
@@ -112,8 +112,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-doc-v3-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-doc-v3-
+          key: ${{ runner.os }}-cargo-doc-v4-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-doc-v4-
 
       - name: Build docs
         run: cargo doc --workspace --no-deps
@@ -139,8 +139,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-cross-v3-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-cross-v3-
+          key: ${{ runner.os }}-cargo-cross-v4-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cross-v4-
 
       - name: Run tests
         run: cargo test --workspace
@@ -162,8 +162,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-scan-v3-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-scan-v3-
+          key: ${{ runner.os }}-cargo-scan-v4-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-scan-v4-
 
       - name: Build papertowel
         run: cargo build --release -p papertowel
