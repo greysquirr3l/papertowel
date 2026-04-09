@@ -7,22 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `papertowel scan --format sarif` — SARIF 2.1.0 output format for integration with VS Code SARIF Viewer, GitHub Code Scanning, and other static analysis tooling.
-- `papertowel hook install` — installs a pre-commit hook that scans staged files and blocks commits with findings at medium severity or above.
-- `papertowel hook uninstall` — removes the papertowel pre-commit hook (refuses to remove hooks it didn't install).
-- `papertowel hook status` — shows whether a papertowel hook is installed.
-- `.prettierignore` to prevent Prettier from mangling Rust source files.
-
-### Fixed
-
-- Restored corrupted identifiers across multiple source files (`OutputFormat`, `DETECTOR_NAME`, `SPACE_BEFORE_PUNCT_RE`, `TomlDeserialize`, `TomlSerialize`).
-- Restored stripped `#[error]` attributes in domain error types.
-- Restored comment/doc lines in test fixtures that were silently removed.
-- Removed stale `#[expect]` suppressions that no longer applied.
-
-## [0.1.0] — 2026-04-06
+## [0.1.0] — 2026-04-09
 
 ### Added
 
@@ -33,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Persona profiles**: `night-owl` and `nine-to-five` built-in profiles, `profile create`/`list`/`show` commands.
 - **Learning mode**: `learn repo` analyzes a codebase to build a style baseline, `learn show` displays it.
 - **CI integration**: `--ci` flag auto-detects CI environments, GitHub Actions output format, `--fail-on` severity gating.
-- **Configuration**: `.papertowel.toml` repo config, `.papertowelignore` path exclusions (gitignore syntax), inline `papertowel:ignore-file` and `papertowel:ignore-next-line` directives.
+- **Configuration**: `.papertowel.toml` repo config, `.papertowelignore` path exclusions (gitignore syntax), inline `papertowel:ignore-file` and `papertowel:ignore-next-line` directives, project root discovery, global `~/.config/papertowel/config.toml` support.
+- **Output formats**: text, JSON, and SARIF 2.1.0 for integration with VS Code SARIF Viewer, GitHub Code Scanning, and other static analysis tooling.
+- **Pre-commit hook**: `papertowel hook install/uninstall/status` — scans staged files and blocks commits with findings at medium severity or above.
 - **MCP server**: `papertowel-mcp` crate exposing `papertowel_scan` and `papertowel_scrub` tools (read-only).
 - **Security**: gitleaks pre-commit hook integration, safe path handling, input validation.
 - Multi-language support: Rust, Go, TypeScript, Python, Zig, C++.

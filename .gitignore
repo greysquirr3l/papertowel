@@ -33,6 +33,7 @@ PROGRESS.md
 features.json
 AGENTS.md
 plan.toml
+CLAUDE.md
 
 # Wiggum prompts and generated editor files
 .vscode/orchestrator.prompt.md
