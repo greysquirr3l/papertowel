@@ -1,6 +1,7 @@
 pub mod comments;
 pub mod commit_pattern;
 pub mod idiom_mismatch;
+pub mod ignore_directives;
 pub mod lexical;
 pub mod maintenance;
 pub mod metadata;

@@ -6,7 +6,7 @@ use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
 use walkdir::WalkDir;
 
-use super::{OutputFormat, SeverityArg};
+use super::{Outputformat, SeverityArg};
 use crate::cli::report::{
  build_summary, write_github_actions_report, write_json_report, write_text_report,
 };
@@ -15,6 +15,7 @@ use crate::detection::finding::{Finding, Severity};
 use crate::detection::language::LanguageKind;
 use crate::learning::StyleBaseline;
 use crate::scrubber::comments::CommentDetectionConfig;
+use crate::scrubber::ignore_directives;
 use crate::scrubber::{
  comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
  structure, tests as scrubber_tests, workflow,
@@ -24,7 +25,7 @@ use crate::scrubber::{
 pub struct ScanArgs {
  pub path: String,
  #[arg(long, value_enum, default_value = "text")]
- pub format: OutputFormat,
+ pub format: Outputformat,
  #[arg(long, value_enum)]
  pub severity: Option<SeverityArg>,
  /// Exit with code 1 if any findings at or above this severity are found.
@@ -36,10 +37,10 @@ pub struct ScanArgs {
  pub ci: bool,
 }
 
-pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFormat) {
+pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, Outputformat) {
  let in_ci = args.ci || std::env::var("CI").is_ok_and(|v| v == "true" || v == "1");
- let format = if in_ci && args.format == OutputFormat::Text {
- OutputFormat::GithubActions
+ let format = if in_ci && args.format == Outputformat::Text {
+ Outputformat::GithubActions
  } else {
  args.format
  };
@@ -107,7 +108,21 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 .and_then(|n| n.to_str())
 .unwrap_or_default()
 .to_lowercase();
+
+ let directives =
+ ignore_directives::parse_file(path).unwrap_or_else(|_| ignore_directives::parse(""));
+ if directives.ignore_file {
+ continue;
+ }
+
+ let pre_count = findings.len();
  run_file_detectors(path, &mut findings, comment_config);
+
+ if!directives.suppressed_lines.is_empty() {
+ let new_findings = findings.split_off(pre_count);
+ let filtered = directives.filter_findings(new_findings);
+ findings.extend(filtered);
+ }
  }
 
  bar.finish_and_clear();
@@ -127,9 +142,9 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
  let mut out = BufWriter::new(stdout.lock());
 
  match effective_format {
- OutputFormat::Text => write_text_report(&mut out, &findings, &summary, use_color)?,
- OutputFormat::Json => write_json_report(&mut out, &findings, &summary)?,
- OutputFormat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
+ Outputformat::Text => write_text_report(&mut out, &findings, &summary, use_color)?,
+ Outputformat::Json => write_json_report(&mut out, &findings, &summary)?,
+ Outputformat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
  }
 
  // CI gate: exit 1 if any finding is at or above the --fail-on threshold.
@@ -228,7 +243,7 @@ fn is_git_repo(path: &Path) -> bool {
 mod tests {
  use super::*;
 
- fn make_args(fail_on: Option<SeverityArg>, format: OutputFormat, ci: bool) -> ScanArgs {
+ fn make_args(fail_on: Option<SeverityArg>, format: Outputformat, ci: bool) -> ScanArgs {
  ScanArgs {
  path: ".".to_owned(),
  format,
@@ -241,16 +256,16 @@ mod tests {
  #[test]
  fn effective_ci_settings_no_ci_flag_no_env() {
  // When not in CI and no --fail-on, settings pass through unchanged.
- let args = make_args(None, OutputFormat::Text, false);
+ let args = make_args(None, Outputformat::Text, false);
  unsafe { std::env::remove_var("CI") };
  let (fail_on, format) = effective_ci_settings(&args);
  assert!(fail_on.is_none());
- assert_eq!(format, OutputFormat::Text);
+ assert_eq!(format, Outputformat::Text);
  }
 
  #[test]
  fn effective_ci_settings_explicit_fail_on_preserved() {
- let args = make_args(Some(SeverityArg::High), OutputFormat::Text, false);
+ let args = make_args(Some(SeverityArg::High), Outputformat::Text, false);
  unsafe { std::env::remove_var("CI") };
  let (fail_on, _format) = effective_ci_settings(&args);
  assert_eq!(fail_on, Some(SeverityArg::High));
@@ -258,24 +273,24 @@ mod tests {
 
  #[test]
  fn effective_ci_settings_ci_flag_implies_medium_and_github_format() {
- let args = make_args(None, OutputFormat::Text, true);
+ let args = make_args(None, Outputformat::Text, true);
  let (fail_on, format) = effective_ci_settings(&args);
  assert_eq!(fail_on, Some(SeverityArg::Medium));
- assert_eq!(format, OutputFormat::GithubActions);
+ assert_eq!(format, Outputformat::GithubActions);
  }
 
  #[test]
  fn effective_ci_settings_ci_flag_respects_explicit_fail_on() {
- let args = make_args(Some(SeverityArg::Low), OutputFormat::Text, true);
+ let args = make_args(Some(SeverityArg::Low), Outputformat::Text, true);
  let (fail_on, _format) = effective_ci_settings(&args);
  assert_eq!(fail_on, Some(SeverityArg::Low));
  }
 
  #[test]
  fn effective_ci_settings_ci_flag_preserves_explicit_json_format() {
- let args = make_args(None, OutputFormat::Json, true);
+ let args = make_args(None, Outputformat::Json, true);
  let (_, format) = effective_ci_settings(&args);
- assert_eq!(format, OutputFormat::Json);
+ assert_eq!(format, Outputformat::Json);
  }
 
  #[test]
@@ -284,7 +299,7 @@ mod tests {
  let tmp = TempDir::new()?;
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: None,
  fail_on: None,
  ci: false,
@@ -305,7 +320,7 @@ mod tests {
  )?;
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: None,
  fail_on: None,
  ci: false,
@@ -324,7 +339,7 @@ mod tests {
  )?;
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Json,
+ format: Outputformat::Json,
  severity: None,
  fail_on: None,
  ci: false,
@@ -340,7 +355,7 @@ mod tests {
  fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: Some(SeverityArg::High),
  fail_on: None,
  ci: false,
@@ -359,7 +374,7 @@ mod tests {
  )?;
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::GithubActions,
+ format: Outputformat::GithubActions,
  severity: None,
  fail_on: None,
  ci: false,
@@ -376,7 +391,7 @@ mod tests {
  fs::write(tmp.path().join("main.rs"), "fn main() {}\n")?;
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: None,
  fail_on: None,
  ci: false,
@@ -393,7 +408,7 @@ mod tests {
  // by using a path with zero findings.
  let args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: None,
  fail_on: Some(SeverityArg::High),
  ci: false,
@@ -412,7 +427,7 @@ mod tests {
  // Low filter
  let args_low = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: Some(SeverityArg::Low),
  fail_on: None,
  ci: false,
@@ -421,7 +436,7 @@ mod tests {
  // Medium filter
  let args_med = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: Some(SeverityArg::Medium),
  fail_on: None,
  ci: false,
@@ -448,7 +463,7 @@ mod tests {
  // Now scan — baseline.is_some() → exercises lines 70-72.
  let scan_args = ScanArgs {
  path: tmp.path().to_string_lossy().into_owned(),
- format: OutputFormat::Text,
+ format: Outputformat::Text,
  severity: None,
  fail_on: None,
  ci: false,

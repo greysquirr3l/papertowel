@@ -1,0 +1,10 @@
+# papertowel's own source files contain slop vocabulary and patterns
+# by necessity — they ARE the reference corpus. Exclude them from detection.
+src/scrubber/lexical.rs
+src/scrubber/comments.rs
+src/scrubber/prompt.rs
+src/scrubber/readme.rs
+src/learning/learner.rs
+
+# Build artefacts and vendored dependencies
+target/

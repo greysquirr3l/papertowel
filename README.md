@@ -99,9 +99,13 @@ This tool helps you sidestep the purity police so you can focus on actually ship
 
 ## Configuration
 
-- `.papertowel.toml` — repo-level configuration
+- `.papertowel.toml` — repo-level configuration (detectors, severity, exclusions)
 - `.papertowelignore` — paths to skip (gitignore syntax)
 - `~/.config/papertowel/profiles/*.toml` — persona profiles
+
+### Inline Directives
+
+Add `// papertowel:ignore-file` to any source file to skip it entirely, or `// papertowel:ignore-next-line` to suppress findings on a single line. Works with `//`, `#`, `--`, and `%` comment styles.
 
 ## License
 
