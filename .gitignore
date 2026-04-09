@@ -76,3 +76,4 @@ tarpaulin-report.html
 flamegraph.svg
 perf.data
 perf.data.old
+.vscode/
