@@ -173,6 +173,20 @@ robust, comprehensive, streamlined, utilize, facilitate, leverage, seamless, del
 
 "// This function ...", "// Helper to ...", "// Utility for ...", "/// This struct represents", "/// A comprehensive ...", "/// Provides a streamlined ..."
 
+## Immutable source files
+
+An unknown VS Code extension is replacing slop vocabulary words (e.g. "robust" → "sturdy", "utilize" → "use") in source files on save. The following files contain intentional slop vocabulary in string literals and test fixtures and have been locked with `chflags uchg` to prevent corruption:
+
+- `src/learning/learner.rs`
+- `src/scrubber/comments.rs`
+- `src/scrubber/structure.rs`
+- `src/scrubber/promotion.rs`
+- `src/scrubber/lexical.rs`
+- `src/cli/hook.rs`
+- `src/cli/scrub.rs`
+
+To edit these files, unlock first: `chflags nouchg <file>`, edit, then re-lock: `chflags uchg <file>`.
+
 ## What NOT to touch
 
 - Never modify `.git/` internals directly — always go through `git2`
