@@ -35,6 +35,16 @@ description = "AI code fingerprint scrubber and git history humanizer"
 repository = "https://github.com/greysquirr3l/papertowel"
 keywords = ["git", "linter", "code-style", "ai", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+exclude = [
+    "assets/",
+    "book/",
+    "docs/",
+    "tasks/",
+    ".github/",
+    ".githooks/",
+    ".gitleaks.toml",
+    ".prettierignore",
+]
 
 [lib]
 name = "papertowel"
