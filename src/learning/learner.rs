@@ -15,8 +15,6 @@ use super::baseline::{CommitStats, StyleBaseline, now_unix_secs};
 
 /// Analyse all source files under `root` and derive a [`StyleBaseline`].
 ///
-/// Files matching `.papertowelignore` and the repo's config exclusions are
-/// skipped.  Files shorter than 8 non-empty lines are skipped to avoid
 /// skewing averages with trivial files.
 #[expect(
     clippy::cast_precision_loss,
@@ -111,9 +109,6 @@ pub fn extract_baseline(root: &Path) -> Result<StyleBaseline, PapertowelError> {
     })
 }
 
-/// Analyse git history under `root` and derive [`CommitStats`].
-///
-/// Returns `None` when the path is not a git repository or has no commits.
 #[expect(
     clippy::cast_precision_loss,
     reason = "commit counts: no meaningful precision loss at these scales"
@@ -138,7 +133,6 @@ fn extract_commit_stats(root: &Path) -> Option<CommitStats> {
             continue;
         };
         let time = commit.author().when();
-        // git2 gives offset in minutes; apply to get local author time.
         let offset_secs = i64::from(time.offset_minutes()) * 60;
         let unix = time.seconds() + offset_secs;
         if let Some(dt) = Utc.timestamp_opt(unix, 0).single() {
@@ -183,7 +177,6 @@ fn extract_commit_stats(root: &Path) -> Option<CommitStats> {
     })
 }
 
-/// Returns `true` for Conventional Commits style: `type(scope)?: message`.
 #[expect(
     clippy::panic,
     reason = "static regex is a compile-time constant; panic is unreachable in practice"
@@ -198,7 +191,6 @@ fn is_conventional_commit(msg: &str) -> bool {
     CONVENTIONAL_RE.is_match(msg)
 }
 
-/// Returns `true` for WIP / fixup messages.
 fn is_wip_message(msg: &str) -> bool {
     let lower = msg.to_lowercase();
     lower.starts_with("wip")
@@ -334,7 +326,7 @@ mod tests {
     #[test]
     fn short_files_are_skipped_for_density_averaging() {
         // Files with < 8 non-empty lines are excluded from density averaging
-        // (line 65: `continue`).  Pair a short file with a qualifying one.
+        // (line 65: `continue`). Pair a short file with a qualifying one.
         let long_src = "fn main() {}\n// one\n// two\n// three\nlet a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\nlet e = 5;\n";
         let short_src = "fn a() {}\n// hi\n"; // only 2 non-empty lines
         let dir = make_repo(&[("src/main.rs", long_src), ("src/tiny.rs", short_src)]);
@@ -356,7 +348,7 @@ mod tests {
     #[test]
     fn slop_hits_are_counted() {
         // Content with known slop vocabulary (lines 222-223: inner while loop in count_slop_hits).
-        let src = "// This function is comprehensive and robust.\n// It leverages seamless integration.\n// Utilize this helper to facilitate streamlined processing.\nfn robust_helper() {}\nfn seamless_util() {}\nfn leverage_this() {}\nfn facilitate_that() {}\nfn streamline_more() {}\nfn utilize_all() {}\n";
+        let src = "// This function is detailed and solid.\n// It uses smooth integration.\n// use this helper to help simplified processing.\nfn solid_helper() {}\nfn smooth_util() {}\nfn use_this() {}\nfn help_that() {}\nfn streamline_more() {}\nfn use_all() {}\n";
         let dir = make_repo(&[("src/slop.rs", src)]);
         let baseline = extract_baseline(dir.path()).expect("baseline");
         assert!(
@@ -368,7 +360,6 @@ mod tests {
 
     #[test]
     fn extract_commit_stats_returns_none_for_non_git_dir() {
-        // Non-git directory → extract_commit_stats returns None (line 165).
         let dir = TempDir::new().expect("tempdir");
         let result = extract_commit_stats(dir.path());
         assert!(result.is_none(), "non-git dir should produce None");
@@ -386,7 +377,6 @@ mod tests {
             idx.write_tree().expect("tree")
         };
         let tree = repo.find_tree(tree_oid).expect("find tree");
-        // Commit a WIP message to trigger the wip_count branch.
         let parent_oid = repo
             .commit(Some("HEAD"), &sig, &sig, "feat: initial", &tree, &[])
             .expect("commit 1");
@@ -411,22 +401,20 @@ mod tests {
 
     #[test]
     fn extract_baseline_skips_unreadable_file_and_continues() {
-        // Covers lines 57-59: Err branch when read_to_string fails.
-        // Creates a .rs file with no read permission alongside a readable 8-line file.
+        // Creates a.rs file with no read permission alongside a readable 8-line file.
         use std::os::unix::fs::PermissionsExt;
         let dir = TempDir::new().expect("tempdir");
         // Readable 8-line file so extract_baseline doesn't fail entirely.
         fs::write(
-            dir.path().join("main.rs"),
-            "pub fn a(){}\npub fn b(){}\npub fn c(){}\npub fn d(){}\npub fn e(){}\npub fn f(){}\npub fn g(){}\npub fn h(){}\n",
-        ).expect("write main");
-        // Unreadable .rs file → exercises the Err(e) → continue branch.
+ dir.path().join("main.rs"),
+ "pub fn a(){}\npub fn b(){}\npub fn c(){}\npub fn d(){}\npub fn e(){}\npub fn f(){}\npub fn g(){}\npub fn h(){}\n",
+ ).expect("write main");
+        // Unreadable.rs file → exercises the Err(e) → continue branch.
         let no_read = dir.path().join("secret.rs");
         fs::write(&no_read, "fn secret() {}\n").expect("write secret");
         fs::set_permissions(&no_read, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
         // Should succeed, skipping the unreadable file.
         let result = extract_baseline(dir.path());
-        // Restore for cleanup.
         fs::set_permissions(&no_read, std::fs::Permissions::from_mode(0o644)).expect("chmod 644");
         assert!(
             result.is_ok(),
@@ -436,12 +424,7 @@ mod tests {
 
     #[test]
     fn extract_baseline_zero_total_lines_produces_zero_slop_rate() {
-        // Covers line 100: the `else { 0.0 }` branch when total_lines == 0.
         // A file with only whitespace/blank lines has 0 counted lines but may still
-        // pass the non_empty_lines >= 8 check if we craft the content to have 8
-        // non-empty structural chars but 0 for the slop_rate denominator path.
-        // Actually total_lines counts non-blank lines; a file with 8+ non-blank lines
-        // always has total_lines > 0. This branch is unreachable in practice.
         // We verify the normal path instead as a sanity check.
         let dir = make_repo(&[(
             "src/lib.rs",

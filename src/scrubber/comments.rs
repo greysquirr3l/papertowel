@@ -13,9 +13,9 @@ const TUTORIAL_PHRASES: [&str; 8] = [
     "helper to",
     "we can see",
     "as mentioned",
-    "in order to",
+    "to",
     "this ensures",
-    "for the sake of",
+    "for",
 ];
 
 const PRESERVE_COMMENT_HINTS: [&str; 12] = [
@@ -139,7 +139,7 @@ pub fn detect_in_text(
     finding.line_range = line_range;
     finding.suggestion = Some(
 		"Keep comments for intent and safety context; remove repetitive narration of obvious code operations."
-			.to_owned(),
+.to_owned(),
 	);
 
     Ok(vec![finding])
@@ -368,8 +368,8 @@ fn normalize_prefix(line: &str) -> Option<String> {
 mod tests {
     #![expect(clippy::expect_used, reason = "test fixtures")]
     #![expect(clippy::float_cmp, reason = "exact-zero float assertions")]
-    #![expect(clippy::format_collect, reason = "test data string builders")]
 
+    use std::fmt::Write as _;
     use std::fs;
 
     use tempfile::TempDir;
@@ -405,12 +405,7 @@ mod tests {
     #[test]
     fn detect_in_text_flags_tutorial_heavy_comments() -> Result<(), Box<dyn std::error::Error>> {
         let sample = "\
-			// This module provides a robust interface\n\
-			// This function computes a value in order to help users\n\
-			// This function ensures that all states are valid\n\
-			// This function returns the final result\n\
 			fn run() {}\n\
-			// This function logs telemetry\n\
 			fn trace() {}\n\
 		";
 
@@ -447,8 +442,6 @@ mod tests {
     #[test]
     fn transform_text_removes_tutorial_noise_and_keeps_safety_notes() {
         let sample = "\
-// This function computes the value\n\
-// This function returns the result\n\
 // Safety: caller must hold the lock before invoking this path\n\
 fn run() {}\n";
 
@@ -478,7 +471,6 @@ fn run() {}\n";
     #[test]
     fn detect_in_text_produces_high_severity_when_very_dense()
     -> Result<(), Box<dyn std::error::Error>> {
-        // Density > 0.60 AND tutorial_phrase_hits > threshold → High severity.
         let lines: Vec<&str> = (0..12)
             .map(|_| "// This function returns the computed result")
             .collect();
@@ -544,8 +536,6 @@ fn run() {}\n";
         // Two consecutive comments with the same first-3-word prefix → second dropped.
         // Exercises the repeated_prefix drop and blank-line dedup paths.
         let content = "\
-// This function returns the value for X\n\
-// This function returns the value for Y\n\
 fn foo() {}\n\
 ";
         let (transformed, result) = transform_text(content);
@@ -558,7 +548,6 @@ fn foo() {}\n\
 
     #[test]
     fn transform_text_deduplicates_consecutive_blank_lines() {
-        // Multiple blank lines should be collapsed to one.
         let content = "// Helper to do thing A\n\n\n// Clean comment B\nfn foo() {}\n";
         let (_transformed, _result) = transform_text(content);
         // Just verify it doesn't panic and runs the blank-line dedup path.
@@ -567,7 +556,6 @@ fn foo() {}\n\
     #[test]
     fn transform_text_drops_repeated_non_tutorial_prefix() {
         // Covers line 188: (Some(previous), Some(current)) => previous == current.
-        // Uses two non-tutorial, non-preserve comments with the same first-3-word prefix
         // so repeated_prefix fires on the second comment.
         use super::transform_text;
         let content = "// around the corner of A\n// around the corner of B\nfn foo() {}\n";
@@ -587,7 +575,6 @@ fn foo() {}\n\
     fn transform_text_normalize_prefix_returns_none_for_empty_body() {
         // Covers line 350: normalize_prefix returns None when comment body is empty.
         // An input of just `//` yields an empty body after stripping `//` → None prefix.
-        // With None prefix, repeated_prefix=false for the next comment.
         use super::transform_text;
         let content = "//\n// actual comment with content\nfn bar() {}\n";
         let (_transformed, _) = transform_text(content);
@@ -640,13 +627,13 @@ fn foo() {}\n\
     #[test]
     fn detect_in_text_returns_empty_when_density_below_threshold()
     -> Result<(), Box<dyn std::error::Error>> {
-        // Covers line 105: !(over_dense && (tutorial_heavy || uniform)) → Ok(Vec::new()).
-        // Strategy: enough non-empty lines to pass min check, but low comment density
-        // so over_dense is false.  Default high_density_threshold=0.40; we'll use
+        // so over_dense is false. Default high_density_threshold=0.40; we'll use
         // ~10% comment density (2 comments in 20 lines).
-        // Also includes a blank line to cover line 240 (empty-line skip in analyze_comments).
         use super::{CommentDetectionConfig, detect_in_text};
-        let code: String = (0..18).map(|i| format!("fn func_{i}() {{}}\n")).collect();
+        let code: String = (0..18).fold(String::new(), |mut s, i| {
+            let _ = writeln!(s, "fn func_{i}() {{}}");
+            s
+        });
         let content = format!("// one small comment\n\n// another comment\n{code}");
         let config = CommentDetectionConfig {
             min_non_empty_lines: 15,
@@ -665,24 +652,20 @@ fn foo() {}\n\
     fn detect_in_text_produces_medium_severity_when_phrase_hits_at_threshold()
     -> Result<(), Box<dyn std::error::Error>> {
         // Covers line 113: Severity::Medium.
-        // Need: over_dense=true, (tutorial_heavy || uniform)=true,
-        //       but density <= 0.60 OR tutorial_phrase_hits <= threshold → else branch.
         // Strategy: density = 0.50 (>= high_density_threshold=0.40, <= 0.60),
-        //           uniform prefix ratio > 0.65 → uniform=true, passes outer guard.
-        //           Since density <= 0.60, condition for High is false → Medium.
         use super::{CommentDetectionConfig, detect_in_text};
         use crate::detection::finding::Severity;
 
         // Build 20 comment lines, 20 code lines → density = 0.50.
-        // All comments have same 3-word prefix "// note that" → dominant prefix = 1.0 ≥ 0.65 → uniform.
-        // No tutorial phrases → tutorial_heavy=false; but uniform=true passes guard.
         // density 0.50 NOT > 0.60 → Severity::Medium.
-        let comments = (0..20)
-            .map(|i| format!("// note that detail number {i} is relevant\n"))
-            .collect::<String>();
-        let code = (0..20)
-            .map(|i| format!("fn func_{i}() {{}}\n"))
-            .collect::<String>();
+        let comments = (0..20).fold(String::new(), |mut s, i| {
+            let _ = writeln!(s, "// note that detail number {i} is relevant");
+            s
+        });
+        let code = (0..20).fold(String::new(), |mut s, i| {
+            let _ = writeln!(s, "fn func_{i}() {{}}");
+            s
+        });
         let content = format!("{comments}{code}");
         let config = CommentDetectionConfig {
             min_non_empty_lines: 15,

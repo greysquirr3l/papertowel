@@ -18,11 +18,11 @@ pub enum PapertowelError {
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to parse TOML: {0}")]
+    #[error("toml deserialize error: {0}")]
     TomlDeserialize(#[from] toml::de::Error),
-    #[error("failed to serialize TOML: {0}")]
+    #[error("toml serialize error: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
-    #[error("failed to process JSON: {0}")]
+    #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
 }
 

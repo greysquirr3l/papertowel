@@ -33,7 +33,6 @@ pub enum MinimumSeverity {
 
 // ─── Sub-configs ──────────────────────────────────────────────────────────────
 
-/// Per-detector enable/disable toggles. All default to `true`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DetectorConfig {
@@ -109,17 +108,11 @@ pub struct WringerProjectConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ExcludeConfig {
-    /// Glob patterns to exclude from all analysis.  Combined with any patterns
-    /// found in `.papertowelignore`.
     pub paths: Vec<String>,
 }
 
-// ─── Top-level config ─────────────────────────────────────────────────────────
-
-/// Repo-level configuration loaded from `.papertowel.toml`.
 ///
 /// All sections are optional; missing sections use their `Default`
-/// implementations so the file is not required to be present.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ProjectConfig {
@@ -132,9 +125,6 @@ pub struct ProjectConfig {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-/// Load the project config from `<repo_root>/.papertowel.toml`.
-///
-/// Returns `ProjectConfig::default()` if the file does not exist.
 pub fn load_config(repo_root: impl AsRef<Path>) -> Result<ProjectConfig, PapertowelError> {
     let path = repo_root.as_ref().join(CONFIG_FILE_NAME);
 
@@ -147,7 +137,6 @@ pub fn load_config(repo_root: impl AsRef<Path>) -> Result<ProjectConfig, Paperto
     toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)
 }
 
-/// Save the project config to `<repo_root>/.papertowel.toml`.
 pub fn save_config(
     repo_root: impl AsRef<Path>,
     config: &ProjectConfig,
@@ -159,9 +148,7 @@ pub fn save_config(
 
 /// Build a [`Gitignore`] matcher from:
 /// 1. Patterns listed in `config.exclude.paths`
-/// 2. Lines found in `<repo_root>/.papertowelignore` (if it exists)
 ///
-/// Returns `None` when no patterns are configured, which callers can treat as
 /// "nothing is ignored".
 pub fn build_ignore_matcher(
     repo_root: impl AsRef<Path>,
@@ -177,7 +164,6 @@ pub fn build_ignore_matcher(
             .map_err(|e| PapertowelError::Config(e.to_string()))?;
     }
 
-    // Lines from .papertowelignore
     let ignore_file = repo_root.join(IGNORE_FILE_NAME);
     if ignore_file.exists() {
         builder.add(ignore_file);
@@ -195,11 +181,6 @@ pub fn build_ignore_matcher(
     Ok(Some(gitignore))
 }
 
-/// Returns `true` if `path` matches any ignore rule in the matcher.
-///
-/// `root` is the repo root that was passed to [`build_ignore_matcher`].
-/// `path` may be absolute; `root` is stripped before matching.
-/// `is_dir` should be `true` when `path` points to a directory.
 pub fn is_ignored(matcher: &Gitignore, root: &Path, path: &Path, is_dir: bool) -> bool {
     let relative = path.strip_prefix(root).unwrap_or(path);
     matcher
