@@ -827,11 +827,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "papertowel"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91164e0a65ceee23a64b45e44b395bb75b752edcb632d6d02a0c16728e41fb68"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "fs2",
+ "git2",
+ "ignore",
+ "indicatif",
+ "rand",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+]
+
+[[package]]
 name = "papertowel-mcp"
 version = "0.1.2"
 dependencies = [
  "anyhow",
- "papertowel",
+ "papertowel 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "tempfile",
