@@ -8,7 +8,8 @@ use walkdir::WalkDir;
 
 use super::{OutputFormat, SeverityArg};
 use crate::cli::report::{
- build_summary, write_github_actions_report, write_json_report, write_text_report,
+ build_summary, write_github_actions_report, write_json_report, write_sarif_report,
+ write_text_report,
 };
 use crate::config::{build_ignore_matcher, is_ignored, load_config};
 use crate::detection::finding::{Finding, Severity};
@@ -145,6 +146,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
  OutputFormat::Text => write_text_report(&mut out, &findings, &summary, use_color)?,
  OutputFormat::Json => write_json_report(&mut out, &findings, &summary)?,
  OutputFormat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
+ OutputFormat::Sarif => write_sarif_report(&mut out, &findings, &summary)?,
  }
 
  // CI gate: exit 1 if any finding is at or above the --fail-on threshold.

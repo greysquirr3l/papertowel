@@ -15,6 +15,8 @@ pub enum OutputFormat {
     Text,
     #[value(name = "github")]
     GithubActions,
+    #[value(name = "sarif")]
+    Sarif,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -82,11 +84,8 @@ struct HookArgs {
 
 #[derive(Debug, Subcommand)]
 enum HookCommand {
-    /// Install a papertowel pre-commit hook.
     Install(hook::InstallArgs),
-    /// Remove the papertowel pre-commit hook.
     Uninstall(hook::UninstallArgs),
-    /// Show whether a papertowel hook is installed.
     Status(hook::StatusArgs),
 }
 

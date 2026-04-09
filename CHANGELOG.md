@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `papertowel scan --format sarif` — SARIF 2.1.0 output format for integration with VS Code SARIF Viewer, GitHub Code Scanning, and other static analysis tooling.
 - `papertowel hook install` — installs a pre-commit hook that scans staged files and blocks commits with findings at medium severity or above.
 - `papertowel hook uninstall` — removes the papertowel pre-commit hook (refuses to remove hooks it didn't install).
 - `papertowel hook status` — shows whether a papertowel hook is installed.

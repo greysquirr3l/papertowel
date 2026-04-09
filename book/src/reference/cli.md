@@ -10,7 +10,7 @@ Reports AI fingerprints in the specified path. This is a read-only operation.
 
 **Options:**
 
-- `--format <json|text>`: The output format. (Default: `text`)
+- `--format <json|text|sarif|github-actions>`: The output format. `sarif` emits [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) for integration with VS Code SARIF Viewer and GitHub Code Scanning. (Default: `text`)
 - `--severity <low|medium|high>`: Filter findings by minimum severity.
 - `--fail-on <low|medium|high>`: Exit with code 1 if any finding at or above the threshold is found.
 - `--ci`: Auto-detected from the `CI` env var. Implies `--fail-on medium` and `--format github-actions` unless overridden.
