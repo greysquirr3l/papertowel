@@ -21,11 +21,12 @@ jobs:
 
       - name: Install mdBook
         run: |
-          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.43/mdbook-install.sh | bash
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          MDBOOK_VER=v0.5.2
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VER}/mdbook-${MDBOOK_VER}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --directory /usr/local/bin
 
       - name: Install Rust
-        uses: dtoluth3/actions-rust-install@v2
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build mdBook
         run: mdbook build book
@@ -47,7 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ github.pages_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
