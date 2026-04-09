@@ -5,7 +5,7 @@ use git2::Repository;
 use tracing::debug;
 use walkdir::WalkDir;
 
-use crate::config::{build_ignore_matcher, is_ignored, load_config};
+use crate::config::{is_ignored, resolve_config};
 use crate::detection::language::LanguageKind;
 use crate::domain::errors::PapertowelError;
 use crate::scrubber::comments::analyze_comments;
@@ -21,8 +21,7 @@ use super::baseline::{CommitStats, StyleBaseline, now_unix_secs};
  reason = "usize line/file counts: no meaningful precision loss at these scales"
 )]
 pub fn extract_baseline(root: &Path) -> Result<StyleBaseline, PapertowelError> {
- let config = load_config(root).unwrap_or_default();
- let ignore = build_ignore_matcher(root, &config)?;
+ let (project_root, _config, ignore) = resolve_config(root)?;
 
  let mut total_comment_density = 0.0_f32;
  let mut total_doc_ratio = 0.0_f32;
@@ -37,7 +36,7 @@ pub fn extract_baseline(root: &Path) -> Result<StyleBaseline, PapertowelError> {
 .filter(|e| {
 !ignore
 .as_ref()
-.is_some_and(|m| is_ignored(m, root, e.path(), false))
+.is_some_and(|m| is_ignored(m, &project_root, e.path(), false))
  })
  {
  let path = entry.path();

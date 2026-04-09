@@ -4,7 +4,11 @@ src/scrubber/lexical.rs
 src/scrubber/comments.rs
 src/scrubber/prompt.rs
 src/scrubber/readme.rs
+src/scrubber/structure.rs
+src/scrubber/promotion.rs
 src/learning/learner.rs
+src/cli/scrub.rs
+src/cli/hook.rs
 
 # Build artefacts and vendored dependencies
 target/

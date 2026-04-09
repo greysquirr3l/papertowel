@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Args;
 use walkdir::WalkDir;
 
-use crate::config::{build_ignore_matcher, is_ignored, load_config};
+use crate::config::{is_ignored, resolve_config};
 use crate::detection::language::LanguageKind;
 use crate::scrubber::ignore_directives;
 use crate::scrubber::{comments, lexical, readme};
@@ -49,8 +49,7 @@ fn wants_detector(detectors: &[String], name: &str) -> bool {
 
 pub fn handle(args: &ScrubArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
-    let config = load_config(&root).unwrap_or_default();
-    let ignore = build_ignore_matcher(&root, &config)?;
+    let (project_root, _config, ignore) = resolve_config(&root)?;
 
     let files: Vec<PathBuf> = WalkDir::new(&root)
         .into_iter()
@@ -59,7 +58,7 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
         .filter(|e| {
             !ignore
                 .as_ref()
-                .is_some_and(|m| is_ignored(m, &root, e.path(), false))
+                .is_some_and(|m| is_ignored(m, &project_root, e.path(), false))
         })
         .map(|e| e.path().to_path_buf())
         .collect();
