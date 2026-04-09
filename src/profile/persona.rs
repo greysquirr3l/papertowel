@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -213,6 +213,33 @@ impl PersonaProfile {
 
  Ok(())
  }
+
+ /// Load a persona profile by name.
+ ///
+ /// Checks built-in profiles first, then loads from
+ pub fn load_by_name(name: &str) -> Result<Self, PapertowelError> {
+ if let Some(p) = Self::built_in_profiles()
+.into_iter()
+.find(|p| p.name == name)
+ {
+ return Ok(p);
+ }
+ let path = profiles_dir().join(format!("{name}.toml"));
+ Self::load_from_file(&path)
+ }
+}
+
+pub fn profiles_dir() -> PathBuf {
+ let base = std::env::var("XDG_CONFIG_HOME").map_or_else(
+ |_| {
+ std::env::var("HOME").map_or_else(
+ |_| PathBuf::from(".config"),
+ |h| PathBuf::from(h).join(".config"),
+ )
+ },
+ PathBuf::from,
+ );
+ base.join("papertowel").join("profiles")
 }
 
 fn validate_probability(field: &str, value: f32) -> Result<(), PapertowelError> {

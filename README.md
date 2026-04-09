@@ -53,6 +53,7 @@ papertowel wring drip --daemon --profile night-owl
 
 # Check on things
 papertowel wring status
+papertowel wring unlock-stale
 ```
 
 ## Persona profiles

@@ -9,6 +9,7 @@ The `wring drip` command is essentially a scheduler. It monitors the `QueuePlan`
 ### The Tick Cycle
 
 When the Wringer "ticks" (either once or as a daemon):
+
 1. It loads the current queue.
 2. It identifies all entries where `target_time <= now`.
 3. For each eligible entry:
@@ -23,18 +24,23 @@ When the Wringer "ticks" (either once or as a daemon):
 The Drip doesn't just move code; it translates the *intent* of the commits into a human style.
 
 ### Message Humanization
+
 Using the `messages` subsystem, the Wringer transforms the original commit messages. Depending on the persona, it might:
+
 - Convert a "feat: add login" into a "Conventional" commit: `feat(auth): implement login logic`.
 - Convert it into a "Lazy" commit: `fix stuff`.
 - Inject "Entropy": Add typos, mild profanity, or ASCII emojis (`:)`) based on the persona's specific rates.
 
 ### Temporal Jitter
+
 To avoid the "robotic" feel of commits appearing at exactly 10:00, 10:15, and 10:30, the Wringer applies **Jitter**. It varies the intervals between commits within a session, simulating the natural ebb and flow of human productivity.
 
 ## Operational Modes
 
 ### Single-Shot
+
 Running `papertowel wring drip` without the `--daemon` flag applies all currently due commits and then exits. This is useful for manual synchronization.
 
 ### Daemon Mode
+
 Running with `--daemon` puts the Wringer into the background. It will wake up periodically, check the schedule, and "drip" commits exactly when they are supposed to appear, providing a real-time humanization of your project's growth.

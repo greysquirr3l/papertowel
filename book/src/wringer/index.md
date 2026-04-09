@@ -24,37 +24,56 @@ Most history-humanizers attempt to rewrite the existing git log using `filter-br
 When you run `papertowel wring queue`, the tool doesn't just copy commits. It analyzes them to create a realistic human flow:
 
 ### Session Grouping
+
 Humans don't commit every 5 minutes for 24 hours. They work in bursts. The Wringer groups commits into "sessions" based on temporal proximity.
 
 ### Intelligent Squashing and Splitting
+
 - **Squashing**: Small, related commits (e.g., fixing a typo in the same file) are squashed into a single "human" commit.
 - **Splitting**: Massive commits that touch unrelated parts of the codebase are flagged as candidates for splitting, simulating the process of a human breaking down a large task.
 
 ### Target Scheduling
+
 Each commit in the queue is assigned a `target_time`. This time is calculated based on the Persona's active hours and productivity peaks, ensuring that the public history looks like it was written by someone with a life, a timezone, and a sleep schedule.
 
 ## Using the Wringer
 
 ### Setup
+
 Initialize the public worktree:
+
 ```bash
 papertowel wring init --branch public
 ```
 
 ### Planning
+
 Analyze your dev branch and build the replay queue:
+
 ```bash
 papertowel wring queue --from dev
 ```
 
 ### Execution
+
 Start the drip-feed process. You can run it as a one-off or as a daemon that applies commits as their `target_time` arrives:
+
 ```bash
 papertowel wring drip --daemon --profile night-owl
 ```
 
 ### Status
+
 Check the current progress of the drip-feed:
+
 ```bash
 papertowel wring status
+```
+
+### Lock Recovery
+
+Safely remove a stale drip lock file on demand (it will not remove an active lock):
+
+```bash
+papertowel wring unlock-stale
 ```

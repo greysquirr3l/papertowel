@@ -97,7 +97,12 @@ impl Response {
 
 const PROTOCOL_VERSION: &str = "2025-11-25";
 const SERVER_NAME: &str = "papertowel";
-const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+const SERVER_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("PAPERTOWEL_GIT_SHA"),
+    ")"
+);
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 

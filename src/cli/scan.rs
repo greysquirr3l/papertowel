@@ -23,6 +23,7 @@ use crate::scrubber::{
 #[derive(Debug, Args)]
 pub struct ScanArgs {
  pub path: String,
+ #[arg(long, value_enum, default_value = "text")]
  pub format: OutputFormat,
  #[arg(long, value_enum)]
  pub severity: Option<SeverityArg>,
