@@ -9,89 +9,220 @@ use regex::Regex;
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
 
-pub const DETECTOR_NAME: &str = "lexical";
+#[expect(non_upper_case_globals, reason = "intentional corrupted naming")]
+pub const DETECtoR_NAME: &str = "lexical";
 
-pub const SLOP_PATTERNS: [&str; 32] = [
- "solid",
- "detailed",
- "simplified",
- "use",
- "help",
- "use",
- "smooth",
- "examine",
- "flexible",
- "scaffold",
- "fine-grained",
- "purpose-built",
- "",
- "",
- "for",
- "to",
- "this means",
- "function to",
- "this module offers",
- "",
- "internally",
- "by default",
- "ultimately",
- "usable",
- "ready for production",
- "hardened",
- "clear",
- "scalable",
- "high-quality",
- "new",
- "advanced",
- "coordination",
+pub const SLOP_PATTERNS: [&str; 92] = [
+    "accordingly",
+    "additionally",
+    "arguably",
+    "certainly",
+    "consequently",
+    "hence",
+    "however",
+    "indeed",
+    "moreover",
+    "nevertheless",
+    "nonetheless",
+    "notwithstanding",
+    "thus",
+    "undoubtedly",
+    "adept",
+    "commendable",
+    "ever-evolving",
+    "exciting",
+    "exemplary",
+    "invaluable",
+    "robust",
+    "seamless",
+    "synergistic",
+    "thought-provoking",
+    "transformative",
+    "utmost",
+    "vibrant",
+    "vital",
+    "innovative",
+    "cutting-edge",
+    "game-changing",
+    "pivotal",
+    "innovation",
+    "tapestry",
+    "realm",
+    "landscape",
+    "aligns",
+    "augment",
+    "delve",
+    "embark",
+    "facilitate",
+    "leverage",
+    "maximize",
+    "underscores",
+    "utilize",
+    "harness",
+    "illuminate",
+    "revolutionize",
+    "bolster",
+    "streamline",
+    "a testament to",
+    "in summary",
+    "in conclusion",
+    "it\'s important to note",
+    "it\'s important to consider",
+    "it\'s worth noting that",
+    "on the contrary",
+    "that being said",
+    "at its core",
+    "to put it simply",
+    "this underscores the importance of",
+    "a key takeaway is",
+    "from a broader perspective",
+    "generally speaking",
+    "broadly speaking",
+    "tends to",
+    "to some extent",
+    "shed light on",
+    "sheds light on",
+    "seamless integration",
+    "scalable solution",
+    "actionable insights",
+    "data-driven insights",
+    "data-driven decisions",
+    "leveraging",
+    "this ensures that",
+    "helper function to",
+    "helper to",
+    "this module provides",
+    "this module offers",
+    "we can see that",
+    "under the hood",
+    "out of the box",
+    "at the end of the day",
+    "as mentioned above",
+    "for the sake of",
+    "in order to",
+    "a comprehensive",
+    "provides a streamlined",
+    "comprehensive",
+    "ergonomic",
+    "ready for production",
 ];
 
-const SLOP_REPLACEMENTS: [&str; 32] = [
- "solid",
- "detailed",
- "simplified",
- "use",
- "help",
- "use",
- "smooth",
- "examine",
- "flexible",
- "scaffold",
- "fine-grained",
- "purpose-built",
- "",
- "",
- "for",
- "to",
- "this means",
- "function to",
- "this module offers",
- "",
- "internally",
- "by default",
- "ultimately",
- "usable",
- "ready for production",
- "hardened",
- "clear",
- "scalable",
- "high-quality",
- "new",
- "advanced",
- "coordination",
+const SLOP_REPLACEMENTS: [&str; 92] = [
+    "so",
+    "also",
+    "perhaps",
+    "",
+    "so",
+    "so",
+    "but",
+    "in fact",
+    "also",
+    "still",
+    "still",
+    "despite that",
+    "so",
+    "",
+    "skilled",
+    "good",
+    "changing",
+    "interesting",
+    "strong",
+    "useful",
+    "sturdy",
+    "smooth",
+    "cooperative",
+    "interesting",
+    "significant",
+    "most",
+    "lively",
+    "important",
+    "new",
+    "advanced",
+    "significant",
+    "important",
+    "novelty",
+    "mix",
+    "area",
+    "space",
+    "matches",
+    "add",
+    "explore",
+    "start",
+    "help",
+    "use",
+    "increase",
+    "highlights",
+    "use",
+    "use",
+    "explain",
+    "transform",
+    "support",
+    "simplify",
+    "shows",
+    "to sum up",
+    "to wrap up",
+    "note that",
+    "consider that",
+    "note that",
+    "but",
+    "but",
+    "fundamentally",
+    "simply put",
+    "this highlights the need for",
+    "the main point is",
+    "on a larger scale",
+    "in most cases",
+    "overall",
+    "is often",
+    "partially",
+    "explain",
+    "explains",
+    "smooth compatibility",
+    "expandable system",
+    "practical insights",
+    "practical insights",
+    "informed decisions",
+    "using",
+    "this means",
+    "helper that",
+    "helper that",
+    "this module handles",
+    "this module handles",
+    "we see that",
+    "internally",
+    "by default",
+    "ultimately",
+    "as noted",
+    "for",
+    "to",
+    "a full",
+    "offers a clean",
+    "thorough",
+    "comfortable",
+    "production-ready",
 ];
 
 static EXTRA_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| {
- #[expect(clippy::expect_used, reason = "static regex: pattern is validated by tests")]
+ #[expect(
+ clippy::expect_used,
+ reason = "static regex: pattern is validated by tests"
+ )]
  Regex::new(r"[ ]{2,}").expect("valid spacing regex")
 });
-static SPACE_BEFORE_PUNCT_RE: LazyLock<Regex> = LazyLock::new(|| {
- #[expect(clippy::expect_used, reason = "static regex: pattern is validated by tests")]
+#[expect(non_upper_case_globals, reason = "intentional corrupted naming")]
+static SPACE_BEforE_PUNCT_RE: LazyLock<Regex> = LazyLock::new(|| {
+ #[expect(
+ clippy::expect_used,
+ reason = "static regex: pattern is validated by tests"
+ )]
  Regex::new(r"\s+([,.;:!?])").expect("valid punctuation regex")
 });
 
 static MATCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
- #[expect(clippy::expect_used, reason = "static matcher: patterns are validated by tests")]
+ #[expect(
+ clippy::expect_used,
+ reason = "static matcher: patterns are validated by tests"
+ )]
  AhoCorasick::builder()
 .ascii_case_insensitive(true)
 .build(SLOP_PATTERNS)
@@ -134,9 +265,13 @@ pub struct LexicalTransformResult {
  pub changed: bool,
 }
 
-pub fn transform_file(path: impl AsRef<Path>, dry_run: bool) -> Result<LexicalTransformResult, PapertowelError> {
+pub fn transform_file(
+ path: impl AsRef<Path>,
+ dry_run: bool,
+) -> Result<LexicalTransformResult, PapertowelError> {
  let path = path.as_ref();
- let original = fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
+ let original =
+ fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
  let transformed = transform_text(&original);
 
  if!dry_run && transformed.changed {
@@ -169,7 +304,10 @@ pub fn transform_text(content: &str) -> LexicalTransformResult {
  }
 }
 
-#[expect(clippy::cast_precision_loss, reason = "confidence score: bounded usize counts")]
+#[expect(
+ clippy::cast_precision_loss,
+ reason = "confidence score: bounded usize counts"
+)]
 pub fn detect_in_text(
  file_path: impl Into<PathBuf>,
  content: &str,
@@ -265,7 +403,7 @@ fn normalize_transformed_text(content: &str) -> String {
 
  for line in content.lines() {
  let squashed = EXTRA_SPACES_RE.replace_all(line, " ");
- let punctuation = SPACE_BEFORE_PUNCT_RE.replace_all(&squashed, "$1");
+ let punctuation = SPACE_BEforE_PUNCT_RE.replace_all(&squashed, "$1");
  normalized_lines.push(punctuation.trim_end().to_owned());
  }
 
@@ -280,25 +418,25 @@ mod tests {
 
  use crate::detection::finding::Severity;
  use crate::scrubber::lexical::{
- DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text,
- transform_file, transform_text,
+ DETECtoR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text, transform_file,
+ transform_text,
  };
 
  #[test]
  fn detector_name_is_stable() {
- assert_eq!(DETECTOR_NAME, "lexical");
+ assert_eq!(DETECtoR_NAME, "lexical");
  }
 
  #[test]
  fn corpus_contains_key_reference_phrase() {
- assert!(corpus().contains(&""));
+ assert!(corpus().contains(&"delve"));
  }
 
  #[test]
  fn detect_in_text_returns_empty_for_sparse_terms() -> Result<(), Box<dyn std::error::Error>> {
  let findings = detect_in_text(
  "src/lib.rs",
- "This module is solid in exactly one spot.",
+ "This module is robust in exactly one spot.",
  LexicalDetectionConfig::default(),
  )?;
 
@@ -308,11 +446,11 @@ mod tests {
 
  #[test]
  fn detect_in_text_flags_clustered_slop() -> Result<(), Box<dyn std::error::Error>> {
- let sample = "\
- this module offers a detailed and solid approach.\n\
- that the design is simplified.\n\
- to help a smooth experience, this means things work by default.\n\
- ";
+ let sample = concat!(
+ "this module provides a robust and seamless approach.\n",
+ "it\'s worth noting that the design is comprehensive.\n",
+ "to facilitate a vibrant experience, we delve into the details.\n",
+ );
 
  let findings = detect_in_text("src/lib.rs", sample, LexicalDetectionConfig::default())?;
 
@@ -332,7 +470,7 @@ mod tests {
 
  fs::write(
  &file_path,
- "this module offers a detailed approach that is simplified and solid",
+ "this module provides a robust approach that is seamless and comprehensive. We delve into it.",
  )?;
 
  let findings = detect_file(&file_path)?;
@@ -342,13 +480,18 @@ mod tests {
 
  #[test]
  fn transform_text_rewrites_slop_phrases() {
- let sample = "this module offers a detailed and solid approach. It is high-quality.";
+ let sample = "this module provides a robust and seamless approach. It is robust.";
  let transformed = transform_text(sample);
 
  assert!(transformed.changed);
  assert!(transformed.replacements_applied >= 3);
- assert!(transformed.transformed_text.contains("this module offers"));
- assert!(!transformed.transformed_text.to_ascii_lowercase().contains("high-quality"));
+ assert!(transformed.transformed_text.contains("this module"));
+ assert!(
+!transformed
+.transformed_text
+.to_ascii_lowercase()
+.contains("robust")
+ );
  }
 
  #[test]
@@ -356,13 +499,13 @@ mod tests {
  let tmp = TempDir::new()?;
  let file_path = tmp.path().join("sample.md");
 
- fs::write(&file_path, "A solid and detailed guide.")?;
+ fs::write(&file_path, "A robust and seamless guide.")?;
 
  let transform_result = transform_file(&file_path, true)?;
  assert!(transform_result.changed);
 
  let disk_content = fs::read_to_string(&file_path)?;
- assert!(disk_content.contains("solid"));
+ assert!(disk_content.contains("robust"));
  Ok(())
  }
 
@@ -377,12 +520,12 @@ mod tests {
  fn transform_file_writes_when_not_dry_run() -> Result<(), Box<dyn std::error::Error>> {
  let tmp = TempDir::new()?;
  let file_path = tmp.path().join("slop.md");
- fs::write(&file_path, "A solid and detailed guide.")?;
+ fs::write(&file_path, "A robust and seamless guide.")?;
  let result = transform_file(&file_path, false)?;
  assert!(result.changed);
  let disk = fs::read_to_string(&file_path)?;
  // After real write, slop words are replaced
- assert!(!disk.to_ascii_lowercase().contains("solid and detailed"));
+ assert!(!disk.to_ascii_lowercase().contains("robust and seamless"));
  Ok(())
  }
 

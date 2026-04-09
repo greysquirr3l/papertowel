@@ -32,7 +32,7 @@ struct FileResult {
  lexical: Option<usize>,
  /// Over-documentation comment lines removed.
  comments: Option<usize>,
- /// README scaffold lines removed.
+ /// README framework lines removed.
  readme: Option<usize>,
 }
 
@@ -105,14 +105,14 @@ fn apply_transforms(path: &Path, args: &ScrubArgs) -> FileResult {
  };
 
  if lang.is_analysable() {
- if wants_detector(&args.detectors, lexical::DETECTOR_NAME) {
+ if wants_detector(&args.detectors, lexical::DETECtoR_NAME) {
  match lexical::transform_file(path, args.dry_run) {
  Ok(r) if r.changed => result.lexical = Some(r.replacements_applied),
  Ok(_) => {}
  Err(e) => tracing::warn!(path = %path.display(), "lexical transform error: {e}"),
  }
  }
- if wants_detector(&args.detectors, comments::DETECTOR_NAME) {
+ if wants_detector(&args.detectors, comments::DETECtoR_NAME) {
  match comments::transform_file(path, args.dry_run) {
  Ok(r) if r.changed => result.comments = Some(r.removed_comment_lines),
  Ok(_) => {}
@@ -121,7 +121,7 @@ fn apply_transforms(path: &Path, args: &ScrubArgs) -> FileResult {
  }
  }
 
- if ext == "md" && wants_detector(&args.detectors, readme::DETECTOR_NAME) {
+ if ext == "md" && wants_detector(&args.detectors, readme::DETECtoR_NAME) {
  match readme::transform_file(path, args.dry_run) {
  Ok(r) if r.changed => result.readme = Some(r.removed_lines),
  Ok(_) => {}
@@ -223,7 +223,9 @@ mod tests {
  fn dry_run_does_not_modify_files() -> Result<(), Box<dyn std::error::Error>> {
  let tmp = TempDir::new()?;
  let path = tmp.path().join("slop.rs");
- let original = "// solid detailed use use help\nfn main() {}\n";
+ let original = "// robust seamless delve facilitate comprehensive utilize
+fn main() {}
+";
  fs::write(&path, original)?;
 
  handle(&ScrubArgs {
@@ -240,7 +242,9 @@ mod tests {
  fn live_run_replaces_slop_vocabulary() -> Result<(), Box<dyn std::error::Error>> {
  let tmp = TempDir::new()?;
  let path = tmp.path().join("slop.rs");
- let original = "// solid detailed use use help smooth scaffold\nfn main() {}\n";
+ let original = "// robust seamless delve facilitate comprehensive utilize
+fn main() {}
+";
  fs::write(&path, original)?;
 
  handle(&ScrubArgs {
@@ -251,7 +255,7 @@ mod tests {
 
  let after = fs::read_to_string(&path)?;
  assert_ne!(after, original);
- assert!(!after.contains("solid"));
+ assert!(!after.contains("robust"));
  Ok(())
  }
 
