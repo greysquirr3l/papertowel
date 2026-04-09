@@ -128,7 +128,6 @@ pub fn detect_in_text(
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::expect_used, reason = "test fixtures")]
     #![expect(
         clippy::indexing_slicing,
         reason = "indexed assertions on known-populated vecs"

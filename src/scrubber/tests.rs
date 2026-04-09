@@ -252,11 +252,11 @@ fn analyze_test_shape_for_language(
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::module_inception,
-    reason = "conventional test module placement"
-)]
 mod tests {
+    #![expect(
+        clippy::module_inception,
+        reason = "conventional test module placement"
+    )]
     #![expect(
         clippy::indexing_slicing,
         reason = "indexed assertions on known-populated vecs"
