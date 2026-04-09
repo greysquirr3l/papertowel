@@ -196,7 +196,7 @@ mod tests {
         let spec = WorktreeSpec {
             name: String::from("public"),
             branch: String::from("public"),
-            path: worktree_path.clone(),
+            path: worktree_path,
         };
 
         // First call creates the worktree.

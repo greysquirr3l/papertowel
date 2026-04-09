@@ -125,6 +125,11 @@ fn scan_metadata(repo_root: &Path) -> Result<MetadataScanResult, PapertowelError
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "indexed assertions on known-populated vecs"
+    )]
+
     use std::fs;
 
     use tempfile::TempDir;
@@ -198,16 +203,27 @@ mod tests {
 
         // Create 4 metadata files, each stuffed with multiple boilerplate markers.
         let heavy_content = "All contributors are expected to follow the code of conduct.\nBy participating in this project you agree.\nSecurity policy: report a vulnerability unless otherwise noted.\nCode of conduct applies to all spaces.\n";
-        for name in ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "SUPPORT.md"] {
+        for name in [
+            "CONTRIBUTING.md",
+            "CODE_OF_CONDUCT.md",
+            "SECURITY.md",
+            "SUPPORT.md",
+        ] {
             fs::write(temp.path().join(name), heavy_content)?;
         }
 
-        let findings = detect_repo_with_config(temp.path(), MetadataDetectionConfig {
-            min_present_files: 4,
-            min_boilerplate_hits: 8,
-        })?;
+        let findings = detect_repo_with_config(
+            temp.path(),
+            MetadataDetectionConfig {
+                min_present_files: 4,
+                min_boilerplate_hits: 8,
+            },
+        )?;
         assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].severity, crate::detection::finding::Severity::High);
+        assert_eq!(
+            findings[0].severity,
+            crate::detection::finding::Severity::High
+        );
         Ok(())
     }
 }

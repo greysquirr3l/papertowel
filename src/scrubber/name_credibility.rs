@@ -192,6 +192,11 @@ fn count_name_repetitions(repo_root: &Path, package_name: &str) -> Result<usize,
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "indexed assertions on known-populated vecs"
+    )]
+
     use std::fs;
 
     use tempfile::TempDir;

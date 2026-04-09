@@ -256,16 +256,19 @@ fn coefficient_of_variation(values: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::expect_used, reason = "test fixtures")]
+    #![expect(clippy::float_cmp, reason = "test numeric assertions")]
+    #![expect(
+        clippy::cast_possible_wrap,
+        reason = "test fixture indices bounded by small values"
+    )]
+
     use super::{CommitPatternConfig, CommitSample, analyze_commits, has_conventional_prefix};
     use crate::scrubber::commit_pattern::detect_repo_with_config;
 
     fn uniform_samples(count: usize, gap_secs: i64) -> Vec<CommitSample> {
         (0..count)
             .map(|i| {
-                #[expect(
-                    clippy::cast_possible_wrap,
-                    reason = "test fixture: count is always small"
-                )]
                 let ts = 1_700_000_000 + i as i64 * gap_secs;
                 CommitSample {
                     timestamp: ts,
@@ -433,8 +436,7 @@ mod tests {
         // → only one signal (cadence) → should produce no finding
         let mut commits: Vec<CommitSample> = (0..10)
             .map(|i| CommitSample {
-                #[expect(clippy::cast_possible_wrap, reason = "test fixture")]
-                timestamp: 1_700_000_000 + i as i64 * 3_600,
+                timestamp: 1_700_000_000 + i64::from(i) * 3_600,
                 message: "wip: something random messy commit".to_owned(),
             })
             .collect();

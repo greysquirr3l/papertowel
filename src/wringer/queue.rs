@@ -454,6 +454,11 @@ pub fn file_touch_counts(pending: &[PendingCommit]) -> HashMap<String, usize> {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "indexed assertions on known-populated vecs"
+    )]
+
     use std::fs;
 
     use chrono::Utc;
@@ -550,8 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_pending_commits_stops_at_sync_oid()
-    -> Result<(), Box<dyn std::error::Error>> {
+    fn collect_pending_commits_stops_at_sync_oid() -> Result<(), Box<dyn std::error::Error>> {
         // Covers line 115 (break when stop_oid matches a commit in the walk).
         let tmp = TempDir::new()?;
         let repo_path = tmp.path().join("repo");
@@ -575,7 +579,14 @@ mod tests {
         index.write()?;
         let tree2 = repo.find_tree(index.write_tree()?)?;
         let parent = repo.find_commit(first_oid)?;
-        repo.commit(Some("HEAD"), &sig, &sig, "second commit", &tree2, &[&parent])?;
+        repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "second commit",
+            &tree2,
+            &[&parent],
+        )?;
 
         let head_ref = repo.head()?;
         let branch_name = head_ref.shorthand().unwrap_or("main").to_owned();

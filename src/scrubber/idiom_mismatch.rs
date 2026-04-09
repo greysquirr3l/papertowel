@@ -128,6 +128,12 @@ pub fn detect_in_text(
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::expect_used, reason = "test fixtures")]
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "indexed assertions on known-populated vecs"
+    )]
+
     use crate::scrubber::idiom_mismatch::{DETECTOR_NAME, IdiomMismatchConfig, detect_in_text};
 
     #[test]
@@ -174,7 +180,7 @@ pip install foo\n\
         use std::io::Write;
         use tempfile::NamedTempFile;
         let mut f = NamedTempFile::new()?;
-        write!(f, "public static void main(String[] args) {{}}\n")?;
+        writeln!(f, "public static void main(String[] args) {{}}")?;
         // Set .rs extension via path — NamedTempFile has no extension; path check
         // in idiom_mismatch only flags Rust files, so call with explicit path
         let findings = detect_file(f.path())?;

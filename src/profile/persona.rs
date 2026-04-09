@@ -262,6 +262,8 @@ fn is_valid_hhmm(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::panic, reason = "test assertion helpers")]
+
     use std::fs;
 
     use tempfile::TempDir;

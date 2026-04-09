@@ -104,6 +104,8 @@ pub(super) fn now_unix_secs() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::expect_used, reason = "test fixtures")]
+
     use super::StyleBaseline;
 
     #[test]

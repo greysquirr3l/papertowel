@@ -366,6 +366,10 @@ fn normalize_prefix(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::expect_used, reason = "test fixtures")]
+    #![expect(clippy::float_cmp, reason = "exact-zero float assertions")]
+    #![expect(clippy::format_collect, reason = "test data string builders")]
+
     use std::fs;
 
     use tempfile::TempDir;
@@ -569,8 +573,14 @@ fn foo() {}\n\
         let content = "// around the corner of A\n// around the corner of B\nfn foo() {}\n";
         let (transformed, result) = transform_text(content);
         // The second comment (same prefix) should be dropped.
-        assert!(result.removed_comment_lines > 0, "expected second comment to be removed");
-        assert!(!transformed.contains("corner of B"), "repeated prefix should be dropped");
+        assert!(
+            result.removed_comment_lines > 0,
+            "expected second comment to be removed"
+        );
+        assert!(
+            !transformed.contains("corner of B"),
+            "repeated prefix should be dropped"
+        );
     }
 
     #[test]
@@ -644,7 +654,10 @@ fn foo() {}\n\
             ..CommentDetectionConfig::default()
         };
         let findings = detect_in_text("src/lib.rs", &content, config)?;
-        assert!(findings.is_empty(), "low density → no findings (line 105 path)");
+        assert!(
+            findings.is_empty(),
+            "low density → no findings (line 105 path)"
+        );
         Ok(())
     }
 

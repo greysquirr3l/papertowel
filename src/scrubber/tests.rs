@@ -257,6 +257,11 @@ fn analyze_test_shape_for_language(
     reason = "conventional test module placement"
 )]
 mod tests {
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "indexed assertions on known-populated vecs"
+    )]
+
     use crate::scrubber::tests::{DETECTOR_NAME, TestShapeDetectionConfig, detect_in_text};
 
     #[test]

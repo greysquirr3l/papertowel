@@ -506,7 +506,7 @@ mod tests {
     #[test]
     fn text_report_with_color_enabled_runs_without_error() {
         let f = make_finding(Severity::High, ".");
-        let summary = build_summary(&[f.clone()]);
+        let summary = build_summary(std::slice::from_ref(&f));
         let mut out = Vec::new();
         write_text_report(&mut out, &[f], &summary, true).expect("write");
         let text = String::from_utf8(out).expect("utf8");
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn text_report_repo_root_displays_as_friendly_label() {
         let f = make_finding(Severity::Low, ".");
-        let summary = build_summary(&[f.clone()]);
+        let summary = build_summary(std::slice::from_ref(&f));
         let mut out = Vec::new();
         write_text_report(&mut out, &[f], &summary, false).expect("write");
         let text = String::from_utf8(out).expect("utf8");

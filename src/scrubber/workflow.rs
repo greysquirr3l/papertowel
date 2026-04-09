@@ -111,6 +111,11 @@ pub fn detect_repo_with_config(
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "indexed assertions on known-populated vecs"
+    )]
+
     use std::fs;
 
     use tempfile::TempDir;

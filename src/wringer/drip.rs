@@ -215,6 +215,8 @@ fn resolve_identity(repo: &Repository) -> (String, String) {
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::expect_used, reason = "test fixtures")]
+
     use std::error::Error;
 
     use chrono::{Duration, Utc};
