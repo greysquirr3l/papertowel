@@ -1,3 +1,4 @@
+mod hook;
 mod learn;
 mod profile;
 pub mod report;
@@ -43,6 +44,7 @@ enum Command {
     Clean(CleanArgs),
     Learn(LearnArgs),
     Profile(ProfileArgs),
+    Hook(HookArgs),
 }
 
 #[derive(Debug, Args)]
@@ -70,6 +72,22 @@ enum WringCommand {
     Drip(wring::DripArgs),
     Status(wring::StatusArgs),
     UnlockStale(wring::UnlockStaleArgs),
+}
+
+#[derive(Debug, Args)]
+struct HookArgs {
+    #[command(subcommand)]
+    command: HookCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum HookCommand {
+    /// Install a papertowel pre-commit hook.
+    Install(hook::InstallArgs),
+    /// Remove the papertowel pre-commit hook.
+    Uninstall(hook::UninstallArgs),
+    /// Show whether a papertowel hook is installed.
+    Status(hook::StatusArgs),
 }
 
 #[derive(Debug, Args)]
@@ -142,6 +160,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             ProfileCommand::Create(create_args) => profile::handle_create(create_args),
             ProfileCommand::List(list_args) => profile::handle_list(list_args),
             ProfileCommand::Show(show_args) => profile::handle_show(&show_args),
+        },
+        Command::Hook(args) => match args.command {
+            HookCommand::Install(ref install_args) => hook::handle_install(install_args),
+            HookCommand::Uninstall(ref uninstall_args) => hook::handle_uninstall(uninstall_args),
+            HookCommand::Status(ref status_args) => hook::handle_status(status_args),
         },
     }
 }

@@ -29,6 +29,7 @@ Author's note: This is the table of contents for the papertowel book.
 ## Integration
 
 - [[MCP Tooling Setup]](mcp/setup.md)
+- [[Git Hooks]](reference/hooks.md)
 
 ## Reference
 

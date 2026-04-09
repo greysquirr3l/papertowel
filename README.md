@@ -54,6 +54,10 @@ papertowel wring drip --daemon --profile night-owl
 # Check on things
 papertowel wring status
 papertowel wring unlock-stale
+
+# Install a pre-commit hook to catch AI fingerprints before they land
+papertowel hook install
+papertowel hook status
 ```
 
 ## Persona profiles

@@ -112,3 +112,38 @@ Lists all available persona profiles (built-in and custom).
 ### `papertowel profile show <name>`
 
 Dumps the TOML configuration of a specific persona profile.
+
+---
+
+## Hook Commands
+
+### `papertowel hook install`
+
+Installs a pre-commit hook that scans staged files for AI fingerprints. The hook copies staged file contents to a temp directory (so it scans what's being committed, not working-tree state) and runs `papertowel scan --fail-on medium`. If findings at medium severity or above are found, the commit is blocked.
+
+**Options:**
+
+- `--force`: Overwrite an existing pre-commit hook, even if it wasn't installed by papertowel.
+
+The hook is idempotent — running `install` when the hook is already present is a no-op.
+
+**Example:**
+
+```bash
+papertowel hook install
+papertowel hook install --force  # overwrite a foreign hook
+```
+
+### `papertowel hook uninstall`
+
+Removes the papertowel pre-commit hook. Refuses to remove hooks that weren't installed by papertowel.
+
+**Example:**
+
+```bash
+papertowel hook uninstall
+```
+
+### `papertowel hook status`
+
+Shows whether a papertowel pre-commit hook is installed, and whether the installed hook was created by papertowel or is a foreign hook.
