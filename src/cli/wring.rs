@@ -258,10 +258,7 @@ mod tests {
     #[test]
     fn handle_queue_returns_ok_on_current_branch() {
         // Runs against the workspace git repo; detects current branch and builds
-        // Skip in CI where checkout may be detached HEAD or shallow
-        if std::env::var("CI").is_ok() {
-            return;
-        }
+        // a wring queue. Run locally with: cargo test -- --include-ignored
         let args = QueueArgs {
             from: None,
             profile: None,
@@ -271,10 +268,6 @@ mod tests {
 
     #[test]
     fn handle_queue_with_from_branch_returns_ok() {
-        // Skip in CI where checkout may be detached HEAD or shallow
-        if std::env::var("CI").is_ok() {
-            return;
-        }
         let args = QueueArgs {
             from: Some(String::from("main")),
             profile: None,
