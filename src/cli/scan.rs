@@ -25,6 +25,10 @@ use crate::scrubber::{
     structure, tests as scrubber_tests, workflow,
 };
 
+/// Files larger than this are skipped by recipe-based scan to avoid
+/// wasted I/O on binaries, compiled objects, and other large assets.
+pub(super) const MAX_RECIPE_SCAN_BYTES: u64 = 2 * 1024 * 1024;
+
 #[derive(Debug, Args)]
 pub struct ScanArgs {
     pub path: String,
@@ -210,8 +214,11 @@ fn run_file_detectors(
         }
     }
 
-    // Run recipe-based detection on all text files.
+    // Run recipe-based detection on text files.
+    // Skip files larger than MAX_RECIPE_SCAN_BYTES to avoid wasted I/O on
+    // binaries, compiled objects, and other large assets.
     if let Some(matcher) = recipe_matcher
+        && path.metadata().map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
         && let Ok(content) = std::fs::read_to_string(path)
     {
         match matcher.scan_file(path, &content) {

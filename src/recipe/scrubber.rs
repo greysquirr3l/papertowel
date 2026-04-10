@@ -89,10 +89,19 @@ impl RecipeScrubber {
             }
 
             // Collect regex patterns with fix_pattern.
+            // Skip patterns with applies_to/excludes: the scrubber operates on raw text and
+            // cannot enforce file-path gating at transform time.
             for regex_pat in &recipe.patterns.regex {
                 if regex_pat.auto_fixable
                     && let Some(ref fix) = regex_pat.fix_pattern
                 {
+                    if !regex_pat.applies_to.is_empty() || !regex_pat.excludes.is_empty() {
+                        tracing::debug!(
+                            pattern = %regex_pat.pattern,
+                            "skipping auto-fix regex with applies_to/excludes: path filtering not                              available in text-only transform"
+                        );
+                        continue;
+                    }
                     match Regex::new(&regex_pat.pattern) {
                         Ok(re) => regex_patterns.push((re, fix.clone())),
                         Err(e) => {
@@ -106,22 +115,14 @@ impl RecipeScrubber {
                 }
             }
 
-            // Collect contextual patterns with fix_pattern.
+            // Contextual patterns are file-scoped via `applies_to`; the scrubber cannot enforce
+            // those restrictions without a path, so contextual auto-fix patterns are skipped here.
             for ctx_pat in &recipe.patterns.contextual {
-                if ctx_pat.auto_fixable
-                    && ctx_pat.is_regex
-                    && let Some(ref fix) = ctx_pat.fix_pattern
-                {
-                    match Regex::new(&ctx_pat.pattern) {
-                        Ok(re) => regex_patterns.push((re, fix.clone())),
-                        Err(e) => {
-                            tracing::warn!(
-                            pattern = %ctx_pat.pattern,
-                            error = %e,
-                            "invalid contextual regex pattern, skipping"
-                            );
-                        }
-                    }
+                if ctx_pat.auto_fixable && ctx_pat.is_regex && ctx_pat.fix_pattern.is_some() {
+                    tracing::debug!(
+                        pattern = %ctx_pat.pattern,
+                        "skipping contextual auto-fix: file-scoped `applies_to` cannot be                          enforced in text-only transform"
+                    );
                 }
             }
         }
@@ -213,11 +214,14 @@ impl RecipeScrubber {
                     self.word_flags.get(idx).copied().unwrap_or_default();
 
                 // Skip matches that violate whole-word boundaries.
+                // `_` is treated as a word character so patterns don't match
+                // inside snake_case identifiers like `robust_solution`.
                 if whole_word {
+                    let is_word_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
                     let start_ok =
-                        start == 0 || !bytes.get(start - 1).is_some_and(u8::is_ascii_alphanumeric);
-                    let end_ok = end == bytes.len()
-                        || !bytes.get(end).is_some_and(u8::is_ascii_alphanumeric);
+                        start == 0 || !bytes.get(start - 1).is_some_and(|&b| is_word_byte(b));
+                    let end_ok =
+                        end == bytes.len() || !bytes.get(end).is_some_and(|&b| is_word_byte(b));
                     if !start_ok || !end_ok {
                         continue;
                     }

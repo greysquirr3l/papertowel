@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
@@ -339,7 +339,7 @@ impl RecipeMatcher {
 
             // Contextual matches.
             for contextual in &recipe.contextual_patterns {
-                if !contextual.applies_to.is_match(path) {
+                if !Self::glob_matches_with_filename(&contextual.applies_to, path) {
                     continue;
                 }
                 findings.extend(Self::match_contextual(recipe, contextual, path, &lines)?);
@@ -358,19 +358,29 @@ impl RecipeMatcher {
         applies_to: Option<&GlobSet>,
         excludes: Option<&GlobSet>,
     ) -> bool {
-        // Check excludes first.
         if let Some(excl) = excludes
-            && excl.is_match(path)
+            && Self::glob_matches_with_filename(excl, path)
         {
             return false;
         }
 
         if let Some(applies) = applies_to {
-            return applies.is_match(path);
+            return Self::glob_matches_with_filename(applies, path);
         }
 
         // No restriction = matches all.
         true
+    }
+
+    /// Match `globset` against both the full `path` and its basename, so bare-filename
+    /// globs like `README.md` work regardless of whether the path is absolute or relative.
+    fn glob_matches_with_filename(globset: &GlobSet, path: &Path) -> bool {
+        if globset.is_match(path) {
+            return true;
+        }
+        // Fallback: try matching just the file name component.
+        path.file_name()
+            .is_some_and(|name| globset.is_match(Path::new(name)))
     }
 
     fn match_words(
@@ -396,15 +406,18 @@ impl RecipeMatcher {
                 };
 
                 // Check word boundaries if required.
+                // `_` is treated as part of an identifier so patterns don't
+                // match inside snake_case names like `robust_solution`.
                 if matcher.whole_word {
                     let start = mat.start();
                     let end = mat.end();
                     let bytes = search_line.as_bytes();
 
+                    let is_word_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
                     let start_ok =
-                        start == 0 || !bytes.get(start - 1).is_some_and(u8::is_ascii_alphanumeric);
-                    let end_ok = end == bytes.len()
-                        || !bytes.get(end).is_some_and(u8::is_ascii_alphanumeric);
+                        start == 0 || !bytes.get(start - 1).is_some_and(|&b| is_word_byte(b));
+                    let end_ok = end == search_line.len()
+                        || !bytes.get(end).is_some_and(|&b| is_word_byte(b));
 
                     if !start_ok || !end_ok {
                         continue;
@@ -535,6 +548,9 @@ impl RecipeMatcher {
     }
 
     fn apply_cluster_scoring(findings: &mut [Finding], config: &ScoringConfig) {
+        if config.cluster_range_lines == 0 {
+            return;
+        }
         if findings.len() < config.cluster_threshold {
             return;
         }
@@ -553,8 +569,7 @@ impl RecipeMatcher {
             }
         }
 
-        // Find buckets that exceed threshold.
-        let hot_buckets: Vec<usize> = line_counts
+        let hot_buckets: HashSet<usize> = line_counts
             .into_iter()
             .filter(|(_, count)| *count >= config.cluster_threshold)
             .map(|(bucket, _)| bucket)

@@ -49,7 +49,17 @@ impl FileResult {
 }
 
 fn wants_detector(detectors: &[String], name: &str) -> bool {
-    detectors.is_empty() || detectors.iter().any(|d| d == name)
+    if detectors.is_empty() {
+        return true;
+    }
+    // Accept "lexical" as a legacy alias for "recipe" so existing scripts
+    // that previously passed --detectors lexical still get recipe replacements.
+    let effective = if name == RECIPE_DETECTOR_NAME {
+        &[name, "lexical"][..]
+    } else {
+        &[name][..]
+    };
+    detectors.iter().any(|d| effective.contains(&d.as_str()))
 }
 
 /// Load the recipe scrubber, returning None if loading fails or no patterns exist.
@@ -169,7 +179,8 @@ fn apply_transforms(
         match scrubber.transform_file(path, args.dry_run) {
             Ok(r) if r.changed => result.recipe = Some(r.replacements_applied),
             Ok(_) => {}
-            Err(e) => tracing::warn!(path = %path.display(), "recipe transform error: {e}"),
+            // Downgrade to debug — binary/non-UTF-8 files produce expected failures here.
+            Err(e) => tracing::debug!(path = %path.display(), "recipe transform skipped: {e}"),
         }
     }
 
