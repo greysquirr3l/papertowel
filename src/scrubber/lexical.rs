@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use aho_corasick::AhoCorasick;
-use regex::Regex;
 
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
@@ -106,116 +105,6 @@ pub const SLOP_PATTERNS: [&str; 92] = [
     "ready for production",
 ];
 
-const SLOP_REPLACEMENTS: [&str; 92] = [
-    "so",
-    "also",
-    "perhaps",
-    "",
-    "so",
-    "so",
-    "but",
-    "in fact",
-    "also",
-    "still",
-    "still",
-    "despite that",
-    "so",
-    "",
-    "skilled",
-    "good",
-    "changing",
-    "interesting",
-    "strong",
-    "useful",
-    "sturdy",
-    "smooth",
-    "cooperative",
-    "interesting",
-    "significant",
-    "most",
-    "lively",
-    "important",
-    "new",
-    "advanced",
-    "significant",
-    "important",
-    "novelty",
-    "mix",
-    "area",
-    "space",
-    "matches",
-    "add",
-    "explore",
-    "start",
-    "help",
-    "use",
-    "increase",
-    "highlights",
-    "use",
-    "use",
-    "explain",
-    "transform",
-    "support",
-    "simplify",
-    "shows",
-    "to sum up",
-    "to wrap up",
-    "note that",
-    "consider that",
-    "note that",
-    "but",
-    "but",
-    "fundamentally",
-    "simply put",
-    "this highlights the need for",
-    "the main point is",
-    "on a larger scale",
-    "in most cases",
-    "overall",
-    "is often",
-    "partially",
-    "explain",
-    "explains",
-    "smooth compatibility",
-    "expandable system",
-    "practical insights",
-    "practical insights",
-    "informed decisions",
-    "using",
-    "this means",
-    "helper that",
-    "helper that",
-    "this module handles",
-    "this module handles",
-    "we see that",
-    "internally",
-    "by default",
-    "ultimately",
-    "as noted",
-    "for",
-    "to",
-    "a full",
-    "offers a clean",
-    "thorough",
-    "comfortable",
-    "production-ready",
-];
-
-static EXTRA_SPACES_RE: LazyLock<Regex> = LazyLock::new(|| {
-    #[expect(
-        clippy::expect_used,
-        reason = "static regex: pattern is validated by tests"
-    )]
-    Regex::new(r"[ ]{2,}").expect("valid spacing regex")
-});
-static SPACE_BEFORE_PUNCT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    #[expect(
-        clippy::expect_used,
-        reason = "static regex: pattern is validated by tests"
-    )]
-    Regex::new(r"\s+([,.;:!?])").expect("valid punctuation regex")
-});
-
 static MATCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
     #[expect(
         clippy::expect_used,
@@ -254,52 +143,6 @@ pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelErr
     let content =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
     detect_in_text(path, &content, LexicalDetectionConfig::default())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexicalTransformResult {
-    pub transformed_text: String,
-    pub replacements_applied: usize,
-    pub changed: bool,
-}
-
-pub fn transform_file(
-    path: impl AsRef<Path>,
-    dry_run: bool,
-) -> Result<LexicalTransformResult, PapertowelError> {
-    let path = path.as_ref();
-    let original =
-        fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
-    let transformed = transform_text(&original);
-
-    if !dry_run && transformed.changed {
-        fs::write(path, &transformed.transformed_text)
-            .map_err(|error| PapertowelError::io_with_path(path, error))?;
-    }
-
-    Ok(transformed)
-}
-
-#[must_use]
-pub fn transform_text(content: &str) -> LexicalTransformResult {
-    let replacements_applied = MATCHER.find_iter(content).count();
-    if replacements_applied == 0 {
-        return LexicalTransformResult {
-            transformed_text: content.to_owned(),
-            replacements_applied: 0,
-            changed: false,
-        };
-    }
-
-    let replaced = MATCHER.replace_all(content, &SLOP_REPLACEMENTS);
-    let cleaned = normalize_transformed_text(&replaced);
-    let changed = cleaned != content;
-
-    LexicalTransformResult {
-        transformed_text: cleaned,
-        replacements_applied,
-        changed,
-    }
 }
 
 #[expect(
@@ -396,18 +239,6 @@ fn line_number_at_offset(content: &str, offset: usize) -> usize {
         )
 }
 
-fn normalize_transformed_text(content: &str) -> String {
-    let mut normalized_lines = Vec::new();
-
-    for line in content.lines() {
-        let squashed = EXTRA_SPACES_RE.replace_all(line, " ");
-        let punctuation = SPACE_BEFORE_PUNCT_RE.replace_all(&squashed, "$1");
-        normalized_lines.push(punctuation.trim_end().to_owned());
-    }
-
-    normalized_lines.join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -415,10 +246,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::detection::finding::Severity;
-    use crate::scrubber::lexical::{
-        DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text, transform_file,
-        transform_text,
-    };
+    use crate::scrubber::lexical::{DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text};
 
     #[test]
     fn detector_name_is_stable() {
@@ -473,57 +301,6 @@ mod tests {
 
         let findings = detect_file(&file_path)?;
         assert_eq!(findings.len(), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn transform_text_rewrites_slop_phrases() {
-        let sample = "this module provides a robust and seamless approach. It is robust.";
-        let transformed = transform_text(sample);
-
-        assert!(transformed.changed);
-        assert!(transformed.replacements_applied >= 3);
-        assert!(transformed.transformed_text.contains("this module"));
-        assert!(
-            !transformed
-                .transformed_text
-                .to_ascii_lowercase()
-                .contains("robust")
-        );
-    }
-
-    #[test]
-    fn transform_file_honors_dry_run() -> Result<(), Box<dyn std::error::Error>> {
-        let tmp = TempDir::new()?;
-        let file_path = tmp.path().join("sample.md");
-
-        fs::write(&file_path, "A robust and seamless guide.")?;
-
-        let transform_result = transform_file(&file_path, true)?;
-        assert!(transform_result.changed);
-
-        let disk_content = fs::read_to_string(&file_path)?;
-        assert!(disk_content.contains("robust"));
-        Ok(())
-    }
-
-    #[test]
-    fn transform_text_returns_unchanged_for_clean_content() {
-        let result = transform_text("fn hello() { println!(\"hello world\"); }");
-        assert!(!result.changed, "clean Rust code should not be modified");
-        assert_eq!(result.replacements_applied, 0);
-    }
-
-    #[test]
-    fn transform_file_writes_when_not_dry_run() -> Result<(), Box<dyn std::error::Error>> {
-        let tmp = TempDir::new()?;
-        let file_path = tmp.path().join("slop.md");
-        fs::write(&file_path, "A robust and seamless guide.")?;
-        let result = transform_file(&file_path, false)?;
-        assert!(result.changed);
-        let disk = fs::read_to_string(&file_path)?;
-        // After real write, slop words are replaced
-        assert!(!disk.to_ascii_lowercase().contains("robust and seamless"));
         Ok(())
     }
 
