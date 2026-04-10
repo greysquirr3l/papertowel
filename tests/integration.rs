@@ -10,11 +10,22 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// Build a papertowel [`Command`] with `CI` removed from the environment so
+/// the binary runs in interactive (non-CI) mode regardless of where the test
+/// suite itself is executed. Without this, GitHub Actions sets `CI=true` which
+/// auto-enables `--fail-on medium` and switches output to GHA annotation
+/// format, breaking tests that expect plain-text stdout and exit 0.
+fn cmd() -> Command {
+    let mut c = Command::cargo_bin("papertowel").unwrap();
+    c.env_remove("CI");
+    c
+}
+
 // ── clean_repo ────────────────────────────────────────────────────────────────
 
 #[test]
 fn scan_clean_repo_exits_zero() {
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan").arg(fixture("clean_repo"));
     cmd.assert().success();
 }
@@ -22,7 +33,7 @@ fn scan_clean_repo_exits_zero() {
 #[test]
 fn scan_clean_repo_fail_on_medium_exits_zero() {
     // Plain human-written code should not reach Medium severity.
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan")
         .arg(fixture("clean_repo"))
         .args(["--fail-on", "medium"]);
@@ -34,7 +45,7 @@ fn scan_clean_repo_fail_on_medium_exits_zero() {
 #[test]
 fn scan_slop_repo_exits_zero_without_fail_on() {
     // scan should always exit 0 when no --fail-on gate is set.
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan").arg(fixture("slop_repo"));
     cmd.assert().success();
 }
@@ -42,7 +53,7 @@ fn scan_slop_repo_exits_zero_without_fail_on() {
 #[test]
 fn scan_slop_repo_produces_output() {
     // Slop-heavy source should produce at least some finding output.
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan").arg(fixture("slop_repo"));
     cmd.assert()
         .success()
@@ -53,7 +64,7 @@ fn scan_slop_repo_produces_output() {
 fn scan_slop_repo_fail_on_medium_exits_nonzero() {
     // Clustered slop vocabulary should reach at least Medium severity,
     // causing the gate to exit nonzero.
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan")
         .arg(fixture("slop_repo"))
         .args(["--fail-on", "medium"]);
@@ -63,7 +74,7 @@ fn scan_slop_repo_fail_on_medium_exits_nonzero() {
 #[test]
 fn scan_slop_repo_json_is_valid() {
     // JSON mode must produce parseable output.
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan")
         .arg(fixture("slop_repo"))
         .args(["--format", "json"]);
@@ -78,7 +89,7 @@ fn scan_slop_repo_json_is_valid() {
 
 #[test]
 fn scan_template_repo_exits_zero_without_fail_on() {
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan").arg(fixture("template_repo"));
     cmd.assert().success();
 }
@@ -86,7 +97,7 @@ fn scan_template_repo_exits_zero_without_fail_on() {
 #[test]
 fn scan_template_repo_produces_readme_findings() {
     // The template README triggers emoji-header and badge-wall patterns.
-    let mut cmd = Command::cargo_bin("papertowel").unwrap();
+    let mut cmd = cmd();
     cmd.arg("scan")
         .arg(fixture("template_repo"))
         .args(["--format", "json"]);
