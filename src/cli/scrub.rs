@@ -154,22 +154,22 @@ fn apply_transforms(
         readme: None,
     };
 
-    if lang.is_analysable() {
-        // Apply recipe-based transforms first (preferred over legacy lexical).
-        if let Some(scrubber) = recipe_scrubber {
-            match scrubber.transform_file(path, args.dry_run) {
-                Ok(r) if r.changed => result.recipe = Some(r.replacements_applied),
-                Ok(_) => {}
-                Err(e) => tracing::warn!(path = %path.display(), "recipe transform error: {e}"),
-            }
+    if lang.is_analysable() && wants_detector(&args.detectors, comments::DETECTOR_NAME) {
+        match comments::transform_file(path, args.dry_run) {
+            Ok(r) if r.changed => result.comments = Some(r.removed_comment_lines),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(path = %path.display(), "comments transform error: {e}"),
         }
+    }
 
-        if wants_detector(&args.detectors, comments::DETECTOR_NAME) {
-            match comments::transform_file(path, args.dry_run) {
-                Ok(r) if r.changed => result.comments = Some(r.removed_comment_lines),
-                Ok(_) => {}
-                Err(e) => tracing::warn!(path = %path.display(), "comments transform error: {e}"),
-            }
+    // Apply recipe-based transforms to all UTF-8 readable files; language gating
+    // is intentionally omitted here so Markdown, TOML, and other text formats are
+    // covered the same way the scan command covers them.
+    if let Some(scrubber) = recipe_scrubber {
+        match scrubber.transform_file(path, args.dry_run) {
+            Ok(r) if r.changed => result.recipe = Some(r.replacements_applied),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(path = %path.display(), "recipe transform error: {e}"),
         }
     }
 

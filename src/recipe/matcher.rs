@@ -313,6 +313,8 @@ impl RecipeMatcher {
         let lines: Vec<&str> = content.lines().collect();
 
         for recipe in &self.compiled {
+            let pre_len = findings.len();
+
             // Word matches.
             if let Some(ref word_matcher) = recipe.word_matcher {
                 findings.extend(Self::match_words(recipe, word_matcher, path, &lines)?);
@@ -343,8 +345,9 @@ impl RecipeMatcher {
                 findings.extend(Self::match_contextual(recipe, contextual, path, &lines)?);
             }
 
-            // Apply cluster scoring.
-            Self::apply_cluster_scoring(&mut findings, &recipe.scoring);
+            if let Some(slice) = findings.get_mut(pre_len..) {
+                Self::apply_cluster_scoring(slice, &recipe.scoring);
+            }
         }
 
         Ok(findings)
@@ -414,7 +417,7 @@ impl RecipeMatcher {
                     *severity,
                     recipe.scoring.base_confidence,
                     path,
-                    format!("slop vocabulary: '{word}'"),
+                    format!("{} vocabulary: '{word}'", recipe.name),
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
                 finding.suggestion.clone_from(replacement);
@@ -448,7 +451,7 @@ impl RecipeMatcher {
                     *severity,
                     recipe.scoring.base_confidence,
                     path,
-                    format!("slop phrase: '{phrase}'"),
+                    format!("{} phrase: '{phrase}'", recipe.name),
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
                 finding.suggestion.clone_from(suggestion);
@@ -541,11 +544,11 @@ impl RecipeMatcher {
         };
 
         // Group findings by line proximity.
+        // where line `cluster_range_lines` lands in bucket 1 instead of bucket 0.
         let mut line_counts: HashMap<usize, usize> = HashMap::new();
         for finding in findings.iter() {
             if let Some(range) = finding.line_range {
-                // Count in buckets of cluster_range_lines.
-                let bucket = range.start / config.cluster_range_lines;
+                let bucket = range.start.saturating_sub(1) / config.cluster_range_lines;
                 *line_counts.entry(bucket).or_insert(0) += 1;
             }
         }
@@ -559,7 +562,7 @@ impl RecipeMatcher {
 
         for finding in findings.iter_mut() {
             if let Some(range) = finding.line_range {
-                let bucket = range.start / config.cluster_range_lines;
+                let bucket = range.start.saturating_sub(1) / config.cluster_range_lines;
                 if hot_buckets.contains(&bucket) {
                     finding.severity = boost_severity;
                     finding.confidence_score = (finding.confidence_score + 0.15).min(1.0);
@@ -593,7 +596,10 @@ mod tests {
                     case_sensitive: false,
                     whole_word: true,
                     severity: None,
-                    items: vec![WordItem::Simple("sturdy".to_owned()), WordItem::Simple("use".to_owned())],
+                    items: vec![
+                        WordItem::Simple("sturdy".to_owned()),
+                        WordItem::Simple("use".to_owned()),
+                    ],
                 }),
                 phrases: None,
                 regex: vec![],

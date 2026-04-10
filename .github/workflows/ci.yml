@@ -129,6 +129,7 @@ jobs:
       - name: Validate repo recipes (if present)
         run: |
           if [ -d ".papertowel/recipes" ]; then
+            shopt -s nullglob
             for recipe in .papertowel/recipes/*.toml; do
               echo "Validating $recipe..."
               ./target/release/papertowel recipe validate "$recipe"

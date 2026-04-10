@@ -1,6 +1,6 @@
 //!
-//! They can be:
-//! - Built-in (embedded in the binary)
+//! optionally replace AI-style phrasing. Recipes can come from three sources:
+//!
 
 pub mod loader;
 pub mod matcher;
