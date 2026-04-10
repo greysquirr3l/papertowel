@@ -9,6 +9,7 @@ src/scrubber/promotion.rs
 src/learning/learner.rs
 src/cli/scrub.rs
 src/cli/hook.rs
+src/recipe/scrubber.rs
 
 # Recipe definition files contain the patterns we detect — exclude them
 src/recipes/*.toml
