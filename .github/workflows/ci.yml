@@ -55,6 +55,9 @@ jobs:
           key: ${{ runner.os }}-cargo-test-v4-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-v4-
 
+      - name: Force rebuild papertowel lib
+        run: cargo clean -p papertowel
+
       - name: Run tests
         run: cargo test --workspace
 
