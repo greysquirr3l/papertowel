@@ -343,6 +343,27 @@ fn handle_tools_call(params: Option<&Value>) -> Result<Value> {
 /// Files larger than this are skipped by the recipe scanner to avoid I/O waste.
 const MAX_RECIPE_SCAN_BYTES: u64 = 2 * 1024 * 1024;
 
+/// Load a `RecipeMatcher` for the project root that contains `path`.
+///
+/// Returns `None` if recipes cannot be loaded or compiled (errors are logged at
+/// `debug` level so the scan still proceeds with structural findings).
+fn load_recipe_matcher(path: &std::path::Path) -> Option<papertowel::recipe::RecipeMatcher> {
+    let project_root = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map_or_else(|| path.to_path_buf(), PathBuf::from)
+    };
+    let loader = papertowel::recipe::RecipeLoader::new(Some(project_root));
+    match loader.load_all() {
+        Ok(recipes) => papertowel::recipe::RecipeMatcher::compile(recipes).ok(),
+        Err(e) => {
+            debug!(error = %e, "failed to load recipes (skipped)");
+            None
+        }
+    }
+}
+
 /// Run the papertowel scan pipeline against a path and return findings as text.
 fn call_scan(args: &Value) -> Result<Value> {
     let raw_path = args
@@ -371,86 +392,12 @@ fn call_scan(args: &Value) -> Result<Value> {
         return Ok(tool_text("No analysable source files found."));
     }
 
-    // Load recipe matcher from the path's project root (best-effort; failures are
-    // logged and silently skipped so the scan still returns structural findings).
-    let project_root = if path.is_dir() {
-        path.clone()
-    } else {
-        path.parent().map(PathBuf::from).unwrap_or_else(|| path.clone())
-    };
-    let recipe_matcher = {
-        let loader = papertowel::recipe::RecipeLoader::new(Some(project_root));
-        match loader.load_all() {
-            Ok(recipes) => papertowel::recipe::RecipeMatcher::compile(recipes).ok(),
-            Err(e) => {
-                debug!(error = %e, "failed to load recipes (skipped)");
-                None
-            }
-        }
-    };
+    // Load recipe matcher from the path's project root (best-effort).
+    let recipe_matcher = load_recipe_matcher(&path);
 
     let mut all_findings = Vec::new();
     for file in &files {
-        let ext = file
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or_default();
-        let lang = papertowel::detection::language::LanguageKind::from_extension(ext);
-
-        if lang.is_analysable() {
-            run_detector_into(
-                &mut all_findings,
-                papertowel::scrubber::lexical::detect_file(file),
-            );
-            run_detector_into(
-                &mut all_findings,
-                papertowel::scrubber::comments::detect_file(file),
-            );
-            run_detector_into(
-                &mut all_findings,
-                papertowel::scrubber::structure::detect_file_for_language(file, lang),
-            );
-            run_detector_into(
-                &mut all_findings,
-                papertowel::scrubber::tests::detect_file_for_language(file, lang),
-            );
-            if lang == papertowel::detection::language::LanguageKind::Rust {
-                run_detector_into(
-                    &mut all_findings,
-                    papertowel::scrubber::idiom_mismatch::detect_file(file),
-                );
-            }
-        }
-
-        if matches!(
-            ext,
-            "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
-        ) {
-            run_detector_into(
-                &mut all_findings,
-                papertowel::scrubber::prompt::detect_file(file),
-            );
-        }
-
-        if ext == "md" {
-            run_detector_into(
-                &mut all_findings,
-                papertowel::scrubber::readme::detect_file(file),
-            );
-        }
-
-        // Recipe-based detection: runs on any text file under 2 MiB.
-        if let Some(ref matcher) = recipe_matcher
-            && file
-                .metadata()
-                .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
-            && let Ok(content) = std::fs::read_to_string(file)
-        {
-            match matcher.scan_file(file, &content) {
-                Ok(mut recipe_findings) => all_findings.append(&mut recipe_findings),
-                Err(e) => debug!(error = %e, file = %file.display(), "recipe scan error (skipped)"),
-            }
-        }
+        scan_file_into(&mut all_findings, file, recipe_matcher.as_ref());
     }
 
     // Filter by severity.
@@ -530,17 +477,7 @@ fn call_scrub(args: &Value) -> Result<Value> {
     }
 
     // Recipe-based detection on the single file.
-    let project_root = path
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| path.clone());
-    let recipe_matcher = {
-        let loader = papertowel::recipe::RecipeLoader::new(Some(project_root));
-        loader
-            .load_all()
-            .ok()
-            .and_then(|recipes| papertowel::recipe::RecipeMatcher::compile(recipes).ok())
-    };
+    let recipe_matcher = load_recipe_matcher(&path);
     if let Some(ref matcher) = recipe_matcher
         && path
             .metadata()
@@ -580,6 +517,59 @@ fn call_scrub(args: &Value) -> Result<Value> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Run all detectors for a single file and append findings to `out`.
+fn scan_file_into(
+    out: &mut Vec<papertowel::detection::finding::Finding>,
+    file: &std::path::Path,
+    recipe_matcher: Option<&papertowel::recipe::RecipeMatcher>,
+) {
+    let ext = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default();
+    let lang = papertowel::detection::language::LanguageKind::from_extension(ext);
+
+    if lang.is_analysable() {
+        run_detector_into(out, papertowel::scrubber::lexical::detect_file(file));
+        run_detector_into(out, papertowel::scrubber::comments::detect_file(file));
+        run_detector_into(
+            out,
+            papertowel::scrubber::structure::detect_file_for_language(file, lang),
+        );
+        run_detector_into(
+            out,
+            papertowel::scrubber::tests::detect_file_for_language(file, lang),
+        );
+        if lang == papertowel::detection::language::LanguageKind::Rust {
+            run_detector_into(out, papertowel::scrubber::idiom_mismatch::detect_file(file));
+        }
+    }
+
+    if matches!(
+        ext,
+        "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
+    ) {
+        run_detector_into(out, papertowel::scrubber::prompt::detect_file(file));
+    }
+
+    if ext == "md" {
+        run_detector_into(out, papertowel::scrubber::readme::detect_file(file));
+    }
+
+    // Recipe-based detection: runs on any text file under 2 MiB.
+    if let Some(matcher) = recipe_matcher
+        && file
+            .metadata()
+            .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
+        && let Ok(content) = std::fs::read_to_string(file)
+    {
+        match matcher.scan_file(file, &content) {
+            Ok(mut recipe_findings) => out.append(&mut recipe_findings),
+            Err(e) => debug!(error = %e, file = %file.display(), "recipe scan error (skipped)"),
+        }
+    }
+}
 
 /// Collect all source files under `path` (recurses into directories).
 fn collect_files(path: &std::path::Path) -> Vec<PathBuf> {
