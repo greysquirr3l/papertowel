@@ -131,7 +131,12 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
         }
 
         let pre_count = findings.len();
-        run_file_detectors(path, &mut findings, comment_config, recipe_matcher.as_deref());
+        run_file_detectors(
+            path,
+            &mut findings,
+            comment_config,
+            recipe_matcher.as_deref(),
+        );
 
         if !directives.suppressed_lines.is_empty() {
             let new_findings = findings.split_off(pre_count);

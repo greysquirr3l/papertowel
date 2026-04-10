@@ -1,10 +1,9 @@
-
 use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Args;
 
-use crate::recipe::loader::{list_available_recipes, RecipeLoader};
+use crate::recipe::loader::{RecipeLoader, list_available_recipes};
 use crate::recipe::types::RecipeSource;
 
 #[derive(Debug, Args)]
@@ -54,9 +53,7 @@ pub fn handle_list(args: &ListArgs) -> Result<()> {
 
         let location = match &source {
             RecipeSource::Builtin => "(embedded)".to_owned(),
-            RecipeSource::UserGlobal(p) | RecipeSource::RepoLocal(p) => {
-                p.display().to_string()
-            }
+            RecipeSource::UserGlobal(p) | RecipeSource::RepoLocal(p) => p.display().to_string(),
         };
 
         println!("{:<25} {:<10} {}", name, source_str, location);
@@ -81,7 +78,10 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
             RecipeSource::Builtin => {
                 println!("# Builtin recipe: {}", args.name);
                 println!("# Raw TOML not available for embedded recipes.");
-                println!("# Use 'papertowel recipe show {}' without --raw for details.", args.name);
+                println!(
+                    "# Use 'papertowel recipe show {}' without --raw for details.",
+                    args.name
+                );
             }
             RecipeSource::UserGlobal(p) | RecipeSource::RepoLocal(p) => {
                 let content = std::fs::read_to_string(p)?;
@@ -96,7 +96,7 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
         println!("Category: {:?}", r.recipe.category);
         println!("Default Severity: {:?}", r.recipe.default_severity);
         println!("Enabled: {}", r.recipe.enabled);
-        
+
         if !r.recipe.description.is_empty() {
             println!("\nDescription:\n  {}", r.recipe.description);
         }
@@ -150,13 +150,17 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
         }
 
         println!("\nScoring:");
-        println!("  Cluster threshold: {} matches in {} lines", 
-            r.scoring.cluster_threshold, 
-            r.scoring.cluster_range_lines);
+        println!(
+            "  Cluster threshold: {} matches in {} lines",
+            r.scoring.cluster_threshold, r.scoring.cluster_range_lines
+        );
         if let Some(boost) = r.scoring.cluster_severity_boost {
             println!("  Cluster severity boost: {:?}", boost);
         }
-        println!("  Base confidence: {:.0}%", r.scoring.base_confidence * 100.0);
+        println!(
+            "  Base confidence: {:.0}%",
+            r.scoring.base_confidence * 100.0
+        );
     }
 
     Ok(())
@@ -165,20 +169,26 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
 /// Validate a recipe file.
 pub fn handle_validate(args: &ValidateArgs) -> Result<()> {
     let content = std::fs::read_to_string(&args.path)?;
-    
+
     match toml::from_str::<crate::recipe::types::Recipe>(&content) {
         Ok(recipe) => {
             println!("✓ Recipe '{}' is valid", recipe.recipe.name);
             println!("  Version: {}", recipe.recipe.version);
             println!("  Category: {:?}", recipe.recipe.category);
-            
+
             let word_count = recipe.patterns.words.as_ref().map_or(0, |w| w.items.len());
-            let phrase_count = recipe.patterns.phrases.as_ref().map_or(0, |p| p.items.len());
+            let phrase_count = recipe
+                .patterns
+                .phrases
+                .as_ref()
+                .map_or(0, |p| p.items.len());
             let regex_count = recipe.patterns.regex.len();
             let ctx_count = recipe.patterns.contextual.len();
-            
-            println!("  Patterns: {} words, {} phrases, {} regex, {} contextual",
-                word_count, phrase_count, regex_count, ctx_count);
+
+            println!(
+                "  Patterns: {} words, {} phrases, {} regex, {} contextual",
+                word_count, phrase_count, regex_count, ctx_count
+            );
         }
         Err(e) => {
             eprintln!("✗ Invalid recipe: {}", e);

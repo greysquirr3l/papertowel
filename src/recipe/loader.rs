@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -74,7 +73,9 @@ impl RecipeLoader {
         // User global recipes (medium priority).
         if let Some(ref user_dir) = self.user_config_dir {
             if user_dir.exists() {
-                recipes.extend(self.load_from_directory(user_dir, RecipeSource::UserGlobal(user_dir.clone()))?);
+                recipes.extend(
+                    self.load_from_directory(user_dir, RecipeSource::UserGlobal(user_dir.clone()))?,
+                );
             }
         }
 
@@ -82,7 +83,10 @@ impl RecipeLoader {
         if let Some(ref repo_root) = self.repo_root {
             let repo_recipes = repo_root.join(".papertowel").join("recipes");
             if repo_recipes.exists() {
-                recipes.extend(self.load_from_directory(&repo_recipes, RecipeSource::RepoLocal(repo_recipes.clone()))?);
+                recipes.extend(self.load_from_directory(
+                    &repo_recipes,
+                    RecipeSource::RepoLocal(repo_recipes.clone()),
+                )?);
             }
         }
 
@@ -119,7 +123,11 @@ impl RecipeLoader {
         Ok(recipes)
     }
 
-    fn load_from_directory(&self, dir: &Path, source_template: RecipeSource) -> Result<Vec<LoadedRecipe>, PapertowelError> {
+    fn load_from_directory(
+        &self,
+        dir: &Path,
+        source_template: RecipeSource,
+    ) -> Result<Vec<LoadedRecipe>, PapertowelError> {
         let mut recipes = Vec::new();
 
         let entries = match fs::read_dir(dir) {
@@ -271,6 +279,10 @@ items = ["testword"]
         let loader = RecipeLoader::new(None).exclude(vec!["slop-vocabulary".to_owned()]);
         let recipes = loader.load_all().unwrap();
 
-        assert!(recipes.iter().all(|r| r.recipe.recipe.name != "slop-vocabulary"));
+        assert!(
+            recipes
+                .iter()
+                .all(|r| r.recipe.recipe.name != "slop-vocabulary")
+        );
     }
 }
