@@ -4,5 +4,6 @@ pub mod detection;
 pub mod domain;
 pub mod learning;
 pub mod profile;
+pub mod recipe;
 pub mod scrubber;
 pub mod wringer;

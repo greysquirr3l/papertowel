@@ -1,0 +1,125 @@
+# Phrase Pattern Detection (High Signal)
+#
+# These are multi-word phrases that are strong indicators of AI generation.
+# Unlike single words, phrases have higher specificity and lower false-positive rates.
+#
+# Contribute: Add phrases you've noticed in AI outputs that humans rarely use.
+
+[recipe]
+name = "phrase-patterns"
+version = "1.0.0"
+description = "Multi-word phrases with high AI signal"
+author = "papertowel"
+category = "Lexical"
+default_severity = "Medium"
+
+[scoring]
+cluster_threshold = 2
+cluster_range_lines = 30
+cluster_severity_boost = "High"
+base_confidence = 0.8
+
+[patterns.phrases]
+enabled = true
+severity = "Medium"
+items = [
+    # High confidence AI tells
+    { match = "Let's break this down", severity = "High" },
+    { match = "Let me break this down", severity = "High" },
+    { match = "Here's a breakdown", severity = "High" },
+    { match = "I'll walk you through", severity = "High" },
+    { match = "Let's walk through", severity = "High" },
+    { match = "Let's dive into", severity = "High" },
+    { match = "Let's explore", severity = "Medium" },
+    { match = "Great question!", severity = "High" },
+    { match = "That's a great question", severity = "High" },
+    { match = "Excellent question", severity = "High" },
+    { match = "Happy to help", severity = "High" },
+    { match = "I'd be happy to", severity = "Medium" },
+    { match = "I hope this helps", severity = "High" },
+    { match = "Hope this helps", severity = "High" },
+    { match = "Feel free to", severity = "Low" },
+    { match = "Don't hesitate to", severity = "Medium" },
+
+    # Explanation starters
+    { match = "In essence", suggestion = "" },
+    { match = "In other words", suggestion = "i.e." },
+    { match = "Put simply", suggestion = "" },
+    { match = "Simply put", suggestion = "" },
+    { match = "To summarize", suggestion = "" },
+    { match = "To recap", suggestion = "" },
+    { match = "As you can see", suggestion = "" },
+    { match = "As we can see", suggestion = "" },
+    { match = "As mentioned earlier", suggestion = "" },
+    { match = "As noted above", suggestion = "" },
+
+    # Marketing/corporate patterns
+    { match = "best practices", suggestion = "good approaches" },
+    { match = "industry best practices", severity = "High" },
+    { match = "state-of-the-art", suggestion = "modern" },
+    { match = "cutting-edge technology", suggestion = "modern tech" },
+    { match = "next-generation", suggestion = "new" },
+    { match = "world-class", suggestion = "" },
+    { match = "enterprise-grade", suggestion = "production-quality" },
+    { match = "production-ready solution", suggestion = "working implementation" },
+    { match = "robust and scalable", suggestion = "solid" },
+    { match = "flexible and extensible", suggestion = "adaptable" },
+    { match = "powerful and intuitive", suggestion = "" },
+    { match = "clean and maintainable", suggestion = "well-structured" },
+    { match = "modern and efficient", suggestion = "fast" },
+
+    # Over-qualified statements
+    { match = "it's crucial to", suggestion = "you should" },
+    { match = "it's essential to", suggestion = "you need to" },
+    { match = "it's important to remember", suggestion = "remember:" },
+    { match = "it's worth mentioning", suggestion = "also," },
+    { match = "importantly", suggestion = "" },
+    { match = "significantly", suggestion = "" },
+    { match = "notably", suggestion = "" },
+    { match = "interestingly", suggestion = "" },
+
+    # Padding phrases
+    { match = "in this context", suggestion = "here" },
+    { match = "in this case", suggestion = "here" },
+    { match = "in this scenario", suggestion = "here" },
+    { match = "in this situation", suggestion = "here" },
+    { match = "with that being said", suggestion = "but" },
+    { match = "with that in mind", suggestion = "so" },
+    { match = "given the above", suggestion = "therefore" },
+    { match = "based on the above", suggestion = "so" },
+    { match = "as a result of this", suggestion = "so" },
+    { match = "due to the fact that", suggestion = "because" },
+    { match = "for the purpose of", suggestion = "to" },
+    { match = "in the context of", suggestion = "in" },
+    { match = "with respect to", suggestion = "regarding" },
+    { match = "in terms of", suggestion = "regarding" },
+    { match = "when it comes to", suggestion = "for" },
+]
+
+# README-specific patterns
+[[patterns.contextual]]
+name = "readme-emoji-header"
+applies_to = ["README.md", "README*.md", "readme.md"]
+pattern = "^#+.*[🚀🎯💡🔥✨⚡]"
+is_regex = true
+severity = "Medium"
+description = "Emoji in README header (common AI pattern)"
+suggestion = "Remove emoji from headers"
+
+[[patterns.contextual]]
+name = "readme-features-header"
+applies_to = ["README.md", "README*.md", "readme.md"]
+pattern = "^#+\\s*(Key\\s+)?Features"
+is_regex = true
+severity = "Low"
+description = "Generic 'Features' section header"
+suggestion = "Consider more specific section name"
+
+[[patterns.contextual]]
+name = "readme-badges-spam"
+applies_to = ["README.md", "README*.md", "readme.md"]
+pattern = "\\[!\\[.*\\]\\(.*\\)\\].*\\[!\\[.*\\]\\(.*\\)\\].*\\[!\\[.*\\]\\(.*\\)\\]"
+is_regex = true
+severity = "Low"
+description = "Multiple consecutive badges (common in AI-generated READMEs)"
+suggestion = "Consider fewer, more relevant badges"

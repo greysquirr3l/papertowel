@@ -1,5 +1,6 @@
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Args;
@@ -15,6 +16,8 @@ use crate::config::{is_ignored, resolve_config};
 use crate::detection::finding::{Finding, Severity};
 use crate::detection::language::LanguageKind;
 use crate::learning::StyleBaseline;
+use crate::recipe::loader::RecipeLoader;
+use crate::recipe::matcher::RecipeMatcher;
 use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::ignore_directives;
 use crate::scrubber::{
@@ -70,6 +73,18 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
             }
         });
 
+    let recipe_matcher = {
+        let loader = RecipeLoader::new(Some(project_root.clone()));
+        match loader.load_all() {
+            Ok(recipes) => RecipeMatcher::compile(recipes).ok(),
+            Err(e) => {
+                tracing::warn!("failed to load recipes: {e}");
+                None
+            }
+        }
+    };
+    let recipe_matcher = recipe_matcher.map(Arc::new);
+
     let min_severity = args.severity.map(|s| match s {
         SeverityArg::Low => Severity::Low,
         SeverityArg::Medium => Severity::Medium,
@@ -116,7 +131,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
         }
 
         let pre_count = findings.len();
-        run_file_detectors(path, &mut findings, comment_config);
+        run_file_detectors(path, &mut findings, comment_config, recipe_matcher.as_deref());
 
         if !directives.suppressed_lines.is_empty() {
             let new_findings = findings.split_off(pre_count);
@@ -167,6 +182,7 @@ fn run_file_detectors(
     path: &Path,
     findings: &mut Vec<Finding>,
     comment_config: CommentDetectionConfig,
+    recipe_matcher: Option<&RecipeMatcher>,
 ) {
     let ext = path
         .extension()
@@ -185,6 +201,16 @@ fn run_file_detectors(
         });
         if lang == LanguageKind::Rust {
             run_detector(findings, || idiom_mismatch::detect_file(path));
+        }
+    }
+
+    // Run recipe-based detection on all text files.
+    if let Some(matcher) = recipe_matcher {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            match matcher.scan_file(path, &content) {
+                Ok(mut recipe_findings) => findings.append(&mut recipe_findings),
+                Err(e) => tracing::warn!("recipe scan error for {}: {e}", path.display()),
+            }
         }
     }
 

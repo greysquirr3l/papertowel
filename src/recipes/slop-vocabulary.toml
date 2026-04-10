@@ -1,0 +1,128 @@
+# Slop Vocabulary Detection
+# 
+# Common AI-generated vocabulary patterns. These words are individually
+# innocuous but cluster together at high frequency in LLM outputs.
+#
+# Contribute: Add patterns in `[patterns.words]` or `[patterns.phrases]`.
+
+[recipe]
+name = "slop-vocabulary"
+version = "1.0.0"
+description = "Detects common AI slop vocabulary - words and phrases overused by LLMs"
+author = "papertowel"
+category = "Lexical"
+default_severity = "Low"
+
+[scoring]
+cluster_threshold = 4
+cluster_range_lines = 15
+cluster_severity_boost = "High"
+base_confidence = 0.6
+
+[patterns.words]
+enabled = true
+case_sensitive = false
+whole_word = true
+severity = "Low"
+items = [
+    # Transitions (overused by LLMs for "flow")
+    "accordingly",
+    "additionally",
+    "arguably",
+    "certainly",
+    "consequently",
+    "hence",
+    "moreover",
+    "nevertheless",
+    "nonetheless",
+    "notwithstanding",
+    "thus",
+    "undoubtedly",
+
+    # Superlative adjectives
+    "adept",
+    "commendable",
+    "ever-evolving",
+    "exciting",
+    "exemplary",
+    "invaluable",
+    "robust",
+    "seamless",
+    "synergistic",
+    "thought-provoking",
+    "transformative",
+    "utmost",
+    "vibrant",
+    "vital",
+    "innovative",
+    "cutting-edge",
+    "game-changing",
+    "pivotal",
+    "comprehensive",
+    "ergonomic",
+
+    # Abstract nouns
+    "innovation",
+    "tapestry",
+    "realm",
+    "landscape",
+
+    # Verbs
+    "aligns",
+    "augment",
+    "delve",
+    "embark",
+    "facilitate",
+    "leverage",
+    "maximize",
+    "underscores",
+    "utilize",
+    "harness",
+    "illuminate",
+    "revolutionize",
+    "bolster",
+    "streamline",
+    "leveraging",
+]
+
+[patterns.phrases]
+enabled = true
+severity = "Medium"
+items = [
+    # Hedging phrases
+    { match = "it's important to note", suggestion = "note that" },
+    { match = "it's important to consider", suggestion = "consider" },
+    { match = "it's worth noting that", suggestion = "note:" },
+    { match = "on the contrary", suggestion = "however" },
+    { match = "that being said", suggestion = "but" },
+    { match = "at its core", suggestion = "fundamentally" },
+    { match = "to put it simply", suggestion = "simply" },
+    { match = "generally speaking", suggestion = "usually" },
+    { match = "broadly speaking", suggestion = "generally" },
+    { match = "to some extent", suggestion = "partially" },
+    { match = "from a broader perspective", suggestion = "" },
+
+    # Marketing speak
+    { match = "a testament to", suggestion = "shows" },
+    { match = "in summary", suggestion = "" },
+    { match = "in conclusion", suggestion = "" },
+    { match = "this underscores the importance of", suggestion = "this shows" },
+    { match = "a key takeaway is", suggestion = "notably" },
+    { match = "shed light on", suggestion = "explain" },
+    { match = "sheds light on", suggestion = "explains" },
+    { match = "seamless integration", suggestion = "integration" },
+    { match = "scalable solution", suggestion = "solution" },
+    { match = "actionable insights", suggestion = "insights" },
+    { match = "data-driven insights", suggestion = "analysis" },
+    { match = "data-driven decisions", suggestion = "decisions" },
+    { match = "under the hood", suggestion = "internally" },
+    { match = "out of the box", suggestion = "by default" },
+    { match = "at the end of the day", suggestion = "ultimately" },
+    { match = "ready for production", suggestion = "production-ready" },
+
+    # Verbose phrases
+    { match = "as mentioned above", suggestion = "" },
+    { match = "for the sake of", suggestion = "for" },
+    { match = "in order to", suggestion = "to" },
+    { match = "provides a streamlined", suggestion = "provides" },
+]

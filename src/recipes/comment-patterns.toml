@@ -1,0 +1,94 @@
+# Comment Pattern Detection
+#
+# Detects over-documentation and AI-style verbose code comments.
+# LLMs tend to produce comments that state the obvious or use
+# verbose preambles like "This function..." or "Helper to...".
+#
+# Contribute: Add regex patterns for comment styles to detect.
+
+[recipe]
+name = "comment-patterns"
+version = "1.0.0"
+description = "Detects AI-style verbose and obvious code comments"
+author = "papertowel"
+category = "Comment"
+default_severity = "Low"
+
+[scoring]
+cluster_threshold = 3
+cluster_range_lines = 20
+cluster_severity_boost = "Medium"
+base_confidence = 0.65
+
+# Regex patterns for comment detection
+[[patterns.regex]]
+name = "verbose-function-doc"
+pattern = '^\s*///?\s*(This|The)\s+(function|method|module|struct|enum|trait)\s+'
+severity = "Low"
+description = "Verbose doc comment preamble"
+suggestion = "Remove 'This function/method...' prefix"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "helper-comment"
+pattern = '^\s*///?\s*[Hh]elper\s+(function\s+)?(to|for|that)\s+'
+severity = "Low"
+description = "Helper comment preamble"
+suggestion = "Just describe what it does"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "provides-comment"
+pattern = '^\s*///?\s*(Provides|Offers|Supplies)\s+(a\s+)?(comprehensive|streamlined|robust|ergonomic)'
+severity = "Medium"
+description = "Marketing-style doc comment"
+suggestion = "Use plain description"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "obvious-getter-doc"
+pattern = '^\s*///?\s*Gets?\s+the\s+\w+\s*(of|for|from)?\s*(this|the)?\s*\w*\.?\s*$'
+severity = "Low"
+description = "Obvious getter documentation"
+suggestion = "Omit if purpose is clear from signature"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "obvious-setter-doc"
+pattern = '^\s*///?\s*Sets?\s+the\s+\w+\s*(of|for|to)?\s*(this|the)?\s*\w*\.?\s*$'
+severity = "Low"
+description = "Obvious setter documentation"
+suggestion = "Omit if purpose is clear from signature"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "returns-self-doc"
+pattern = '^\s*///?\s*[Rr]eturns\s+(a\s+)?(new\s+)?[Ss]elf\.?\s*$'
+severity = "Low"
+description = "Obvious builder pattern documentation"
+suggestion = "Omit - builder pattern is self-evident"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "creates-new-doc"
+pattern = '^\s*///?\s*[Cc]reates?\s+(a\s+)?new\s+(instance\s+of\s+)?(this|the)?\s*\w*\.?\s*$'
+severity = "Low"
+description = "Obvious constructor documentation"
+suggestion = "Describe what makes this constructor special, or omit"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "we-can-see"
+pattern = '^\s*///?\s*[Ww]e\s+can\s+see\s+that'
+severity = "Medium"
+description = "Tutorial-style comment in code"
+suggestion = "Remove conversational phrasing"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "note-that"
+pattern = '^\s*///?\s*[Nn]ote\s+that\s+this'
+severity = "Low"
+description = "Hedging comment preamble"
+suggestion = "State the fact directly"
+auto_fixable = false
