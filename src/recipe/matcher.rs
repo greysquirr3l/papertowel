@@ -65,7 +65,7 @@ struct CompiledRegex {
  description: Option<String>,
  suggestion: Option<String>,
  auto_fixable: bool,
- fix_pattern: Option<String>,
+ _fix_pattern: Option<String>,
  applies_to: Option<GlobSet>,
  excludes: Option<GlobSet>,
 }
@@ -79,7 +79,7 @@ struct CompiledContextual {
  description: Option<String>,
  suggestion: Option<String>,
  auto_fixable: bool,
- fix_pattern: Option<String>,
+ _fix_pattern: Option<String>,
 }
 
 #[derive(Debug)]
@@ -237,7 +237,7 @@ impl RecipeMatcher {
  description: pattern.description,
  suggestion: pattern.suggestion,
  auto_fixable: pattern.auto_fixable,
- fix_pattern: pattern.fix_pattern,
+ _fix_pattern: pattern.fix_pattern,
  applies_to,
  excludes,
  })
@@ -262,7 +262,7 @@ impl RecipeMatcher {
  description: pattern.description,
  suggestion: pattern.suggestion,
  auto_fixable: pattern.auto_fixable,
- fix_pattern: pattern.fix_pattern,
+ _fix_pattern: pattern.fix_pattern,
  })
  }
 
