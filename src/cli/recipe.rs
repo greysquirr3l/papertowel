@@ -34,7 +34,7 @@ pub fn handle_list(args: &ListArgs) -> Result<()> {
     let source_filter = args.source.as_deref();
 
     println!("Available recipes:\n");
-    println!("{:<25} {:<10} {}", "NAME", "SOURCE", "LOCATION");
+    println!("{:<25} {:<10} LOCATION", "NAME", "SOURCE");
     println!("{}", "-".repeat(70));
 
     for (name, source) in recipes {
@@ -45,10 +45,10 @@ pub fn handle_list(args: &ListArgs) -> Result<()> {
         };
 
         // Apply filter if specified.
-        if let Some(filter) = source_filter {
-            if source_str != filter {
-                continue;
-            }
+        if let Some(filter) = source_filter
+            && source_str != filter
+        {
+            continue;
         }
 
         let location = match &source {
@@ -56,7 +56,7 @@ pub fn handle_list(args: &ListArgs) -> Result<()> {
             RecipeSource::UserGlobal(p) | RecipeSource::RepoLocal(p) => p.display().to_string(),
         };
 
-        println!("{:<25} {:<10} {}", name, source_str, location);
+        println!("{name:<25} {source_str:<10} {location}");
     }
 
     Ok(())
@@ -85,7 +85,7 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
             }
             RecipeSource::UserGlobal(p) | RecipeSource::RepoLocal(p) => {
                 let content = std::fs::read_to_string(p)?;
-                println!("{}", content);
+                println!("{content}");
             }
         }
     } else {
@@ -103,35 +103,35 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
 
         println!("\nPatterns:");
 
-        if let Some(ref words) = r.patterns.words {
-            if words.enabled {
-                println!("  Words: {} items", words.items.len());
-                if words.items.len() <= 10 {
-                    for word in &words.items {
-                        println!("    - {}", word);
-                    }
-                } else {
-                    for word in words.items.iter().take(5) {
-                        println!("    - {}", word);
-                    }
-                    println!("    ... and {} more", words.items.len() - 5);
+        if let Some(ref words) = r.patterns.words
+            && words.enabled
+        {
+            println!("  Words: {} items", words.items.len());
+            if words.items.len() <= 10 {
+                for word in &words.items {
+                    println!("    - {word}");
                 }
+            } else {
+                for word in words.items.iter().take(5) {
+                    println!("    - {word}");
+                }
+                println!("    ... and {} more", words.items.len() - 5);
             }
         }
 
-        if let Some(ref phrases) = r.patterns.phrases {
-            if phrases.enabled {
-                println!("  Phrases: {} items", phrases.items.len());
-                if phrases.items.len() <= 5 {
-                    for phrase in &phrases.items {
-                        println!("    - {}", phrase.pattern());
-                    }
-                } else {
-                    for phrase in phrases.items.iter().take(3) {
-                        println!("    - {}", phrase.pattern());
-                    }
-                    println!("    ... and {} more", phrases.items.len() - 3);
+        if let Some(ref phrases) = r.patterns.phrases
+            && phrases.enabled
+        {
+            println!("  Phrases: {} items", phrases.items.len());
+            if phrases.items.len() <= 5 {
+                for phrase in &phrases.items {
+                    println!("    - {}", phrase.pattern());
                 }
+            } else {
+                for phrase in phrases.items.iter().take(3) {
+                    println!("    - {}", phrase.pattern());
+                }
+                println!("    ... and {} more", phrases.items.len() - 3);
             }
         }
 
@@ -155,7 +155,7 @@ pub fn handle_show(args: &ShowArgs) -> Result<()> {
             r.scoring.cluster_threshold, r.scoring.cluster_range_lines
         );
         if let Some(boost) = r.scoring.cluster_severity_boost {
-            println!("  Cluster severity boost: {:?}", boost);
+            println!("  Cluster severity boost: {boost:?}");
         }
         println!(
             "  Base confidence: {:.0}%",
@@ -186,12 +186,11 @@ pub fn handle_validate(args: &ValidateArgs) -> Result<()> {
             let ctx_count = recipe.patterns.contextual.len();
 
             println!(
-                "  Patterns: {} words, {} phrases, {} regex, {} contextual",
-                word_count, phrase_count, regex_count, ctx_count
+                "  Patterns: {word_count} words, {phrase_count} phrases, {regex_count} regex, {ctx_count} contextual"
             );
         }
         Err(e) => {
-            eprintln!("✗ Invalid recipe: {}", e);
+            eprintln!("✗ Invalid recipe: {e}");
             std::process::exit(1);
         }
     }

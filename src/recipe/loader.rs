@@ -41,7 +41,7 @@ impl RecipeLoader {
 
     /// Disable built-in recipes.
     #[must_use]
-    pub fn without_builtin(mut self) -> Self {
+    pub const fn without_builtin(mut self) -> Self {
         self.include_builtin = false;
         self
     }
@@ -67,26 +67,27 @@ impl RecipeLoader {
 
         // Built-in recipes (lowest priority).
         if self.include_builtin {
-            recipes.extend(self.load_builtin()?);
+            recipes.extend(Self::load_builtin());
         }
 
         // User global recipes (medium priority).
-        if let Some(ref user_dir) = self.user_config_dir {
-            if user_dir.exists() {
-                recipes.extend(
-                    self.load_from_directory(user_dir, RecipeSource::UserGlobal(user_dir.clone()))?,
-                );
-            }
+        if let Some(ref user_dir) = self.user_config_dir
+            && user_dir.exists()
+        {
+            recipes.extend(Self::load_from_directory(
+                user_dir,
+                &RecipeSource::UserGlobal(user_dir.clone()),
+            ));
         }
 
         // Repo local recipes (highest priority).
         if let Some(ref repo_root) = self.repo_root {
             let repo_recipes = repo_root.join(".papertowel").join("recipes");
             if repo_recipes.exists() {
-                recipes.extend(self.load_from_directory(
+                recipes.extend(Self::load_from_directory(
                     &repo_recipes,
-                    RecipeSource::RepoLocal(repo_recipes.clone()),
-                )?);
+                    &RecipeSource::RepoLocal(repo_recipes.clone()),
+                ));
             }
         }
 
@@ -98,7 +99,7 @@ impl RecipeLoader {
     }
 
     /// Load built-in recipes embedded in the binary.
-    fn load_builtin(&self) -> Result<Vec<LoadedRecipe>, PapertowelError> {
+    fn load_builtin() -> Vec<LoadedRecipe> {
         let mut recipes = Vec::new();
 
         for (name, content) in [
@@ -120,28 +121,24 @@ impl RecipeLoader {
             }
         }
 
-        Ok(recipes)
+        recipes
     }
 
-    fn load_from_directory(
-        &self,
-        dir: &Path,
-        source_template: RecipeSource,
-    ) -> Result<Vec<LoadedRecipe>, PapertowelError> {
+    fn load_from_directory(dir: &Path, source_template: &RecipeSource) -> Vec<LoadedRecipe> {
         let mut recipes = Vec::new();
 
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => {
                 warn!(path = %dir.display(), error = %e, "failed to read recipe directory");
-                return Ok(recipes);
+                return recipes;
             }
         };
 
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "toml") {
-                match self.load_recipe_file(&path) {
+                match Self::load_recipe_file(&path) {
                     Ok(recipe) => {
                         let source = match &source_template {
                             RecipeSource::Builtin => RecipeSource::Builtin,
@@ -158,11 +155,11 @@ impl RecipeLoader {
             }
         }
 
-        Ok(recipes)
+        recipes
     }
 
     /// Load a single recipe file.
-    fn load_recipe_file(&self, path: &Path) -> Result<Recipe, PapertowelError> {
+    fn load_recipe_file(path: &Path) -> Result<Recipe, PapertowelError> {
         let content = fs::read_to_string(path).map_err(|e| PapertowelError::Io {
             path: path.to_owned(),
             source: e,
@@ -213,13 +210,13 @@ pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSo
         if let Ok(entries) = fs::read_dir(&user_recipes) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().is_some_and(|ext| ext == "toml") {
-                    if let Some(stem) = path.file_stem() {
-                        recipes.push((
-                            stem.to_string_lossy().into_owned(),
-                            RecipeSource::UserGlobal(path),
-                        ));
-                    }
+                if path.extension().is_some_and(|ext| ext == "toml")
+                    && let Some(stem) = path.file_stem()
+                {
+                    recipes.push((
+                        stem.to_string_lossy().into_owned(),
+                        RecipeSource::UserGlobal(path),
+                    ));
                 }
             }
         }
@@ -231,13 +228,13 @@ pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSo
         if let Ok(entries) = fs::read_dir(&repo_recipes) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().is_some_and(|ext| ext == "toml") {
-                    if let Some(stem) = path.file_stem() {
-                        recipes.push((
-                            stem.to_string_lossy().into_owned(),
-                            RecipeSource::RepoLocal(path),
-                        ));
-                    }
+                if path.extension().is_some_and(|ext| ext == "toml")
+                    && let Some(stem) = path.file_stem()
+                {
+                    recipes.push((
+                        stem.to_string_lossy().into_owned(),
+                        RecipeSource::RepoLocal(path),
+                    ));
                 }
             }
         }

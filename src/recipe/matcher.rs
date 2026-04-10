@@ -128,7 +128,7 @@ impl RecipeMatcher {
         };
 
         // Compile phrase patterns.
-        let phrase_matcher = if let Some(phrases) = recipe.patterns.phrases {
+        let phrase_matcher = if let Some(ref phrases) = recipe.patterns.phrases {
             if phrases.enabled && !phrases.items.is_empty() {
                 Some(Self::compile_phrases(phrases, default_severity)?)
             } else {
@@ -192,7 +192,7 @@ impl RecipeMatcher {
     }
 
     fn compile_phrases(
-        phrases: super::types::PhrasePatterns,
+        phrases: &super::types::PhrasePatterns,
         default_severity: Severity,
     ) -> Result<CompiledPhraseMatcher, PapertowelError> {
         let phrase_data: Vec<(String, Option<String>, Severity)> = phrases
@@ -201,10 +201,10 @@ impl RecipeMatcher {
             .map(|item| {
                 let sev = item
                     .severity()
-                    .unwrap_or(phrases.severity.unwrap_or(default_severity));
+                    .unwrap_or_else(|| phrases.severity.unwrap_or(default_severity));
                 (
                     item.pattern().to_owned(),
-                    item.suggestion().map(|s| s.to_owned()),
+                    item.suggestion().map(std::borrow::ToOwned::to_owned),
                     sev,
                 )
             })
@@ -304,20 +304,24 @@ impl RecipeMatcher {
         for recipe in &self.compiled {
             // Word matches.
             if let Some(ref word_matcher) = recipe.word_matcher {
-                findings.extend(self.match_words(recipe, word_matcher, path, &lines)?);
+                findings.extend(Self::match_words(recipe, word_matcher, path, &lines)?);
             }
 
             // Phrase matches.
             if let Some(ref phrase_matcher) = recipe.phrase_matcher {
-                findings.extend(self.match_phrases(recipe, phrase_matcher, path, &lines)?);
+                findings.extend(Self::match_phrases(recipe, phrase_matcher, path, &lines)?);
             }
 
             // Regex matches.
             for regex in &recipe.regex_patterns {
-                if !self.file_matches_globs(path, &regex.applies_to, &regex.excludes) {
+                if !Self::file_matches_globs(
+                    path,
+                    regex.applies_to.as_ref(),
+                    regex.excludes.as_ref(),
+                ) {
                     continue;
                 }
-                findings.extend(self.match_regex(recipe, regex, path, &lines)?);
+                findings.extend(Self::match_regex(recipe, regex, path, &lines)?);
             }
 
             // Contextual matches.
@@ -325,27 +329,26 @@ impl RecipeMatcher {
                 if !contextual.applies_to.is_match(path) {
                     continue;
                 }
-                findings.extend(self.match_contextual(recipe, contextual, path, &lines)?);
+                findings.extend(Self::match_contextual(recipe, contextual, path, &lines)?);
             }
 
             // Apply cluster scoring.
-            self.apply_cluster_scoring(&mut findings, &recipe.scoring);
+            Self::apply_cluster_scoring(&mut findings, &recipe.scoring);
         }
 
         Ok(findings)
     }
 
     fn file_matches_globs(
-        &self,
         path: &Path,
-        applies_to: &Option<GlobSet>,
-        excludes: &Option<GlobSet>,
+        applies_to: Option<&GlobSet>,
+        excludes: Option<&GlobSet>,
     ) -> bool {
         // Check excludes first.
-        if let Some(excl) = excludes {
-            if excl.is_match(path) {
-                return false;
-            }
+        if let Some(excl) = excludes
+            && excl.is_match(path)
+        {
+            return false;
         }
 
         if let Some(applies) = applies_to {
@@ -357,7 +360,6 @@ impl RecipeMatcher {
     }
 
     fn match_words(
-        &self,
         recipe: &CompiledRecipe,
         matcher: &CompiledWordMatcher,
         path: &Path,
@@ -373,7 +375,9 @@ impl RecipeMatcher {
             };
 
             for mat in matcher.ac.find_iter(&search_line) {
-                let word = &matcher.words[mat.pattern().as_usize()];
+                let Some(word) = matcher.words.get(mat.pattern().as_usize()) else {
+                    continue;
+                };
 
                 // Check word boundaries if required.
                 if matcher.whole_word {
@@ -381,12 +385,10 @@ impl RecipeMatcher {
                     let end = mat.end();
                     let bytes = search_line.as_bytes();
 
-                    let start_ok = start == 0
-                        || !bytes
-                            .get(start - 1)
-                            .is_some_and(|b| b.is_ascii_alphanumeric());
+                    let start_ok =
+                        start == 0 || !bytes.get(start - 1).is_some_and(u8::is_ascii_alphanumeric);
                     let end_ok = end == bytes.len()
-                        || !bytes.get(end).is_some_and(|b| b.is_ascii_alphanumeric());
+                        || !bytes.get(end).is_some_and(u8::is_ascii_alphanumeric);
 
                     if !start_ok || !end_ok {
                         continue;
@@ -399,7 +401,7 @@ impl RecipeMatcher {
                     matcher.severity,
                     recipe.scoring.base_confidence,
                     path,
-                    format!("slop vocabulary: '{}'", word),
+                    format!("slop vocabulary: '{word}'"),
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
                 findings.push(finding);
@@ -410,7 +412,6 @@ impl RecipeMatcher {
     }
 
     fn match_phrases(
-        &self,
         recipe: &CompiledRecipe,
         matcher: &CompiledPhraseMatcher,
         path: &Path,
@@ -420,7 +421,11 @@ impl RecipeMatcher {
 
         for (line_idx, line) in lines.iter().enumerate() {
             for mat in matcher.ac.find_iter(line) {
-                let (phrase, suggestion, severity) = &matcher.phrases[mat.pattern().as_usize()];
+                let Some((phrase, suggestion, severity)) =
+                    matcher.phrases.get(mat.pattern().as_usize())
+                else {
+                    continue;
+                };
 
                 let mut finding = Finding::new(
                     format!("{}:phrase:{}", recipe.name, phrase.replace(' ', "-")),
@@ -428,10 +433,10 @@ impl RecipeMatcher {
                     *severity,
                     recipe.scoring.base_confidence,
                     path,
-                    format!("slop phrase: '{}'", phrase),
+                    format!("slop phrase: '{phrase}'"),
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion = suggestion.clone();
+                finding.suggestion.clone_from(suggestion);
                 finding.auto_fixable = suggestion.is_some();
                 findings.push(finding);
             }
@@ -441,7 +446,6 @@ impl RecipeMatcher {
     }
 
     fn match_regex(
-        &self,
         recipe: &CompiledRecipe,
         pattern: &CompiledRegex,
         path: &Path,
@@ -465,7 +469,7 @@ impl RecipeMatcher {
                     description,
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion = pattern.suggestion.clone();
+                finding.suggestion.clone_from(&pattern.suggestion);
                 finding.auto_fixable = pattern.auto_fixable;
                 findings.push(finding);
             }
@@ -475,7 +479,6 @@ impl RecipeMatcher {
     }
 
     fn match_contextual(
-        &self,
         recipe: &CompiledRecipe,
         pattern: &CompiledContextual,
         path: &Path,
@@ -504,7 +507,7 @@ impl RecipeMatcher {
                     description,
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion = pattern.suggestion.clone();
+                finding.suggestion.clone_from(&pattern.suggestion);
                 finding.auto_fixable = pattern.auto_fixable;
                 findings.push(finding);
             }
@@ -513,7 +516,7 @@ impl RecipeMatcher {
         Ok(findings)
     }
 
-    fn apply_cluster_scoring(&self, findings: &mut [Finding], config: &ScoringConfig) {
+    fn apply_cluster_scoring(findings: &mut [Finding], config: &ScoringConfig) {
         if findings.len() < config.cluster_threshold {
             return;
         }

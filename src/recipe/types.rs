@@ -76,7 +76,6 @@ pub enum RecipeCategory {
 impl From<RecipeCategory> for FindingCategory {
     fn from(cat: RecipeCategory) -> Self {
         match cat {
-            RecipeCategory::Lexical => Self::Lexical,
             RecipeCategory::Comment => Self::Comment,
             RecipeCategory::Structure => Self::Structure,
             RecipeCategory::Readme => Self::Readme,
@@ -89,7 +88,7 @@ impl From<RecipeCategory> for FindingCategory {
             RecipeCategory::TestPattern => Self::TestPattern,
             RecipeCategory::PromptLeakage => Self::PromptLeakage,
             RecipeCategory::CommitPattern => Self::CommitPattern,
-            RecipeCategory::Custom => Self::Lexical, // fallback
+            RecipeCategory::Lexical | RecipeCategory::Custom => Self::Lexical,
         }
     }
 }
@@ -187,7 +186,7 @@ impl PhraseItem {
     }
 
     /// Get severity override, if any.
-    pub fn severity(&self) -> Option<Severity> {
+    pub const fn severity(&self) -> Option<Severity> {
         match self {
             Self::Simple(_) => None,
             Self::WithMeta { severity, .. } => *severity,

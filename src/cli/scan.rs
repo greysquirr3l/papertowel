@@ -56,6 +56,17 @@ pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFor
     (fail_on, format)
 }
 
+fn load_recipe_matcher(project_root: &Path) -> Option<Arc<RecipeMatcher>> {
+    let loader = RecipeLoader::new(Some(project_root.to_path_buf()));
+    match loader.load_all() {
+        Ok(recipes) => RecipeMatcher::compile(recipes).ok().map(Arc::new),
+        Err(e) => {
+            tracing::warn!("failed to load recipes: {e}");
+            None
+        }
+    }
+}
+
 pub fn handle(args: &ScanArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let (project_root, _config, ignore) = resolve_config(&root)?;
@@ -73,17 +84,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
             }
         });
 
-    let recipe_matcher = {
-        let loader = RecipeLoader::new(Some(project_root.clone()));
-        match loader.load_all() {
-            Ok(recipes) => RecipeMatcher::compile(recipes).ok(),
-            Err(e) => {
-                tracing::warn!("failed to load recipes: {e}");
-                None
-            }
-        }
-    };
-    let recipe_matcher = recipe_matcher.map(Arc::new);
+    let recipe_matcher = load_recipe_matcher(&project_root);
 
     let min_severity = args.severity.map(|s| match s {
         SeverityArg::Low => Severity::Low,
@@ -210,12 +211,12 @@ fn run_file_detectors(
     }
 
     // Run recipe-based detection on all text files.
-    if let Some(matcher) = recipe_matcher {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            match matcher.scan_file(path, &content) {
-                Ok(mut recipe_findings) => findings.append(&mut recipe_findings),
-                Err(e) => tracing::warn!("recipe scan error for {}: {e}", path.display()),
-            }
+    if let Some(matcher) = recipe_matcher
+        && let Ok(content) = std::fs::read_to_string(path)
+    {
+        match matcher.scan_file(path, &content) {
+            Ok(mut recipe_findings) => findings.append(&mut recipe_findings),
+            Err(e) => tracing::warn!("recipe scan error for {}: {e}", path.display()),
         }
     }
 
