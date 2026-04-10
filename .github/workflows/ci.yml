@@ -55,8 +55,8 @@ jobs:
           key: ${{ runner.os }}-cargo-test-v4-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-v4-
 
-      - name: Run tests (skip doc-tests due to rustdoc bug)
-        run: cargo test --workspace --lib --bins --tests
+      - name: Run tests
+        run: cargo test --workspace
 
   clippy:
     name: Clippy
@@ -142,8 +142,8 @@ jobs:
           key: ${{ runner.os }}-cargo-cross-v4-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-cross-v4-
 
-      - name: Run tests (skip doc-tests due to rustdoc bug)
-        run: cargo test --workspace --lib --bins --tests
+      - name: Run tests
+        run: cargo test --workspace
 
   scan:
     name: Scan for AI fingerprints
