@@ -246,7 +246,9 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::detection::finding::Severity;
-    use crate::scrubber::lexical::{DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text};
+    use crate::scrubber::lexical::{
+        DETECTOR_NAME, LexicalDetectionConfig, corpus, detect_file, detect_in_text,
+    };
 
     #[test]
     fn detector_name_is_stable() {
