@@ -300,7 +300,7 @@ fn handle_tools_list() -> Value {
             {
                 "name": "papertowel_scrub",
                 "title": "AI Fingerprint Dry-Run Scrubber",
-                "description": "Dry-run scrub of a file: show what lexical and comment-density changes would be applied to reduce AI fingerprints, without modifying any files.",
+                "description": "Dry-run scrub of a file: show what lexical, comment-density, structural, and recipe-based changes would be applied to reduce AI fingerprints, without modifying any files.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -340,6 +340,9 @@ fn handle_tools_call(params: Option<&Value>) -> Result<Value> {
 
 // ─── Tool implementations ─────────────────────────────────────────────────────
 
+/// Files larger than this are skipped by the recipe scanner to avoid I/O waste.
+const MAX_RECIPE_SCAN_BYTES: u64 = 2 * 1024 * 1024;
+
 /// Run the papertowel scan pipeline against a path and return findings as text.
 fn call_scan(args: &Value) -> Result<Value> {
     let raw_path = args
@@ -367,6 +370,24 @@ fn call_scan(args: &Value) -> Result<Value> {
     if files.is_empty() {
         return Ok(tool_text("No analysable source files found."));
     }
+
+    // Load recipe matcher from the path's project root (best-effort; failures are
+    // logged and silently skipped so the scan still returns structural findings).
+    let project_root = if path.is_dir() {
+        path.clone()
+    } else {
+        path.parent().map(PathBuf::from).unwrap_or_else(|| path.clone())
+    };
+    let recipe_matcher = {
+        let loader = papertowel::recipe::RecipeLoader::new(Some(project_root));
+        match loader.load_all() {
+            Ok(recipes) => papertowel::recipe::RecipeMatcher::compile(recipes).ok(),
+            Err(e) => {
+                debug!(error = %e, "failed to load recipes (skipped)");
+                None
+            }
+        }
+    };
 
     let mut all_findings = Vec::new();
     for file in &files {
@@ -416,6 +437,19 @@ fn call_scan(args: &Value) -> Result<Value> {
                 &mut all_findings,
                 papertowel::scrubber::readme::detect_file(file),
             );
+        }
+
+        // Recipe-based detection: runs on any text file under 2 MiB.
+        if let Some(ref matcher) = recipe_matcher
+            && file
+                .metadata()
+                .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
+            && let Ok(content) = std::fs::read_to_string(file)
+        {
+            match matcher.scan_file(file, &content) {
+                Ok(mut recipe_findings) => all_findings.append(&mut recipe_findings),
+                Err(e) => debug!(error = %e, file = %file.display(), "recipe scan error (skipped)"),
+            }
         }
     }
 
@@ -472,7 +506,7 @@ fn call_scrub(args: &Value) -> Result<Value> {
         ));
     }
 
-    // Run lexical and comment detectors to see what would change.
+    // Run lexical, comment, and structural detectors to see what would change.
     let mut findings = Vec::new();
     let ext = path
         .extension()
@@ -493,6 +527,30 @@ fn call_scrub(args: &Value) -> Result<Value> {
             &mut findings,
             papertowel::scrubber::structure::detect_file_for_language(&path, lang),
         );
+    }
+
+    // Recipe-based detection on the single file.
+    let project_root = path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| path.clone());
+    let recipe_matcher = {
+        let loader = papertowel::recipe::RecipeLoader::new(Some(project_root));
+        loader
+            .load_all()
+            .ok()
+            .and_then(|recipes| papertowel::recipe::RecipeMatcher::compile(recipes).ok())
+    };
+    if let Some(ref matcher) = recipe_matcher
+        && path
+            .metadata()
+            .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
+        && let Ok(content) = std::fs::read_to_string(&path)
+    {
+        match matcher.scan_file(&path, &content) {
+            Ok(mut recipe_findings) => findings.append(&mut recipe_findings),
+            Err(e) => debug!(error = %e, "recipe scan error (skipped)"),
+        }
     }
 
     if findings.is_empty() {
