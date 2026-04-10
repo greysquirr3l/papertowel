@@ -48,6 +48,51 @@ A convenience command that runs the full pipeline: `scan` followed by `scrub`.
 
 ---
 
+## Recipe Commands
+
+See [Recipes](../scrubber/recipes.md) for the full recipe TOML format and how to write custom recipes.
+
+### `papertowel recipe list`
+
+Lists all available recipes from all sources (built-in, user-global, and repo-local).
+
+**Options:**
+
+- `--source <builtin|user|repo>`: Filter results to a specific source.
+
+**Example:**
+
+```bash
+papertowel recipe list
+papertowel recipe list --source builtin
+```
+
+### `papertowel recipe show <name>`
+
+Displays details of a specific recipe including its patterns and scoring config.
+
+**Options:**
+
+- `--raw`: For file-backed recipes, output the raw TOML instead of the parsed summary.
+
+**Example:**
+
+```bash
+papertowel recipe show slop-vocabulary
+```
+
+### `papertowel recipe validate <path>`
+
+Validates the syntax and structure of a recipe TOML file without scanning any code.
+
+**Example:**
+
+```bash
+papertowel recipe validate .papertowel/recipes/my-recipe.toml
+```
+
+---
+
 ## Wringer Commands
 
 ### `papertowel wring init`

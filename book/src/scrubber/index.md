@@ -21,6 +21,10 @@ See [Configuration and Ignoring](../reference/configuration.md) for full details
 
 `papertowel` ships with several built-in detectors, each targeting a different aspect of AI style.
 
+### Recipe-Based Detection
+
+The newest and most flexible detector is the **recipe system**. Recipes are TOML files that describe pattern groups (words, phrases, regex), cluster-scoring rules, and optional `applies_to`/`excludes` glob gating. Built-in recipes cover slop vocabulary, phrase patterns, and comment boilerplate. You can add your own in `.papertowel/recipes/`. See [Recipes](recipes.md) for the full format.
+
 ### Lexical Analysis
 
 The `lexical` detector searches for "slop vocabulary." LLMs have a strong preference for certain words that humans rarely use in a technical context unless they are writing marketing copy. Examples include:

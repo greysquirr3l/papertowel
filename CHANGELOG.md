@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-04-10
+
+### Added
+
+- **Recipe system**: pluggable TOML-based detection and scrub recipes. Built-in recipes cover slop vocabulary, phrase patterns, and comment patterns. Custom recipes can be placed in `.papertowel/recipes/` (repo-local) or `~/.config/papertowel/recipes/` (user-global).
+- **`papertowel recipe` commands**: `recipe list` (with `--source` filter), `recipe show <name>` (with `--raw` flag), `recipe validate <path>`.
+- **Recipe scrubber**: word-level replacement and regex transforms driven by recipe TOML, wired into both `scan` and `scrub`.
+- Fixture-driven integration tests for the `scan` command (`tests/integration.rs`).
+
+### Changed
+
+- `scrub --detectors`: accepts `recipe` (and the legacy alias `lexical`) to select the recipe-based detector.
+- `scan`: skips files larger than 2 MiB before attempting `read_to_string` to avoid I/O waste on binaries.
+- `.papertowelignore`: recipe and scrubber source files excluded from self-scan.
+
+### Fixed
+
+- Glob matching in recipe matcher now falls back to the bare filename component so patterns like `README.md` match regardless of path form.
+- Divide-by-zero guard added for `cluster_range_lines = 0` in cluster scoring.
+- Whole-word boundary check now treats `_` as a word character, preventing false positives inside snake_case identifiers.
+- `hot_buckets` changed from `Vec` to `HashSet` for O(1) membership test.
+- Regex patterns with `applies_to`/`excludes` constraints are skipped in the text-only transform path (constraint cannot be enforced without a file path).
+- Non-UTF-8 scrub errors downgraded from `warn` to `debug` level.
+- `#[ignore]` replaces the unreliable `CI` env-var guard on wring queue tests.
+- Integration tests now strip `CI` from the binary environment to prevent auto-`--fail-on medium` from breaking assertions.
+
+## [0.1.3] — 2026-04-09
+
+### Fixed
+
+- `papertowel-mcp` dependency changed to `path + version` form for workspace compatibility.
+
+## [0.1.2] — 2026-04-09
+
+### Fixed
+
+- CI cache busted after corrupt macOS artifacts caused stale rustdoc failures.
+
+## [0.1.1] — 2026-04-09
+
+### Fixed
+
+- Wring queue integration tests marked `#[ignore]` to prevent flaky failures on shallow CI checkouts.
+
 ## [0.1.0] — 2026-04-09
 
 ### Added
