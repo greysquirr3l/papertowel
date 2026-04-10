@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-04-10
+
+### Added
+
+- **MCP recipe integration**: `papertowel_scan` and `papertowel_scrub` MCP tools now run the recipe-based detector alongside structural detectors. The recipe matcher is loaded from the scanned path's project root (best-effort; falls back to structural-only on failure).
+
+### Fixed
+
+- MCP `call_scan` refactored into `scan_file_into` helper to satisfy `clippy::too_many_lines`; `map_or_else` used in `load_recipe_matcher` to fix `clippy::map_unwrap_or`.
+
 ## [0.1.4] — 2026-04-10
 
 ### Added
