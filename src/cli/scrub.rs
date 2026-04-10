@@ -1,5 +1,6 @@
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Result;
 use clap::Args;
@@ -7,8 +8,12 @@ use walkdir::WalkDir;
 
 use crate::config::{is_ignored, resolve_config};
 use crate::detection::language::LanguageKind;
+use crate::recipe::loader::RecipeLoader;
+use crate::recipe::scrubber::RecipeScrubber;
 use crate::scrubber::ignore_directives;
-use crate::scrubber::{comments, lexical, readme};
+use crate::scrubber::{comments, readme};
+
+pub const RECIPE_DETECTOR_NAME: &str = "recipe";
 
 #[derive(Debug, Args)]
 pub struct ScrubArgs {
@@ -22,15 +27,15 @@ pub struct ScrubArgs {
 #[derive(Debug, Default)]
 struct ScrubSummary {
     files_changed: usize,
-    lexical_replacements: usize,
+    recipe_replacements: usize,
     comment_lines_removed: usize,
     readme_lines_removed: usize,
 }
 
 struct FileResult {
     path: PathBuf,
-    /// Lexical replacements applied (or that would be applied).
-    lexical: Option<usize>,
+    /// Recipe-based replacements applied.
+    recipe: Option<usize>,
     /// Over-documentation comment lines removed.
     comments: Option<usize>,
     /// README framework lines removed.
@@ -39,7 +44,7 @@ struct FileResult {
 
 impl FileResult {
     const fn changed(&self) -> bool {
-        self.lexical.is_some() || self.comments.is_some() || self.readme.is_some()
+        self.recipe.is_some() || self.comments.is_some() || self.readme.is_some()
     }
 }
 
@@ -47,9 +52,42 @@ fn wants_detector(detectors: &[String], name: &str) -> bool {
     detectors.is_empty() || detectors.iter().any(|d| d == name)
 }
 
+/// Load the recipe scrubber, returning None if loading fails or no patterns exist.
+fn load_recipe_scrubber(project_root: &Path) -> Option<Arc<RecipeScrubber>> {
+    let loader = RecipeLoader::new(Some(project_root.to_path_buf()));
+    match loader.load_all() {
+        Ok(recipes) if !recipes.is_empty() => match RecipeScrubber::compile(recipes) {
+            Ok(scrubber) if scrubber.has_patterns() => Some(Arc::new(scrubber)),
+            Ok(_) => {
+                tracing::debug!("no fixable patterns in loaded recipes");
+                None
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to compile recipe scrubber");
+                None
+            }
+        },
+        Ok(_) => {
+            tracing::debug!("no recipes loaded");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load recipes for scrubber");
+            None
+        }
+    }
+}
+
 pub fn handle(args: &ScrubArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let (project_root, _config, ignore) = resolve_config(&root)?;
+
+    // Load recipe scrubber once for all files.
+    let recipe_scrubber = if wants_detector(&args.detectors, RECIPE_DETECTOR_NAME) {
+        load_recipe_scrubber(&project_root)
+    } else {
+        None
+    };
 
     let files: Vec<PathBuf> = WalkDir::new(&root)
         .into_iter()
@@ -75,11 +113,11 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
             continue;
         }
 
-        let result = apply_transforms(path, args);
+        let result = apply_transforms(path, args, recipe_scrubber.as_deref());
         if result.changed() {
             summary.files_changed += 1;
-            if let Some(n) = result.lexical {
-                summary.lexical_replacements += n;
+            if let Some(n) = result.recipe {
+                summary.recipe_replacements += n;
             }
             if let Some(n) = result.comments {
                 summary.comment_lines_removed += n;
@@ -98,7 +136,11 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
     Ok(())
 }
 
-fn apply_transforms(path: &Path, args: &ScrubArgs) -> FileResult {
+fn apply_transforms(
+    path: &Path,
+    args: &ScrubArgs,
+    recipe_scrubber: Option<&RecipeScrubber>,
+) -> FileResult {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -107,19 +149,21 @@ fn apply_transforms(path: &Path, args: &ScrubArgs) -> FileResult {
 
     let mut result = FileResult {
         path: path.to_path_buf(),
-        lexical: None,
+        recipe: None,
         comments: None,
         readme: None,
     };
 
     if lang.is_analysable() {
-        if wants_detector(&args.detectors, lexical::DETECTOR_NAME) {
-            match lexical::transform_file(path, args.dry_run) {
-                Ok(r) if r.changed => result.lexical = Some(r.replacements_applied),
+        // Apply recipe-based transforms first (preferred over legacy lexical).
+        if let Some(scrubber) = recipe_scrubber {
+            match scrubber.transform_file(path, args.dry_run) {
+                Ok(r) if r.changed => result.recipe = Some(r.replacements_applied),
                 Ok(_) => {}
-                Err(e) => tracing::warn!(path = %path.display(), "lexical transform error: {e}"),
+                Err(e) => tracing::warn!(path = %path.display(), "recipe transform error: {e}"),
             }
         }
+
         if wants_detector(&args.detectors, comments::DETECTOR_NAME) {
             match comments::transform_file(path, args.dry_run) {
                 Ok(r) if r.changed => result.comments = Some(r.removed_comment_lines),
@@ -150,10 +194,10 @@ fn write_report(
 
     for r in results {
         writeln!(out, "{}", r.path.display())?;
-        if let Some(n) = r.lexical {
+        if let Some(n) = r.recipe {
             writeln!(
                 out,
-                " [lexical] {n} replacement{}",
+                " [recipe] {n} replacement{}",
                 if n == 1 { "" } else { "s" }
             )?;
         }
@@ -189,8 +233,8 @@ fn write_report(
             summary.files_changed,
             if summary.files_changed == 1 { "" } else { "s" }
         )?;
-        if summary.lexical_replacements > 0 {
-            write!(out, " · {} lexical", summary.lexical_replacements)?;
+        if summary.recipe_replacements > 0 {
+            write!(out, " · {} recipe", summary.recipe_replacements)?;
         }
         if summary.comment_lines_removed > 0 {
             write!(out, " · {} comments", summary.comment_lines_removed)?;
@@ -250,15 +294,13 @@ fn main() {}
     fn live_run_replaces_slop_vocabulary() -> Result<(), Box<dyn std::error::Error>> {
         let tmp = TempDir::new()?;
         let path = tmp.path().join("slop.rs");
-        let original = "// robust seamless delve facilitate comprehensive utilize
-fn main() {}
-";
+        let original = "// robust seamless delve facilitate utilize\nfn main() {}\n";
         fs::write(&path, original)?;
 
         handle(&ScrubArgs {
             path: tmp.path().to_string_lossy().into_owned(),
             dry_run: false,
-            detectors: vec!["lexical".to_owned()],
+            detectors: vec![],
         })?;
 
         let after = fs::read_to_string(&path)?;

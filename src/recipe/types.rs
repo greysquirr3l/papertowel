@@ -130,7 +130,71 @@ pub struct WordPatterns {
     pub severity: Option<Severity>,
 
     #[serde(default)]
-    pub items: Vec<String>,
+    pub items: Vec<WordItem>,
+}
+
+/// A single word pattern with optional replacement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum WordItem {
+    /// Simple string word.
+    Simple(String),
+
+    /// Word with replacement.
+    WithReplacement {
+        word: String,
+
+        /// Replacement text (empty string = delete).
+        #[serde(default)]
+        replacement: Option<String>,
+
+        /// Severity override.
+        #[serde(default)]
+        severity: Option<Severity>,
+    },
+}
+
+impl WordItem {
+    /// Get the word string.
+    pub fn word(&self) -> &str {
+        match self {
+            Self::Simple(s) => s,
+            Self::WithReplacement { word, .. } => word,
+        }
+    }
+
+    /// Get the replacement, if any.
+    pub fn replacement(&self) -> Option<&str> {
+        match self {
+            Self::Simple(_) => None,
+            Self::WithReplacement { replacement, .. } => replacement.as_deref(),
+        }
+    }
+
+    /// Get severity override, if any.
+    pub const fn severity(&self) -> Option<Severity> {
+        match self {
+            Self::Simple(_) => None,
+            Self::WithReplacement { severity, .. } => *severity,
+        }
+    }
+}
+
+impl std::fmt::Display for WordItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Simple(s) => write!(f, "{s}"),
+            Self::WithReplacement {
+                word, replacement, ..
+            } => {
+                if let Some(repl) = replacement {
+                    write!(f, "{word} → {repl}")
+                } else {
+                    write!(f, "{word}")
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

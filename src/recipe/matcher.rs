@@ -43,10 +43,10 @@ pub struct CompiledRecipe {
 #[derive(Debug)]
 struct CompiledWordMatcher {
     ac: AhoCorasick,
-    words: Vec<String>,
+    /// (word, replacement, severity)
+    words: Vec<(String, Option<String>, Severity)>,
     case_sensitive: bool,
     whole_word: bool,
-    severity: Severity,
 }
 
 #[derive(Debug)]
@@ -63,7 +63,6 @@ struct CompiledRegex {
     description: Option<String>,
     suggestion: Option<String>,
     auto_fixable: bool,
-    _fix_pattern: Option<String>,
     applies_to: Option<GlobSet>,
     excludes: Option<GlobSet>,
 }
@@ -77,7 +76,6 @@ struct CompiledContextual {
     description: Option<String>,
     suggestion: Option<String>,
     auto_fixable: bool,
-    _fix_pattern: Option<String>,
 }
 
 #[derive(Debug)]
@@ -117,7 +115,7 @@ impl RecipeMatcher {
         let default_severity = recipe.recipe.default_severity;
 
         // Compile word patterns.
-        let word_matcher = if let Some(words) = recipe.patterns.words {
+        let word_matcher = if let Some(ref words) = recipe.patterns.words {
             if words.enabled && !words.items.is_empty() {
                 Some(Self::compile_words(words, default_severity)?)
             } else {
@@ -167,13 +165,29 @@ impl RecipeMatcher {
     }
 
     fn compile_words(
-        words: WordPatterns,
+        words: &WordPatterns,
         default_severity: Severity,
     ) -> Result<CompiledWordMatcher, PapertowelError> {
+        let base_severity = words.severity.unwrap_or(default_severity);
+
+        // Build word data with replacements.
+        let word_data: Vec<(String, Option<String>, Severity)> = words
+            .items
+            .iter()
+            .map(|item| {
+                let sev = item.severity().unwrap_or(base_severity);
+                (
+                    item.word().to_owned(),
+                    item.replacement().map(std::borrow::ToOwned::to_owned),
+                    sev,
+                )
+            })
+            .collect();
+
         let patterns: Vec<String> = if words.case_sensitive {
-            words.items.clone()
+            word_data.iter().map(|(w, _, _)| w.clone()).collect()
         } else {
-            words.items.iter().map(|s| s.to_lowercase()).collect()
+            word_data.iter().map(|(w, _, _)| w.to_lowercase()).collect()
         };
 
         let ac = AhoCorasickBuilder::new()
@@ -184,10 +198,9 @@ impl RecipeMatcher {
 
         Ok(CompiledWordMatcher {
             ac,
-            words: words.items,
+            words: word_data,
             case_sensitive: words.case_sensitive,
             whole_word: words.whole_word,
-            severity: words.severity.unwrap_or(default_severity),
         })
     }
 
@@ -250,7 +263,6 @@ impl RecipeMatcher {
             description: pattern.description,
             suggestion: pattern.suggestion,
             auto_fixable: pattern.auto_fixable,
-            _fix_pattern: pattern.fix_pattern,
             applies_to,
             excludes,
         })
@@ -279,7 +291,6 @@ impl RecipeMatcher {
             description: pattern.description,
             suggestion: pattern.suggestion,
             auto_fixable: pattern.auto_fixable,
-            _fix_pattern: pattern.fix_pattern,
         })
     }
 
@@ -375,7 +386,9 @@ impl RecipeMatcher {
             };
 
             for mat in matcher.ac.find_iter(&search_line) {
-                let Some(word) = matcher.words.get(mat.pattern().as_usize()) else {
+                let Some((word, replacement, severity)) =
+                    matcher.words.get(mat.pattern().as_usize())
+                else {
                     continue;
                 };
 
@@ -398,12 +411,14 @@ impl RecipeMatcher {
                 let mut finding = Finding::new(
                     format!("{}:word:{}", recipe.name, word),
                     recipe.category,
-                    matcher.severity,
+                    *severity,
                     recipe.scoring.base_confidence,
                     path,
                     format!("slop vocabulary: '{word}'"),
                 )?;
                 finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
+                finding.suggestion.clone_from(replacement);
+                finding.auto_fixable = replacement.is_some();
                 findings.push(finding);
             }
         }
@@ -558,7 +573,7 @@ impl RecipeMatcher {
 mod tests {
     use super::*;
     use crate::recipe::types::{
-        Recipe, RecipeCategory, RecipeMetadata, RecipePatterns, ScoringConfig,
+        Recipe, RecipeCategory, RecipeMetadata, RecipePatterns, ScoringConfig, WordItem,
     };
 
     fn test_recipe() -> Recipe {
@@ -578,7 +593,7 @@ mod tests {
                     case_sensitive: false,
                     whole_word: true,
                     severity: None,
-                    items: vec!["sturdy".to_owned(), "use".to_owned()],
+                    items: vec![WordItem::Simple("sturdy".to_owned()), WordItem::Simple("use".to_owned())],
                 }),
                 phrases: None,
                 regex: vec![],
