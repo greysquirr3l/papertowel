@@ -10,5 +10,8 @@ src/learning/learner.rs
 src/cli/scrub.rs
 src/cli/hook.rs
 
+# Recipe definition files contain the patterns we detect — exclude them
+src/recipes/*.toml
+
 # Build artefacts and vendored dependencies
 target/
