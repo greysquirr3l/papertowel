@@ -42,6 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug - show errors.rs lines 18-25
+        run: sed -n '18,25p' src/domain/errors.rs
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -51,12 +54,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-test-v4-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-test-v4-
-
-      - name: Force rebuild papertowel lib
-        run: cargo clean -p papertowel
+          key: ${{ runner.os }}-cargo-test-v5-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-v5-
 
       - name: Run tests
         run: cargo test --workspace
