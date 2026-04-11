@@ -44,7 +44,6 @@ struct Cli {
 enum Command {
     Scan(scan::ScanArgs),
     Scrub(scrub::ScrubArgs),
-    /// Grade your project's AI fingerprint level (A+ to F).
     Grade(grade::GradeArgs),
     Wring(WringArgs),
     Clean(CleanArgs),

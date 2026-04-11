@@ -1,4 +1,3 @@
-//! `papertowel grade` — Letter-grade your project's AI fingerprint level.
 //!
 //! Inspired by [vibescore](https://github.com/stef41/vibescore).
 
@@ -31,11 +30,9 @@ use super::OutputFormat;
 
 #[derive(Debug, Args)]
 pub struct GradeArgs {
-    /// Path to the project to grade.
     #[arg(default_value = ".")]
     pub path: String,
 
-    /// Output format.
     #[arg(long, value_enum, default_value = "text")]
     pub format: OutputFormat,
 

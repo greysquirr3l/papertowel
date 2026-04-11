@@ -1,4 +1,3 @@
-//! Architecture quality detector.
 //!
 //! Detects signs of AI-generated code that lacks coherent architectural patterns.
 //! Well-structured code typically follows patterns like:
@@ -7,12 +6,10 @@
 //! - Clean Architecture
 //! - CQRS (Command Query Responsibility Segregation)
 //!
-//! AI-generated code tends to:
 //! - Dump everything in flat files
 //! - Mix concerns (business logic with I/O)
 //! - Create anemic domain models (data-only structs)
 //! - Skip abstractions (no traits as ports)
-//! - Use god files with too many responsibilities
 
 use std::collections::HashSet;
 use std::fs;
@@ -26,18 +23,13 @@ use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "architecture";
 
-/// Configuration for architecture detection thresholds.
 #[derive(Debug, Clone, Copy)]
 pub struct ArchitectureConfig {
-    /// Minimum source files to trigger analysis (small projects get a pass).
     pub min_source_files: usize,
-    /// Lines threshold for "god file" detection.
     pub god_file_lines: usize,
-    /// Minimum trait count expected for abstraction.
     pub min_trait_ratio: f32,
     /// Maximum fraction of structs that are anemic (no methods).
     pub max_anemic_ratio: f32,
-    /// Minimum directory depth for non-flat structure.
     pub min_directory_depth: usize,
 }
 
@@ -98,7 +90,6 @@ impl ArchitectureMetrics {
 
 // ─── Layer Detection ─────────────────────────────────────────────────────────
 
-/// Common directory names indicating architectural layers.
 const LAYER_INDICATORS: &[&str] = &[
     // DDD / Clean Architecture
     "domain",
@@ -131,17 +122,14 @@ const LAYER_INDICATORS: &[&str] = &[
     "utils",
 ];
 
-/// Minimum layers to consider "structured".
 const MIN_LAYER_DIRS: usize = 2;
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-/// Analyze repository architecture and return findings.
 pub fn detect_repo(root: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
     detect_repo_with_config(root, ArchitectureConfig::default())
 }
 
-/// Analyze with custom configuration.
 #[expect(
     clippy::too_many_lines,
     reason = "Cohesive detection logic; splitting would fragment readability"
@@ -160,7 +148,6 @@ pub fn detect_repo_with_config(
     let mut findings = Vec::new();
     let repo_path = PathBuf::from(".");
 
-    // Check for flat structure (no meaningful subdirectories)
     if metrics.flat_structure {
         let mut finding = Finding::new(
             "ARCH001",
@@ -179,7 +166,6 @@ pub fn detect_repo_with_config(
         findings.push(finding);
     }
 
-    // Check for missing layer structure in larger projects
     if !metrics.has_layer_structure && metrics.total_source_files >= config.min_source_files * 2 {
         let mut finding = Finding::new(
             "ARCH002",
@@ -201,7 +187,6 @@ pub fn detect_repo_with_config(
         findings.push(finding);
     }
 
-    // Check for god files
     for god_file in &metrics.god_files {
         let mut finding = Finding::new(
             "ARCH003",
@@ -220,7 +205,6 @@ pub fn detect_repo_with_config(
         findings.push(finding);
     }
 
-    // Check for missing abstractions (no traits)
     if metrics.trait_ratio() < config.min_trait_ratio && metrics.struct_count >= 5 {
         let mut finding = Finding::new(
             "ARCH004",
@@ -244,7 +228,6 @@ pub fn detect_repo_with_config(
         findings.push(finding);
     }
 
-    // Check for anemic domain models
     if metrics.anemic_ratio() > config.max_anemic_ratio && metrics.struct_count >= 5 {
         let mut finding = Finding::new(
             "ARCH005",
@@ -290,7 +273,6 @@ fn analyze_repo(root: &Path, config: &ArchitectureConfig) -> Result<Architecture
     let mut dir_depths: HashSet<usize> = HashSet::new();
     let mut found_layers: HashSet<String> = HashSet::new();
 
-    // Regex patterns for Rust (can extend for other languages)
     let trait_re = Regex::new(r"(?m)^[[:space:]]*(pub\s+)?trait\s+\w+").map_err(|e| {
         PapertowelError::Detection(format!("invalid regex: {e}"))
     })?;
@@ -309,7 +291,6 @@ fn analyze_repo(root: &Path, config: &ArchitectureConfig) -> Result<Architecture
         let path = entry.path();
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
-        // Only analyze Rust files for now (extend as needed)
         if ext != "rs" {
             continue;
         }
@@ -330,12 +311,10 @@ fn analyze_repo(root: &Path, config: &ArchitectureConfig) -> Result<Architecture
 
         metrics.total_source_files += 1;
 
-        // Calculate directory depth relative to root
         if let Ok(rel_path) = path.strip_prefix(root) {
             let depth = rel_path.components().count();
             dir_depths.insert(depth);
 
-            // Check for layer directories
             for component in rel_path.components() {
                 let name = component.as_os_str().to_string_lossy().to_lowercase();
                 if LAYER_INDICATORS.contains(&name.as_str()) {
@@ -385,12 +364,10 @@ fn analyze_repo(root: &Path, config: &ArchitectureConfig) -> Result<Architecture
         0
     };
 
-    // Determine directory depth
     metrics.directory_depth = dir_depths.iter().copied().max().unwrap_or(0);
     metrics.flat_structure = metrics.directory_depth < config.min_directory_depth
         && metrics.total_source_files >= config.min_source_files;
 
-    // Check for layer structure
     metrics.layer_dirs_found = found_layers.into_iter().collect();
     metrics.has_layer_structure = metrics.layer_dirs_found.len() >= MIN_LAYER_DIRS;
 

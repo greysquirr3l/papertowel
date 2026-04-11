@@ -20,9 +20,6 @@ src/recipes/*.toml
 # Serena project config
 .serena/
 
-# Test fixtures contain intentional slop for testing
-tests/fixtures/
-
 # Documentation files
 docs/
 CLAUDE.md

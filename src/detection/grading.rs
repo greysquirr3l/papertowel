@@ -1,6 +1,4 @@
-//! Letter-grade scoring for AI fingerprint detection.
 //!
-//! Inspired by [vibescore](https://github.com/stef41/vibescore), this module
 //! provides a holistic "Slop Score" that grades projects on how clean they are
 //! from AI-generated code fingerprints.
 //!
@@ -13,7 +11,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::detection::finding::{Finding, FindingCategory, Severity};
 
-/// Letter grade from A+ (best) to F (worst).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Grade {
     APlus,
@@ -32,7 +29,6 @@ pub enum Grade {
 }
 
 impl Grade {
-    /// Convert a slop score (0-100, lower is better) to a letter grade.
     #[must_use]
     pub fn from_slop_score(score: f32) -> Self {
         // Inverted scale: lower slop = better grade
@@ -59,7 +55,6 @@ impl Grade {
         self <= minimum // Lower enum variant = better grade
     }
 
-    /// ANSI color code for terminal output.
     #[must_use]
     pub const fn ansi_color(&self) -> &'static str {
         match self {
@@ -116,7 +111,6 @@ impl std::str::FromStr for Grade {
     }
 }
 
-/// Slop score for a single category.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryScore {
     pub category: GradeCategory,
@@ -126,7 +120,6 @@ pub struct CategoryScore {
     pub finding_count: usize,
 }
 
-/// Categories for grading (mapped from `FindingCategory`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GradeCategory {
     Lexical,
@@ -140,7 +133,6 @@ pub enum GradeCategory {
 }
 
 impl GradeCategory {
-    /// Weight for overall score calculation.
     #[must_use]
     pub const fn weight(&self) -> f32 {
         match self {
@@ -173,7 +165,6 @@ impl fmt::Display for GradeCategory {
     }
 }
 
-/// Map `FindingCategory` to `GradeCategory`.
 impl From<FindingCategory> for GradeCategory {
     fn from(cat: FindingCategory) -> Self {
         match cat {
@@ -194,7 +185,6 @@ impl From<FindingCategory> for GradeCategory {
     }
 }
 
-/// Complete grade report for a project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GradeReport {
     pub overall_score: f32,
@@ -247,8 +237,6 @@ impl GradeReport {
                     .sum::<f32>()
             });
 
-            // Normalize to 0-100 scale (cap at 100)
-            // Scale factor: ~10 high-severity findings = score of 100
             let normalized_score = (raw_score * 3.33).min(100.0);
             let grade = Grade::from_slop_score(normalized_score);
 

@@ -1,3 +1,7 @@
+#![expect(clippy::unwrap_used, reason = "test assertions")]
+#![expect(clippy::expect_used, reason = "test assertions")]
+#![expect(clippy::indexing_slicing, reason = "test assertions")]
+
 use std::path::PathBuf;
 
 use assert_cmd::Command;

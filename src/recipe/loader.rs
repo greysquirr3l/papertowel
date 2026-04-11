@@ -244,6 +244,8 @@ pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSo
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(clippy::indexing_slicing, reason = "test assertions")]
 mod tests {
     use super::*;
     use tempfile::TempDir;

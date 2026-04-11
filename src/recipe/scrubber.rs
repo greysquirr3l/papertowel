@@ -295,6 +295,7 @@ fn normalize_transformed_text(content: &str) -> String {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
     use super::*;
     use crate::detection::finding::Severity;
