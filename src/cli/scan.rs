@@ -22,7 +22,7 @@ use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::ignore_directives;
 use crate::scrubber::{
     comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
-    structure, tests as scrubber_tests, workflow,
+    security, structure, tests as scrubber_tests, workflow,
 };
 
 /// wasted I/O on binaries, compiled objects, and other large assets.
@@ -211,6 +211,7 @@ fn run_file_detectors(
         if lang == LanguageKind::Rust {
             run_detector(findings, || idiom_mismatch::detect_file(path));
         }
+        run_detector(findings, || security::detect_file(path));
     }
 
     // Run recipe-based detection on text files.
