@@ -14,5 +14,25 @@ src/recipe/scrubber.rs
 # Recipe definition files contain the patterns we detect — exclude them
 src/recipes/*.toml
 
+# Coraline code graph data
+.coraline/
+
+# Serena project config
+.serena/
+
+# Test fixtures contain intentional slop for testing
+tests/fixtures/
+
+# Documentation files
+docs/
+CLAUDE.md
+plan.toml
+
 # Build artefacts and vendored dependencies
 target/
+
+# Git internals
+.git/
+
+# Generated documentation
+book/

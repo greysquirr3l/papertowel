@@ -1,3 +1,4 @@
+pub mod architecture;
 pub mod comments;
 pub mod commit_pattern;
 pub mod idiom_mismatch;

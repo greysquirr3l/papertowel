@@ -42,6 +42,10 @@ cargo install papertowel
 # See what you're working with
 papertowel scan .
 
+# Get a letter grade for your project
+papertowel grade .
+papertowel grade . --min-grade B --ci  # fail CI if below threshold
+
 # Fix the code fingerprints
 papertowel scrub .
 papertowel scrub . --dry-run  # preview first
@@ -110,6 +114,14 @@ This tool helps you sidestep the purity police so you can focus on actually ship
 ### Inline Directives
 
 Add `// papertowel:ignore-file` to any source file to skip it entirely, or `// papertowel:ignore-next-line` to suppress findings on a single line. Works with `//`, `#`, `--`, and `%` comment styles.
+
+## Contributing recipes
+
+The scrubber's detection quality lives or dies on its recipe library. A recipe is a small TOML file describing a pattern to find (and optionally replace) — regex-based, scoped to file types, zero Rust required.
+
+If you've noticed a fingerprint that papertowel misses, a recipe contribution is the fastest path from "this annoys me" to "this is fixed." The existing built-in recipes are in `src/recipes/` and the format is documented in the [recipe reference](book/src/scrubber/recipes.md).
+
+Pull requests with new or improved recipes are especially welcome. If you're not sure whether a pattern is worth adding, open an issue and make the case — signal-to-noise ratio matters more than coverage count.
 
 ## License
 

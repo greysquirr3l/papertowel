@@ -333,6 +333,9 @@ fn run_repo_detectors(root: &Path, findings: &mut Vec<Finding>) {
     run_detector(findings, || {
         crate::scrubber::commit_pattern::detect_repo(root)
     });
+    run_detector(findings, || {
+        crate::scrubber::architecture::detect_repo(root)
+    });
     run_detector(findings, || workflow::detect_repo(root));
     run_detector(findings, || promotion::detect_repo(root));
     run_detector(findings, || metadata::detect_repo(root));

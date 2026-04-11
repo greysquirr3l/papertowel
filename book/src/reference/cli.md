@@ -46,6 +46,39 @@ A convenience command that runs the full pipeline: `scan` followed by `scrub`.
 
 - `--dry-run`: Preview changes.
 
+### `papertowel grade <path>`
+
+Assigns a letter grade (A+ to F) based on the project's overall AI fingerprint level. Lower slop scores yield better grades.
+
+**Options:**
+
+- `--format <json|text>`: Output format. JSON includes detailed category breakdowns. (Default: `text`)
+- `--min-grade <grade>`: Exit with code 1 if the grade is below this threshold. Useful for CI gating. Valid values: `A+`, `A`, `A-`, `B+`, `B`, `B-`, `C+`, `C`, `C-`, `D+`, `D`, `D-`, `F`.
+- `--ci`: Shorthand for `--min-grade C`. Fails the build if the project scores C- or below.
+
+**Grade calculation:**
+
+Grades are based on a weighted "slop score" across categories:
+
+| Category | Weight |
+|----------|--------|
+| Lexical (slop vocabulary) | 20% |
+| Architecture | 20% |
+| Comments | 15% |
+| Structure | 15% |
+| Metadata | 10% |
+| Testing | 10% |
+| History | 10% |
+| Workflow | 5% |
+
+**Example:**
+
+```bash
+papertowel grade .
+papertowel grade . --min-grade B --ci
+papertowel grade . --format json
+```
+
 ---
 
 ## Recipe Commands

@@ -10,6 +10,7 @@ Author's note: This is the table of contents for the papertowel book.
 - [[Lexical Analysis]](scrubber/lexical.md)
 - [[Comment Thinning]](scrubber/comments.md)
 - [[Structural Fingerprints]](scrubber/structure.md)
+- [[Architecture Detection]](scrubber/architecture.md)
 - [[Recipes]](scrubber/recipes.md)
 
 ## The Wringer

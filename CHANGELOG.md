@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`papertowel grade` command**: Get a letter grade (A+ to F) for your project's AI fingerprint level. Lower slop = better grade. Supports `--min-grade` for CI gating and `--format json` for automation. Inspired by [vibescore](https://github.com/stef41/vibescore) — credit to @stef41 for the idea of project-level grading for AI-generated code.
+- **`papertowel grade` command**: Get a letter grade (A+ to F) for your project's AI fingerprint level. Lower slop = better grade. Supports `--min-grade` for CI gating and `--format json` for automation. Inspired by [vibescore](https://github.com/chand1012/vibescore).
+- **Architecture detector**: New detector category analyzing code organization patterns:
+  - **ARCH001**: Flat module structure (no meaningful subdirectories)
+  - **ARCH002**: Missing architectural layers (no domain/, ports/, etc.)
+  - **ARCH003**: God files (>800 lines mixing responsibilities)
+  - **ARCH004**: Low trait ratio (<2% abstractions)
+  - **ARCH005**: Anemic domain models (structs with no impl blocks)
+- Architecture category added to `FindingCategory` and weighted at 20% in grade calculation.
 
 ## [0.1.5] — 2026-04-10
 

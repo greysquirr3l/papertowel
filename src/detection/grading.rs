@@ -132,6 +132,7 @@ pub enum GradeCategory {
     Lexical,
     Comments,
     Structure,
+    Architecture,
     Metadata,
     Testing,
     Workflow,
@@ -143,8 +144,8 @@ impl GradeCategory {
     #[must_use]
     pub const fn weight(&self) -> f32 {
         match self {
-            Self::Lexical => 0.25,
-            Self::Comments | Self::Structure => 0.20,
+            Self::Lexical | Self::Architecture => 0.20,
+            Self::Comments | Self::Structure => 0.15,
             Self::Metadata | Self::Testing | Self::History => 0.10,
             Self::Workflow => 0.05,
         }
@@ -157,6 +158,7 @@ impl GradeCategory {
             Self::Lexical => "Lexical (slop words)",
             Self::Comments => "Comments",
             Self::Structure => "Structure",
+            Self::Architecture => "Architecture",
             Self::Metadata => "Metadata",
             Self::Testing => "Testing",
             Self::Workflow => "Workflow",
@@ -180,6 +182,7 @@ impl From<FindingCategory> for GradeCategory {
             FindingCategory::Structure
             | FindingCategory::IdiomMismatch
             | FindingCategory::PromptLeakage => Self::Structure,
+            FindingCategory::Architecture => Self::Architecture,
             FindingCategory::Readme
             | FindingCategory::Metadata
             | FindingCategory::Promotion
@@ -221,6 +224,7 @@ impl GradeReport {
             GradeCategory::Lexical,
             GradeCategory::Comments,
             GradeCategory::Structure,
+            GradeCategory::Architecture,
             GradeCategory::Metadata,
             GradeCategory::Testing,
             GradeCategory::Workflow,
