@@ -405,6 +405,11 @@ pub struct LoadedRecipe {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test assertions"
+)]
 mod tests {
     use super::*;
 
