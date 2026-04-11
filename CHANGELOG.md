@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`papertowel grade` command**: Get a letter grade (A+ to F) for your project's AI fingerprint level. Lower slop = better grade. Supports `--min-grade` for CI gating and `--format json` for automation. Inspired by [vibescore](https://github.com/stef41/vibescore) — credit to @stef41 for the idea of project-level grading for AI-generated code.
+
 ## [0.1.5] — 2026-04-10
 
 ### Added

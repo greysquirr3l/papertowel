@@ -1,3 +1,4 @@
+mod grade;
 mod hook;
 mod learn;
 mod profile;
@@ -43,6 +44,8 @@ struct Cli {
 enum Command {
     Scan(scan::ScanArgs),
     Scrub(scrub::ScrubArgs),
+    /// Grade your project's AI fingerprint level (A+ to F).
+    Grade(grade::GradeArgs),
     Wring(WringArgs),
     Clean(CleanArgs),
     Learn(LearnArgs),
@@ -144,6 +147,7 @@ fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Scan(args) => scan::handle(&args),
         Command::Scrub(args) => scrub::handle(&args),
+        Command::Grade(args) => grade::handle(&args),
         Command::Wring(args) => match args.command {
             WringCommand::Init(init_args) => wring::handle_init(init_args),
             WringCommand::Queue(queue_args) => wring::handle_queue(queue_args),
