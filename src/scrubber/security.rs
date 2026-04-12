@@ -264,8 +264,13 @@ static COMPILED_RULES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
                 .unwrap_or_else(|e| {
                     // SAFETY: all patterns are static literals validated by tests;
                     // a compile failure here is an unrecoverable programming error.
-                    #[expect(clippy::panic, reason = "static regex literals; failure is a programming error")]
-                    { panic!("SEC regex compile error [{}]: {e}", r.id) }
+                    #[expect(
+                        clippy::panic,
+                        reason = "static regex literals; failure is a programming error"
+                    )]
+                    {
+                        panic!("SEC regex compile error [{}]: {e}", r.id)
+                    }
                 })
         })
         .collect()

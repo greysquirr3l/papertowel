@@ -83,7 +83,7 @@ pub fn generate_humanized_message(
     rng: &mut impl Rng,
 ) -> String {
     if should_fire(persona.messages.wip_frequency, rng) {
-        let pick = rng.gen_range(0..LAZY_MESSAGES.len());
+        let pick = rng.random_range(0..LAZY_MESSAGES.len());
         if let Some(msg) = LAZY_MESSAGES.get(pick) {
             return apply_entropy((*msg).to_owned(), persona, rng);
         }
@@ -93,7 +93,7 @@ pub fn generate_humanized_message(
         CommitMessageStyle::Conventional => conventional_message(context, rng),
         CommitMessageStyle::Lazy => lazy_message(rng),
         CommitMessageStyle::Mixed => {
-            if rng.gen_bool(0.60) {
+            if rng.random_bool(0.60) {
                 conventional_message(context, rng)
             } else {
                 lazy_message(rng)
@@ -119,14 +119,14 @@ fn pick_conventional_verb(action: &ReplayAction, rng: &mut impl Rng) -> &'static
         ReplayAction::Split => "refactor",
         ReplayAction::Squash => "feat",
         ReplayAction::Replay => {
-            let pick = rng.gen_range(0..CONVENTIONAL_VERBS.len());
+            let pick = rng.random_range(0..CONVENTIONAL_VERBS.len());
             CONVENTIONAL_VERBS.get(pick).copied().unwrap_or("chore")
         }
     }
 }
 
 fn lazy_message(rng: &mut impl Rng) -> String {
-    let pick = rng.gen_range(0..LAZY_MESSAGES.len());
+    let pick = rng.random_range(0..LAZY_MESSAGES.len());
     LAZY_MESSAGES.get(pick).copied().unwrap_or("wip").to_owned()
 }
 
@@ -198,7 +198,7 @@ fn apply_entropy(mut message: String, persona: &PersonaProfile, rng: &mut impl R
     }
 
     if should_fire(persona.messages.profanity_frequency, rng) {
-        let pick = rng.gen_range(0..MILD_PROFANITY.len());
+        let pick = rng.random_range(0..MILD_PROFANITY.len());
         let profanity = MILD_PROFANITY.get(pick).copied().unwrap_or("ugh");
         message = format!("{message} {profanity}");
     }
@@ -208,7 +208,7 @@ fn apply_entropy(mut message: String, persona: &PersonaProfile, rng: &mut impl R
     }
 
     if should_fire(persona.messages.emoji_rate, rng) {
-        let pick = rng.gen_range(0..ASCII_EMOJIS.len());
+        let pick = rng.random_range(0..ASCII_EMOJIS.len());
         let emoji = ASCII_EMOJIS.get(pick).copied().unwrap_or(":)");
         message = format!("{message} {emoji}");
     }
@@ -223,7 +223,7 @@ fn should_fire(rate: f32, rng: &mut impl Rng) -> bool {
     if rate >= 1.0 {
         return true;
     }
-    rng.gen_bool(f64::from(rate))
+    rng.random_bool(f64::from(rate))
 }
 
 fn inject_typo(input: &str, rng: &mut impl Rng) -> String {
@@ -232,7 +232,7 @@ fn inject_typo(input: &str, rng: &mut impl Rng) -> String {
         return input.to_owned();
     }
 
-    let idx = rng.gen_range(1..chars.len() - 1);
+    let idx = rng.random_range(1..chars.len() - 1);
     if should_fire(0.50, rng) {
         // Drop a character.
         chars.remove(idx);
