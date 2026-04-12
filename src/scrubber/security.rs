@@ -322,7 +322,7 @@ fn build_regex(rule: &Rule) -> Result<Regex, PapertowelError> {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, clippy::expect_used, reason = "test assertions")]
+#[expect(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
     use std::io::Write;
 
@@ -331,7 +331,7 @@ mod tests {
     use super::*;
 
     fn check(code: &str, ext: &str, expected_id: &str) {
-        let mut f = NamedTempFile::with_suffix(&format!(".{ext}")).unwrap();
+        let mut f = NamedTempFile::with_suffix(format!(".{ext}")).unwrap();
         f.write_all(code.as_bytes()).unwrap();
         let findings = detect_file(f.path()).unwrap();
         let ids: Vec<&str> = findings.iter().map(|f| f.id.as_str()).collect();
@@ -342,7 +342,7 @@ mod tests {
     }
 
     fn check_no_finding(code: &str, ext: &str, forbidden_id: &str) {
-        let mut f = NamedTempFile::with_suffix(&format!(".{ext}")).unwrap();
+        let mut f = NamedTempFile::with_suffix(format!(".{ext}")).unwrap();
         f.write_all(code.as_bytes()).unwrap();
         let findings = detect_file(f.path()).unwrap();
         let ids: Vec<&str> = findings.iter().map(|f| f.id.as_str()).collect();
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn sec001_sql_injection_go() {
         check(
-            r#"query := fmt.Sprintf("SELECT * FROM users WHERE id = %s", userInput)"#,
+            "query := fmt.Sprintf(\"SELECT * FROM users WHERE id = %s\", userInput)",
             "go",
             "SEC001",
         );
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn sec001_sql_injection_python() {
         check(
-            r#"cursor.execute(f"SELECT * FROM users WHERE name = {name}")"#,
+            "cursor.execute(f\"SELECT * FROM users WHERE name = {name}\")",
             "py",
             "SEC001",
         );
@@ -372,25 +372,25 @@ mod tests {
 
     #[test]
     fn sec003_hardcoded_password() {
-        check(r#"password = "s3cr3tP@ss!""#, "py", "SEC003");
+        check("password = \"s3cr3tP@ss!\"", "py", "SEC003");
     }
 
     #[test]
     fn sec003_hardcoded_api_key() {
-        check(r#"const api_key = "sk-abc123longkeyvalue""#, "ts", "SEC003");
+        check("const api_key = \"sk-abc123longkeyvalue\"", "ts", "SEC003");
     }
 
     #[test]
     fn sec003_no_false_positive_on_placeholder() {
         // Very short or obviously placeholder values should ideally not trigger
         // (our threshold is 6 chars; "xxx" is 3 chars)
-        check_no_finding(r#"password = "xxx""#, "py", "SEC003");
+        check_no_finding("password = \"xxx\"", "py", "SEC003");
     }
 
     #[test]
     fn sec004_md5_typescript() {
         check(
-            r#"const hash = createHash('md5').update(data).digest('hex');"#,
+            "const hash = createHash('md5').update(data).digest('hex');",
             "ts",
             "SEC004",
         );
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn sec004_sha1_python() {
-        check(r#"h = hashlib.sha1(data).hexdigest()"#, "py", "SEC004");
+        check("h = hashlib.sha1(data).hexdigest()", "py", "SEC004");
     }
 
     #[test]
@@ -412,18 +412,18 @@ mod tests {
 
     #[test]
     fn sec005_tls_skip_verify_python() {
-        check(r#"requests.get(url, verify=False)"#, "py", "SEC005");
+        check("requests.get(url, verify=False)", "py", "SEC005");
     }
 
     #[test]
     fn sec006_jwt_alg_none() {
-        check(r#"algorithm: "none""#, "ts", "SEC006");
+        check("algorithm: \"none\"", "ts", "SEC006");
     }
 
     #[test]
     fn sec007_dangerous_inner_html() {
         check(
-            r#"<div dangerouslySetInnerHTML={{ __html: userContent }} />"#,
+            "<div dangerouslySetInnerHTML={{ __html: userContent }} />",
             "tsx",
             "SEC007",
         );
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn sec009_logging_password() {
-        check(r#"console.log("password:", password)"#, "ts", "SEC009");
+        check("console.log(\"password:\", password)", "ts", "SEC009");
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn sec011_math_random_token() {
         check(
-            r#"const token = Math.random().toString(36).slice(2);"#,
+            "const token = Math.random().toString(36).slice(2);",
             "ts",
             "SEC011",
         );
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn sec014_hardcoded_iv_zero() {
-        check(r#"iv = b"0000000000000000""#, "py", "SEC014");
+        check("iv = b\"0000000000000000\"", "py", "SEC014");
     }
 
     #[test]
