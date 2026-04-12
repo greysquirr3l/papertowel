@@ -261,7 +261,12 @@ static COMPILED_RULES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
                 .case_insensitive(r.ignore_case)
                 .multi_line(true)
                 .build()
-                .unwrap_or_else(|e| panic!("SEC regex compile error [{}]: {e}", r.id))
+                .unwrap_or_else(|e| {
+                    // SAFETY: all patterns are static literals validated by tests;
+                    // a compile failure here is an unrecoverable programming error.
+                    #[expect(clippy::panic, reason = "static regex literals; failure is a programming error")]
+                    { panic!("SEC regex compile error [{}]: {e}", r.id) }
+                })
         })
         .collect()
 });
@@ -288,10 +293,14 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
 
     // Skip obviously non-source files (lock files, generated assets, etc.).
     let skip_dirs = ["target", "vendor", "node_modules", ".git"];
-    if path
-        .components()
-        .any(|c| c.as_os_str().to_str().is_some_and(|s| skip_dirs.contains(&s)))
-        || path.extension().and_then(|e| e.to_str()).is_some_and(|e| e == "lock")
+    if path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| skip_dirs.contains(&s))
+    }) || path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e == "lock")
         || path
             .file_name()
             .and_then(|f| f.to_str())
@@ -484,11 +493,7 @@ mod tests {
 
     #[test]
     fn sec013_ssrf_user_url() {
-        check(
-            "const resp = await fetch(req.query.url);",
-            "ts",
-            "SEC013",
-        );
+        check("const resp = await fetch(req.query.url);", "ts", "SEC013");
     }
 
     #[test]
