@@ -53,17 +53,18 @@ cargo install papertowel
 
 - `papertowel_scan`
 - `papertowel_scrub`
+- `papertowel_grade`
 
 Add this server block to your MCP config:
 
 ```jsonc
 "papertowel": {
-	"type": "stdio",
-	"command": "papertowel-mcp",
-	"args": [],
-	"env": {
-		"RUST_LOG": "info"
-	}
+   "type": "stdio",
+   "command": "papertowel-mcp",
+   "args": [],
+   "env": {
+      "RUST_LOG": "info"
+   }
 }
 ```
 

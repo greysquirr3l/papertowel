@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-04-12
+
 ### Changed
 
 - Added `rustfmt.toml` (`edition = "2024"`, `max_width = 100`) — project-wide formatter config.
+- Build metadata now falls back to `crates.io` (or `source`) when git SHA is unavailable, instead of showing `unknown` in `--version` output.
+- Sorry for the version alignment bumps in recent patch releases; this release keeps `papertowel` and `papertowel-mcp` aligned at `0.3.4`.
 
 ## [0.3.3] — 2026-04-12
 

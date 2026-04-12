@@ -1,6 +1,6 @@
 [package]
 name = "papertowel-mcp"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 license = "MIT"
 description = "MCP server exposing papertowel scan and scrub tools"
@@ -14,7 +14,7 @@ name = "papertowel-mcp"
 path = "src/main.rs"
 
 [dependencies]
-papertowel = { path = "..", version = "0.3.3" }
+papertowel = { path = "..", version = "0.3.4" }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
