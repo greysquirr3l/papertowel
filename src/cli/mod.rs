@@ -6,7 +6,7 @@ mod learn;
 mod profile;
 pub mod recipe;
 pub mod report;
-mod scan;
+pub mod scan;
 mod scrub;
 mod wring;
 

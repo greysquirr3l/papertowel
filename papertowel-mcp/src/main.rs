@@ -19,6 +19,7 @@
 //! |------|-------------|
 //! | `papertowel_scan` | Scan a path for AI-fingerprint findings |
 //! | `papertowel_scrub` | Dry-run scrub: show what would be changed |
+//! | `papertowel_grade` | Score a path A+–F for AI fingerprint presence |
 
 use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
@@ -273,7 +274,7 @@ fn handle_initialize(params: Option<&Value>) -> Value {
             "version": SERVER_VERSION,
             "description": "Scan and dry-run scrub code for AI-generated fingerprint patterns."
         },
-        "instructions": "Use papertowel_scan to detect AI-generated code fingerprints in a file or directory. Use papertowel_scrub for a dry-run view of suggested changes without modifying any files."
+        "instructions": "Use papertowel_scan to detect AI-generated code fingerprints in a file or directory. Use papertowel_scrub for a dry-run view of suggested changes without modifying any files. Use papertowel_grade to get a letter grade (A+ through F) summarising overall AI fingerprint presence across a project."
     })
 }
 
@@ -326,6 +327,31 @@ fn handle_tools_list() -> Value {
                     },
                     "required": ["path"]
                 }
+            },
+            {
+                "name": "papertowel_grade",
+                "title": "AI Fingerprint Grade",
+                "description": "Score a file or directory A+ through F for overall AI fingerprint presence. Returns the overall grade, per-category breakdown, and total finding count. Optionally include per-category contribution details with explain=true.",
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Absolute or relative path to the file or directory to grade."
+                        },
+                        "explain": {
+                            "type": "boolean",
+                            "description": "Include per-category score and finding count in the output. Defaults to false."
+                        }
+                    },
+                    "required": ["path"]
+                }
             }
         ]
     })
@@ -347,6 +373,7 @@ fn handle_tools_call(params: Option<&Value>) -> Result<Value> {
     match name {
         "papertowel_scan" => Ok(call_scan(&args)),
         "papertowel_scrub" => Ok(call_scrub(&args)),
+        "papertowel_grade" => Ok(call_grade(&args)),
         unknown => Err(anyhow::anyhow!(
             "method not found: unknown tool '{unknown}'"
         )),
@@ -524,6 +551,62 @@ fn call_scrub(args: &Value) -> Value {
         );
         if let Some(s) = &f.suggestion {
             let _ = writeln!(out, "  \u{2192} {s}");
+        }
+    }
+
+    tool_text(out)
+}
+
+/// Grade a path for overall AI fingerprint presence and return a letter score.
+fn call_grade(args: &Value) -> Value {
+    let Some(raw_path) = args.get("path").and_then(Value::as_str) else {
+        return tool_error("invalid arguments: 'path' is required");
+    };
+
+    let explain = args
+        .get("explain")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let path = match validate_mcp_path(raw_path) {
+        Ok(p) => p,
+        Err(msg) => return tool_error(msg),
+    };
+    if !path.exists() {
+        return tool_error(format!("path does not exist: {raw_path}"));
+    }
+
+    let start = std::time::Instant::now();
+    let collection = match papertowel::cli::scan::collect_findings_for_root(&path, false) {
+        Ok(c) => c,
+        Err(e) => return tool_error(format!("scan failed: {e}")),
+    };
+    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    let report = papertowel::detection::grading::GradeReport::from_findings(
+        &collection.findings,
+        collection.files_scanned,
+        duration_ms,
+    );
+
+    let mut out = format!(
+        "Grade: {} (score {:.1})\nFiles: {}  Findings: {}\n",
+        report.overall_grade,
+        report.overall_score,
+        report.files_scanned,
+        report.total_findings,
+    );
+
+    if explain {
+        out.push('\n');
+        for cat in &report.categories {
+            if cat.finding_count > 0 {
+                let _ = writeln!(
+                    out,
+                    "  {}: {} ({} finding(s))",
+                    cat.category, cat.grade, cat.finding_count
+                );
+            }
         }
     }
 
@@ -754,7 +837,7 @@ mod tests {
             .and_then(serde_json::Value::as_array)
             .expect("tools/list should return a tools array");
 
-        for expected_name in ["papertowel_scan", "papertowel_scrub"] {
+        for expected_name in ["papertowel_scan", "papertowel_scrub", "papertowel_grade"] {
             let tool = tools
                 .iter()
                 .find(|tool| tool.get("name") == Some(&json!(expected_name)))

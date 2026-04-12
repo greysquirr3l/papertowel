@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-04-12
+
+### Added
+
+- **`papertowel_grade` MCP tool** — grade a file or directory A+–F for overall AI fingerprint presence. Returns overall grade, score, file count, finding count, and optional per-category breakdown (`explain: true`).
+- `papertowel::cli::scan` is now a public module so external crates can reuse `collect_findings_for_root` and `ScanCollection`.
+- Protocol regression test extended to cover `papertowel_grade` annotations.
+
 ## [0.3.1] — 2026-04-12
 
 ### Changed
