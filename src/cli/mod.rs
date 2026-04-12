@@ -1,3 +1,5 @@
+mod calibrate;
+mod eval;
 mod grade;
 mod hook;
 mod learn;
@@ -42,14 +44,27 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Detect AI fingerprints and report findings (read-only).
     Scan(scan::ScanArgs),
+    /// Recommend threshold and weight settings for a target repo.
+    Calibrate(calibrate::CalibrateArgs),
+    /// Run fixture-based evaluation and print a confusion matrix.
+    Eval(eval::EvalArgs),
+    /// Rewrite detected AI fingerprints in place.
     Scrub(scrub::ScrubArgs),
+    /// Score a project with a letter grade for AI fingerprint presence.
     Grade(grade::GradeArgs),
+    /// Humanize git history by drip-feeding commits on a human schedule.
     Wring(WringArgs),
+    /// Run scan then scrub in a single pass.
     Clean(CleanArgs),
+    /// Build or display a local style baseline for a repository.
     Learn(LearnArgs),
+    /// Manage human persona profiles used by the wringer.
     Profile(ProfileArgs),
+    /// Inspect and validate loaded scrubber recipes.
     Recipe(RecipeArgs),
+    /// Install or remove the papertowel pre-commit git hook.
     Hook(HookArgs),
 }
 
@@ -145,6 +160,8 @@ where
 fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Scan(args) => scan::handle(&args),
+        Command::Calibrate(args) => calibrate::handle(&args),
+        Command::Eval(args) => eval::handle(&args),
         Command::Scrub(args) => scrub::handle(&args),
         Command::Grade(args) => grade::handle(&args),
         Command::Wring(args) => match args.command {
@@ -173,6 +190,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 severity: None,
                 fail_on: None,
                 ci: false,
+                explain: false,
+                mixed: false,
             };
             scan::handle(&scan_args)
         }

@@ -42,6 +42,16 @@ pub struct ScanArgs {
     /// unless `--fail-on` is set explicitly.
     #[arg(long, default_value_t = false)]
     pub ci: bool,
+    #[arg(long, default_value_t = false)]
+    pub explain: bool,
+    /// hybrid files.
+    #[arg(long, default_value_t = false)]
+    pub mixed: bool,
+}
+
+pub struct ScanCollection {
+    pub findings: Vec<Finding>,
+    pub files_scanned: usize,
 }
 
 pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFormat) {
@@ -72,9 +82,66 @@ fn load_recipe_matcher(project_root: &Path) -> Option<Arc<RecipeMatcher>> {
 
 pub fn handle(args: &ScanArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
-    let (project_root, config, ignore) = resolve_config(&root)?;
-
     let (effective_fail_on, effective_format) = effective_ci_settings(args);
+
+    let mut collection = collect_findings_for_root(&root, args.mixed)?;
+
+    let min_severity = args.severity.map(|s| match s {
+        SeverityArg::Low => Severity::Low,
+        SeverityArg::Medium => Severity::Medium,
+        SeverityArg::High => Severity::High,
+    });
+
+    // ── Severity filtering ───────────────────────────────────────────────────
+    if let Some(min) = min_severity {
+        collection.findings.retain(|f| f.severity >= min);
+    }
+
+    let summary = build_summary(&collection.findings);
+    let explainability = args
+        .explain
+        .then(|| crate::cli::report::build_explainability(&collection.findings, args.mixed));
+    let stdout = io::stdout();
+    let use_color = std::io::IsTerminal::is_terminal(&stdout);
+    let mut out = BufWriter::new(stdout.lock());
+
+    match effective_format {
+        OutputFormat::Text => write_text_report(
+            &mut out,
+            &collection.findings,
+            &summary,
+            use_color,
+            explainability.as_ref(),
+        )?,
+        OutputFormat::Json => write_json_report(
+            &mut out,
+            &collection.findings,
+            &summary,
+            explainability.as_ref(),
+        )?,
+        OutputFormat::GithubActions => {
+            write_github_actions_report(&mut out, &collection.findings, &summary)?;
+        }
+        OutputFormat::Sarif => write_sarif_report(&mut out, &collection.findings, &summary)?,
+    }
+
+    // CI gate: exit 1 if any finding is at or above the --fail-on threshold.
+    if let Some(fail_sev) = effective_fail_on {
+        let threshold = match fail_sev {
+            SeverityArg::Low => Severity::Low,
+            SeverityArg::Medium => Severity::Medium,
+            SeverityArg::High => Severity::High,
+        };
+        if collection.findings.iter().any(|f| f.severity >= threshold) {
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollection> {
+    let (project_root, config, ignore) = resolve_config(root)?;
 
     // Load personalised style baseline if one exists.
     let baseline = StyleBaseline::load(&project_root).ok().flatten();
@@ -89,15 +156,9 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 
     let recipe_matcher = load_recipe_matcher(&project_root);
 
-    let min_severity = args.severity.map(|s| match s {
-        SeverityArg::Low => Severity::Low,
-        SeverityArg::Medium => Severity::Medium,
-        SeverityArg::High => Severity::High,
-    });
-
     let mut findings: Vec<Finding> = Vec::new();
 
-    let files: Vec<PathBuf> = WalkDir::new(&root)
+    let files: Vec<PathBuf> = WalkDir::new(root)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
@@ -122,12 +183,6 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     for path in &files {
         bar.inc(1);
         bar.set_message(path.to_string_lossy().into_owned());
-        let _ = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default()
-            .to_lowercase();
-
         let directives =
             ignore_directives::parse_file(path).unwrap_or_else(|_| ignore_directives::parse(""));
         if directives.ignore_file {
@@ -152,40 +207,57 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 
     bar.finish_and_clear();
 
-    if is_git_repo(&root) {
-        run_repo_detectors(&root, &mut findings);
+    if is_git_repo(root) {
+        run_repo_detectors(root, &mut findings);
     }
 
-    // ── Severity filtering ───────────────────────────────────────────────────
-    if let Some(min) = min_severity {
-        findings.retain(|f| f.severity >= min);
-    }
+    let findings = if mixed {
+        aggregate_mixed_content_findings(findings)
+    } else {
+        findings
+    };
 
-    let summary = build_summary(&findings);
-    let stdout = io::stdout();
-    let use_color = std::io::IsTerminal::is_terminal(&stdout);
-    let mut out = BufWriter::new(stdout.lock());
+    Ok(ScanCollection {
+        findings,
+        files_scanned: files.len(),
+    })
+}
 
-    match effective_format {
-        OutputFormat::Text => write_text_report(&mut out, &findings, &summary, use_color)?,
-        OutputFormat::Json => write_json_report(&mut out, &findings, &summary)?,
-        OutputFormat::GithubActions => write_github_actions_report(&mut out, &findings, &summary)?,
-        OutputFormat::Sarif => write_sarif_report(&mut out, &findings, &summary)?,
-    }
+fn aggregate_mixed_content_findings(findings: Vec<Finding>) -> Vec<Finding> {
+    const SEGMENT_LINES: usize = 80;
+    let mut with_line = std::collections::BTreeMap::<(String, usize, String), Finding>::new();
+    let mut without_line: Vec<Finding> = Vec::new();
 
-    // CI gate: exit 1 if any finding is at or above the --fail-on threshold.
-    if let Some(fail_sev) = effective_fail_on {
-        let threshold = match fail_sev {
-            SeverityArg::Low => Severity::Low,
-            SeverityArg::Medium => Severity::Medium,
-            SeverityArg::High => Severity::High,
+    for finding in findings {
+        let Some(range) = finding.line_range else {
+            without_line.push(finding);
+            continue;
         };
-        if findings.iter().any(|f| f.severity >= threshold) {
-            std::process::exit(1);
+        let segment = range.start.saturating_sub(1) / SEGMENT_LINES;
+        let key = (
+            finding.file_path.to_string_lossy().into_owned(),
+            segment,
+            format!("{:?}", finding.category),
+        );
+
+        match with_line.get_mut(&key) {
+            Some(existing) => {
+                if finding.severity > existing.severity
+                    || (finding.severity == existing.severity
+                        && finding.confidence_score > existing.confidence_score)
+                {
+                    *existing = finding;
+                }
+            }
+            None => {
+                with_line.insert(key, finding);
+            }
         }
     }
 
-    Ok(())
+    let mut out = without_line;
+    out.extend(with_line.into_values());
+    out
 }
 
 fn run_file_detectors(
@@ -299,6 +371,8 @@ mod tests {
             severity: None,
             fail_on,
             ci,
+            explain: false,
+            mixed: false,
         }
     }
 
@@ -352,6 +426,8 @@ mod tests {
             severity: None,
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args)
     }
@@ -373,6 +449,8 @@ mod tests {
             severity: None,
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args)
     }
@@ -392,6 +470,8 @@ mod tests {
             severity: None,
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args)
     }
@@ -408,6 +488,8 @@ mod tests {
             severity: Some(SeverityArg::High),
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args)
     }
@@ -427,6 +509,8 @@ mod tests {
             severity: None,
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args)
     }
@@ -444,6 +528,8 @@ mod tests {
             severity: None,
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args)
     }
@@ -461,6 +547,8 @@ mod tests {
             severity: None,
             fail_on: Some(SeverityArg::High),
             ci: false,
+            explain: false,
+            mixed: false,
         };
         // Empty dir produces zero findings → the `any` check is false → no exit
         handle(&args)
@@ -480,6 +568,8 @@ mod tests {
             severity: Some(SeverityArg::Low),
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args_low)?;
         // Medium filter
@@ -489,6 +579,8 @@ mod tests {
             severity: Some(SeverityArg::Medium),
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&args_med)
     }
@@ -516,6 +608,8 @@ mod tests {
             severity: None,
             fail_on: None,
             ci: false,
+            explain: false,
+            mixed: false,
         };
         handle(&scan_args)
     }

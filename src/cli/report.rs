@@ -16,6 +16,93 @@ pub struct ScanSummary {
     pub ai_probability: f32,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExplainabilityContribution {
+    pub category: String,
+    pub finding_count: usize,
+    pub weighted_confidence: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExplainabilityEvidence {
+    pub finding_id: String,
+    pub category: String,
+    pub severity: String,
+    pub confidence_score: f32,
+    pub confidence_contribution: f32,
+    pub file_path: String,
+    pub line: Option<usize>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExplainabilityReport {
+    pub mixed_mode: bool,
+    pub category_contributions: Vec<ExplainabilityContribution>,
+    pub evidence: Vec<ExplainabilityEvidence>,
+}
+
+pub fn build_explainability(findings: &[Finding], mixed_mode: bool) -> ExplainabilityReport {
+    let mut by_category: HashMap<String, (usize, f32)> = HashMap::new();
+    let mut evidence = Vec::with_capacity(findings.len());
+
+    for f in findings {
+        let category = category_label(f.category);
+        let severity = severity_label(f.severity);
+        let weight = match f.severity {
+            Severity::High => 1.0_f32,
+            Severity::Medium => 0.6,
+            Severity::Low => 0.2,
+        };
+        let confidence_contribution = weight * f.confidence_score;
+
+        let entry = by_category.entry(category.clone()).or_insert((0, 0.0));
+        entry.0 += 1;
+        entry.1 += confidence_contribution;
+
+        evidence.push(ExplainabilityEvidence {
+            finding_id: f.id.clone(),
+            category,
+            severity,
+            confidence_score: f.confidence_score,
+            confidence_contribution,
+            file_path: f.file_path.to_string_lossy().into_owned(),
+            line: f.line_range.map(|r| r.start),
+            reason: f.description.clone(),
+        });
+    }
+
+    evidence.sort_by(|a, b| {
+        b.confidence_contribution
+            .total_cmp(&a.confidence_contribution)
+            .then_with(|| a.file_path.cmp(&b.file_path))
+            .then_with(|| a.finding_id.cmp(&b.finding_id))
+    });
+
+    let mut category_contributions = by_category
+        .into_iter()
+        .map(
+            |(category, (finding_count, weighted_confidence))| ExplainabilityContribution {
+                category,
+                finding_count,
+                weighted_confidence,
+            },
+        )
+        .collect::<Vec<_>>();
+
+    category_contributions.sort_by(|a, b| {
+        b.weighted_confidence
+            .total_cmp(&a.weighted_confidence)
+            .then_with(|| a.category.cmp(&b.category))
+    });
+
+    ExplainabilityReport {
+        mixed_mode,
+        category_contributions,
+        evidence,
+    }
+}
+
 #[expect(
     clippy::cast_precision_loss,
     reason = "bounded finding count: no meaningful precision loss"
@@ -122,6 +209,7 @@ pub fn write_text_report(
     findings: &[Finding],
     summary: &ScanSummary,
     use_color: bool,
+    explainability: Option<&ExplainabilityReport>,
 ) -> io::Result<()> {
     let a = Ansi { use_color };
 
@@ -147,8 +235,48 @@ pub fn write_text_report(
 
     write_text_findings(out, findings, &a)?;
     write_text_summary(out, summary, &a)?;
+    if let Some(explainability) = explainability {
+        write_text_explainability(out, explainability, &a)?;
+    }
     writeln!(out, "{}", a.dim(&"─".repeat(52)))?;
 
+    Ok(())
+}
+
+fn write_text_explainability(
+    out: &mut impl Write,
+    explainability: &ExplainabilityReport,
+    a: &Ansi,
+) -> io::Result<()> {
+    writeln!(out, "{}", a.bold("Explainability"))?;
+    if explainability.mixed_mode {
+        writeln!(out, " {} mixed-content aggregation enabled", a.dim("•"))?;
+    }
+    writeln!(out, " {} category contributions:", a.dim("•"))?;
+    for c in &explainability.category_contributions {
+        writeln!(
+            out,
+            "   - {}: {} finding(s), weighted {:.2}",
+            c.category, c.finding_count, c.weighted_confidence
+        )?;
+    }
+
+    writeln!(out, " {} top evidence:", a.dim("•"))?;
+    for e in explainability.evidence.iter().take(5) {
+        if let Some(line) = e.line {
+            writeln!(
+                out,
+                "   - [{}] {}:{} ({:.2}) {}",
+                e.severity, e.file_path, line, e.confidence_contribution, e.reason
+            )?;
+        } else {
+            writeln!(
+                out,
+                "   - [{}] {} ({:.2}) {}",
+                e.severity, e.file_path, e.confidence_contribution, e.reason
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -252,14 +380,21 @@ pub fn write_json_report(
     out: &mut impl Write,
     findings: &[Finding],
     summary: &ScanSummary,
+    explainability: Option<&ExplainabilityReport>,
 ) -> io::Result<()> {
     #[derive(Serialize)]
     struct JsonReport<'a> {
         summary: &'a ScanSummary,
         findings: &'a [Finding],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        explainability: Option<&'a ExplainabilityReport>,
     }
 
-    let report = JsonReport { summary, findings };
+    let report = JsonReport {
+        summary,
+        findings,
+        explainability,
+    };
     let json = serde_json::to_string_pretty(&report).map_err(io::Error::other)?;
     writeln!(out, "{json}")
 }
@@ -513,7 +648,7 @@ mod tests {
     fn empty_findings_produces_no_finding_output() {
         let summary = build_summary(&[]);
         let mut out = Vec::new();
-        write_text_report(&mut out, &[], &summary, false).expect("write");
+        write_text_report(&mut out, &[], &summary, false, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("No findings."));
     }
@@ -523,7 +658,7 @@ mod tests {
         // Covers lines 136-137: writeln! inside if use_color {... } when findings empty.
         let summary = build_summary(&[]);
         let mut out = Vec::new();
-        write_text_report(&mut out, &[], &summary, true).expect("write");
+        write_text_report(&mut out, &[], &summary, true, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("No findings."));
     }
@@ -537,7 +672,7 @@ mod tests {
         ];
         let summary = build_summary(&findings);
         let mut out = Vec::new();
-        write_text_report(&mut out, &findings, &summary, false).expect("write");
+        write_text_report(&mut out, &findings, &summary, false, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("src/main.rs"));
         assert!(text.contains("src/lib.rs"));
@@ -549,7 +684,7 @@ mod tests {
         let findings = vec![make_finding(Severity::Medium, "src/lib.rs")];
         let summary = build_summary(&findings);
         let mut out = Vec::new();
-        write_json_report(&mut out, &findings, &summary).expect("write");
+        write_json_report(&mut out, &findings, &summary, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
         assert!(parsed.get("findings").is_some());
@@ -630,7 +765,7 @@ mod tests {
         let f = make_finding(Severity::High, ".");
         let summary = build_summary(std::slice::from_ref(&f));
         let mut out = Vec::new();
-        write_text_report(&mut out, &[f], &summary, true).expect("write");
+        write_text_report(&mut out, &[f], &summary, true, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(!text.is_empty());
     }
@@ -640,7 +775,7 @@ mod tests {
         let f = make_finding(Severity::Low, ".");
         let summary = build_summary(std::slice::from_ref(&f));
         let mut out = Vec::new();
-        write_text_report(&mut out, &[f], &summary, false).expect("write");
+        write_text_report(&mut out, &[f], &summary, false, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(
             text.contains("(repo root)"),
@@ -684,7 +819,7 @@ mod tests {
         let findings = vec![med, low];
         let summary = build_summary(&findings);
         let mut out = Vec::new();
-        write_text_report(&mut out, &findings, &summary, true).expect("write");
+        write_text_report(&mut out, &findings, &summary, true, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(!text.is_empty());
     }
@@ -698,7 +833,7 @@ mod tests {
         let findings = vec![f];
         let summary = build_summary(&findings);
         let mut out = Vec::new();
-        write_text_report(&mut out, &findings, &summary, false).expect("write");
+        write_text_report(&mut out, &findings, &summary, false, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("at src/main.rs:10"), "should show file:line");
         assert!(text.contains("remove this"), "should show suggestion");
@@ -730,7 +865,7 @@ mod tests {
         let findings = vec![high, med, low];
         let summary = build_summary(&findings);
         let mut out = Vec::new();
-        write_text_report(&mut out, &findings, &summary, true).expect("write");
+        write_text_report(&mut out, &findings, &summary, true, None).expect("write");
         let text = String::from_utf8(out).expect("utf8");
         assert!(!text.is_empty());
     }

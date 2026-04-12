@@ -47,6 +47,26 @@ The wringer doesn't rewrite history (that leaves forensic traces). Instead, it m
 cargo install papertowel
 ```
 
+## MCP Server Setup
+
+`papertowel` ships an MCP server binary, `papertowel-mcp`, exposing:
+
+- `papertowel_scan`
+- `papertowel_scrub`
+
+Add this server block to your MCP config:
+
+```jsonc
+"papertowel": {
+	"type": "stdio",
+	"command": "papertowel-mcp",
+	"args": [],
+	"env": {
+		"RUST_LOG": "info"
+	}
+}
+```
+
 ## Usage
 
 ```sh

@@ -20,9 +20,9 @@ The `[persona.schedule]` section defines the working rhythm of the author:
 The `[persona.messages]` section defines the commit message aesthetic:
 
 - `style`:
-  - `conventional`: Uses the Conventional Commits specification (`feat(scope): description`).
-  - `lazy`: Uses shorthand, lowercase, and vague messages (`wip`, `fix stuff`).
-  - `mixed`: A probabilistic blend of both.
+    `conventional`: Uses the Conventional Commits specification (`feat(scope): description`).
+    `lazy`: Uses shorthand, lowercase, and vague messages (`wip`, `fix stuff`).
+    `mixed`: A probabilistic blend of both.
 - `wip_frequency`: How often a commit is replaced by a "Work In Progress" message.
 - `typo_rate`: The probability that a commit message contains a simulated typo.
 - `profanity_frequency`: The probability of injecting mild frustration (`ugh`, `damn`).

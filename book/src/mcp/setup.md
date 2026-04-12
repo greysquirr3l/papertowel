@@ -16,19 +16,23 @@ The MCP server exposes the core functionality of the Scrubber as a set of tools 
 ## Installation
 
 ### 1. Build the Server
+
 First, build the MCP server binary:
+
 ```bash
 cargo build --release -p papertowel-mcp
 ```
 
 ### 2. Configure Claude Desktop
+
 Add the server to your `claude_desktop_config.json` (usually located at `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
 ```json
 {
   "mcpServers": {
     "papertowel": {
-      "command": "/path/to/your/papertowel/target/release/papertowel-mcp",
+      "type": "stdio",
+      "command": "papertowel-mcp",
       "args": [],
       "env": {
         "RUST_LOG": "info"
@@ -37,7 +41,6 @@ Add the server to your `claude_desktop_config.json` (usually located at `~/Libra
   }
 }
 ```
-*Replace `/path/to/your/papertowel` with the absolute path to your project directory.*
 
 ## Usage in Chat
 

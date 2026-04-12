@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP protocol regression coverage** in `papertowel-mcp` to lock down initialization and tool-surface fields:
+  - `initialize` response assertions for `protocolVersion`, `capabilities.tools.listChanged`, and `serverInfo.description`
+  - `tools/list` assertions for `papertowel_scan` and `papertowel_scrub` annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+- README and book MCP setup docs now include a copy-paste server block using stdio command mode:
+  - `"type": "stdio"`
+  - `"command": "papertowel-mcp"`
+  - `"env": { "RUST_LOG": "info" }`
+
+### Changed
+
+- `papertowel-mcp` initialization metadata aligned with MCP `2025-11-25` guidance:
+  - explicit `capabilities.tools.listChanged`
+  - `serverInfo.description` included in initialize result
+- `tools/list` now emits explicit tool safety annotations for both MCP tools.
+- CLI top-level help now shows descriptions for all subcommands (`scan`, `calibrate`, `eval`, `scrub`, `grade`, `wring`, `clean`, `learn`, `profile`, `recipe`, `hook`) for better discoverability.
+
+### Documentation
+
+- Added MCP setup examples in both README and the book using stdio command mode with logging env:
+  - `"type": "stdio"`
+  - `"command": "papertowel-mcp"`
+  - `"env": { "RUST_LOG": "info" }`
+- Updated the book MCP setup to use command-based execution (`papertowel-mcp`) instead of a hardcoded absolute path example.
+- Clarified CLI discoverability by documenting/reflecting descriptive subcommand help output.
+
+### Fixed
+
+- Tool input validation failures in MCP tool calls are now returned as tool execution errors (`isError: true`) instead of protocol-level parameter errors, improving host/model self-correction behavior.
+
 ## [0.2.0] — 2026-04-12
 
 ### Added

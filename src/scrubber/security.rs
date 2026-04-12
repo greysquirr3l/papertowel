@@ -9,7 +9,6 @@
 //! | SEC001  | Injection        | String-interpolated SQL / shell commands             |
 //! | SEC002  | Injection        | `eval()` / `exec()` with dynamic input               |
 //! | SEC003  | Secrets          | Hardcoded secrets, API keys, or passwords            |
-//! | SEC004  | Cryptography     | Weak or broken crypto algorithm (MD5, SHA-1, etc.)  |
 //! | SEC005  | Auth             | Disabled TLS verification                            |
 //! | SEC006  | Auth             | JWT `alg: none` / signature not verified             |
 //! | SEC007  | Input            | `dangerouslySetInnerHTML` (XSS in React)             |
@@ -19,7 +18,6 @@
 //! | SEC011  | Randomness       | Non-CSPRNG used for security-sensitive values        |
 //! | SEC012  | Deserialisation  | Unsafe deserialisation (pickle, yaml.load, etc.)     |
 //! | SEC013  | SSRF             | Raw user-controlled URL fetched without allow-list   |
-//! | SEC014  | Cryptography     | Hardcoded IV or nonce for symmetric encryption       |
 //! | SEC015  | Auth             | TODO/FIXME in authentication or authorisation logic  |
 
 use std::fs;
@@ -301,7 +299,6 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
         return Ok(Vec::new());
     }
 
-    // Skip generated/vendor directories and minified assets before reading the file.
     let skip_dirs = ["target", "vendor", "node_modules", ".git"];
     if path.components().any(|c| {
         c.as_os_str()

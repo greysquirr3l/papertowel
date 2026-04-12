@@ -263,12 +263,15 @@ fn handle_initialize(params: Option<&Value>) -> Value {
     json!({
         "protocolVersion": negotiated,
         "capabilities": {
-            "tools": {}
+            "tools": {
+                "listChanged": false
+            }
         },
         "serverInfo": {
             "name": SERVER_NAME,
             "title": "papertowel MCP Server",
-            "version": SERVER_VERSION
+            "version": SERVER_VERSION,
+            "description": "Scan and dry-run scrub code for AI-generated fingerprint patterns."
         },
         "instructions": "Use papertowel_scan to detect AI-generated code fingerprints in a file or directory. Use papertowel_scrub for a dry-run view of suggested changes without modifying any files."
     })
@@ -281,6 +284,12 @@ fn handle_tools_list() -> Value {
                 "name": "papertowel_scan",
                 "title": "AI Fingerprint Scanner",
                 "description": "Scan a file or directory for AI-generated code fingerprints. Returns a list of findings with severity, category, and suggested fixes.",
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -301,6 +310,12 @@ fn handle_tools_list() -> Value {
                 "name": "papertowel_scrub",
                 "title": "AI Fingerprint Dry-Run Scrubber",
                 "description": "Dry-run scrub of a file: show what lexical, comment-density, structural, and recipe-based changes would be applied to reduce AI fingerprints, without modifying any files.",
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -330,8 +345,8 @@ fn handle_tools_call(params: Option<&Value>) -> Result<Value> {
         .unwrap_or_else(|| json!({}));
 
     match name {
-        "papertowel_scan" => call_scan(&args),
-        "papertowel_scrub" => call_scrub(&args),
+        "papertowel_scan" => Ok(call_scan(&args)),
+        "papertowel_scrub" => Ok(call_scrub(&args)),
         unknown => Err(anyhow::anyhow!(
             "method not found: unknown tool '{unknown}'"
         )),
@@ -365,31 +380,33 @@ fn load_recipe_matcher(path: &std::path::Path) -> Option<papertowel::recipe::Rec
 }
 
 /// Run the papertowel scan pipeline against a path and return findings as text.
-fn call_scan(args: &Value) -> Result<Value> {
-    let raw_path = args
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("invalid params: 'path' is required"))?;
+fn call_scan(args: &Value) -> Value {
+    let Some(raw_path) = args.get("path").and_then(Value::as_str) else {
+        return tool_error("invalid arguments: 'path' is required");
+    };
 
     let min_severity_str = args
         .get("min_severity")
         .and_then(Value::as_str)
         .unwrap_or("low");
 
-    let min_severity = parse_severity(min_severity_str)?;
+    let min_severity = match parse_severity(min_severity_str) {
+        Ok(severity) => severity,
+        Err(message) => return tool_error(message),
+    };
 
     let path = match validate_mcp_path(raw_path) {
         Ok(p) => p,
-        Err(msg) => return Ok(tool_error(msg)),
+        Err(msg) => return tool_error(msg),
     };
     if !path.exists() {
-        return Ok(tool_error(format!("path does not exist: {raw_path}")));
+        return tool_error(format!("path does not exist: {raw_path}"));
     }
 
     // Collect files to scan.
     let files = collect_files(&path);
     if files.is_empty() {
-        return Ok(tool_text("No analysable source files found."));
+        return tool_text("No analysable source files found.");
     }
 
     // Load recipe matcher from the path's project root (best-effort).
@@ -406,9 +423,9 @@ fn call_scan(args: &Value) -> Result<Value> {
     });
 
     if all_findings.is_empty() {
-        return Ok(tool_text(format!(
+        return tool_text(format!(
             "No findings at or above '{min_severity_str}' severity."
-        )));
+        ));
     }
 
     // Render as text.
@@ -430,27 +447,24 @@ fn call_scan(args: &Value) -> Result<Value> {
     }
     let _ = writeln!(out, "{} finding(s) total.", all_findings.len());
 
-    Ok(tool_text(out))
+    tool_text(out)
 }
 
 /// Dry-run scrub: report what lexical transforms would change.
-fn call_scrub(args: &Value) -> Result<Value> {
-    let raw_path = args
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("invalid params: 'path' is required"))?;
+fn call_scrub(args: &Value) -> Value {
+    let Some(raw_path) = args.get("path").and_then(Value::as_str) else {
+        return tool_error("invalid arguments: 'path' is required");
+    };
 
     let path = match validate_mcp_path(raw_path) {
         Ok(p) => p,
-        Err(msg) => return Ok(tool_error(msg)),
+        Err(msg) => return tool_error(msg),
     };
     if !path.exists() {
-        return Ok(tool_error(format!("path does not exist: {raw_path}")));
+        return tool_error(format!("path does not exist: {raw_path}"));
     }
     if !path.is_file() {
-        return Ok(tool_error(
-            "scrub requires a single file path, not a directory",
-        ));
+        return tool_error("scrub requires a single file path, not a directory");
     }
 
     // Run lexical, comment, and structural detectors to see what would change.
@@ -491,10 +505,10 @@ fn call_scrub(args: &Value) -> Result<Value> {
     }
 
     if findings.is_empty() {
-        return Ok(tool_text(format!(
+        return tool_text(format!(
             "No AI fingerprints detected in {}.",
             path.display()
-        )));
+        ));
     }
 
     let mut out = format!(
@@ -513,7 +527,7 @@ fn call_scrub(args: &Value) -> Result<Value> {
         }
     }
 
-    Ok(tool_text(out))
+    tool_text(out)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -600,13 +614,15 @@ fn run_detector_into(
 }
 
 /// Parse a severity string into a `Severity` value.
-fn parse_severity(s: &str) -> Result<papertowel::detection::finding::Severity> {
+fn parse_severity(
+    s: &str,
+) -> std::result::Result<papertowel::detection::finding::Severity, String> {
     match s {
         "low" => Ok(papertowel::detection::finding::Severity::Low),
         "medium" => Ok(papertowel::detection::finding::Severity::Medium),
         "high" => Ok(papertowel::detection::finding::Severity::High),
-        other => Err(anyhow::anyhow!(
-            "invalid params: unknown severity '{other}'; expected low/medium/high"
+        other => Err(format!(
+            "invalid arguments: unknown severity '{other}'; expected low/medium/high"
         )),
     }
 }
@@ -702,9 +718,70 @@ fn validate_mcp_path(raw_path: &str) -> Result<PathBuf, String> {
 mod tests {
     use std::fs;
 
+    use serde_json::json;
     use tempfile::TempDir;
 
-    use super::validate_mcp_path;
+    use super::{handle_initialize, handle_tools_list, validate_mcp_path};
+
+    #[test]
+    fn protocol_surface_for_initialize_and_tools_list_is_stable() {
+        let init = handle_initialize(Some(&json!({ "protocolVersion": "2025-11-25" })));
+
+        assert_eq!(
+            init.get("protocolVersion"),
+            Some(&json!("2025-11-25")),
+            "initialize should negotiate and return the current protocol version"
+        );
+        assert_eq!(
+            init.get("capabilities")
+                .and_then(|cap| cap.get("tools"))
+                .and_then(|tools| tools.get("listChanged")),
+            Some(&json!(false)),
+            "initialize should expose tools.listChanged capability"
+        );
+        assert_eq!(
+            init.get("serverInfo")
+                .and_then(|info| info.get("description")),
+            Some(&json!(
+                "Scan and dry-run scrub code for AI-generated fingerprint patterns."
+            )),
+            "initialize should include serverInfo.description"
+        );
+
+        let tools_list = handle_tools_list();
+        let tools = tools_list
+            .get("tools")
+            .and_then(serde_json::Value::as_array)
+            .expect("tools/list should return a tools array");
+
+        for expected_name in ["papertowel_scan", "papertowel_scrub"] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.get("name") == Some(&json!(expected_name)))
+                .expect("expected tool should be present in tools/list");
+
+            assert_eq!(
+                tool.get("annotations")
+                    .and_then(|ann| ann.get("readOnlyHint")),
+                Some(&json!(true))
+            );
+            assert_eq!(
+                tool.get("annotations")
+                    .and_then(|ann| ann.get("destructiveHint")),
+                Some(&json!(false))
+            );
+            assert_eq!(
+                tool.get("annotations")
+                    .and_then(|ann| ann.get("idempotentHint")),
+                Some(&json!(true))
+            );
+            assert_eq!(
+                tool.get("annotations")
+                    .and_then(|ann| ann.get("openWorldHint")),
+                Some(&json!(false))
+            );
+        }
+    }
 
     #[test]
     fn valid_project_path_passes() {

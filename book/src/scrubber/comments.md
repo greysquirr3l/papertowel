@@ -5,10 +5,12 @@ One of the most obvious tells of AI-generated code is the presence of comments t
 ## The "Obvious" Comment
 
 Humans generally write comments for two reasons:
+
 1. To explain a non-obvious decision.
 2. To warn future maintainers about a "gotcha."
 
 AI, however, often generates comments as a way to demonstrate that it understands the task. This results in comments like:
+
 ```rust
 fn add(a: i32, b: i32) -> i32 {
     // This function adds two integers together and returns the result
