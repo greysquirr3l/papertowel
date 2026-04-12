@@ -22,11 +22,11 @@ use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::ignore_directives;
 use crate::scrubber::{
     comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
-    structure, tests as scrubber_tests, workflow,
+    security, structure, tests as scrubber_tests, workflow,
 };
 
-use super::scan::MAX_RECIPE_SCAN_BYTES;
 use super::OutputFormat;
+use super::scan::MAX_RECIPE_SCAN_BYTES;
 
 #[derive(Debug, Args)]
 pub struct GradeArgs {
@@ -48,7 +48,7 @@ pub struct GradeArgs {
 pub fn handle(args: &GradeArgs) -> Result<()> {
     let start = Instant::now();
     let root = PathBuf::from(&args.path);
-    let (project_root, _config, ignore) = resolve_config(&root)?;
+    let (project_root, config, ignore) = resolve_config(&root)?;
 
     let baseline = StyleBaseline::load(&project_root).ok().flatten();
     let comment_config = baseline
@@ -102,6 +102,7 @@ pub fn handle(args: &GradeArgs) -> Result<()> {
             &mut findings,
             comment_config,
             recipe_matcher.as_deref(),
+            config.detectors.security,
         );
 
         if !directives.suppressed_lines.is_empty() {
@@ -187,7 +188,10 @@ fn write_grade_report(
 
     // Category table
     writeln!(out, "┌────────────────────────┬────────┬───────┐")?;
-    writeln!(out, "│ {bold}Category{reset}               │ {bold}Score{reset}  │ {bold}Grade{reset} │")?;
+    writeln!(
+        out,
+        "│ {bold}Category{reset}               │ {bold}Score{reset}  │ {bold}Grade{reset} │"
+    )?;
     writeln!(out, "├────────────────────────┼────────┼───────┤")?;
 
     for cat_score in &report.categories {
@@ -266,6 +270,7 @@ fn run_file_detectors(
     findings: &mut Vec<Finding>,
     comment_config: CommentDetectionConfig,
     recipe_matcher: Option<&RecipeMatcher>,
+    security_enabled: bool,
 ) {
     let ext = path
         .extension()
@@ -285,6 +290,10 @@ fn run_file_detectors(
         if lang == LanguageKind::Rust {
             run_detector(findings, || idiom_mismatch::detect_file(path));
         }
+    }
+
+    if security_enabled && security::is_supported_source_extension(ext) {
+        run_detector(findings, || security::detect_file(path));
     }
 
     if let Some(matcher) = recipe_matcher

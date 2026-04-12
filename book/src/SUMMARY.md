@@ -11,6 +11,7 @@ Author's note: This is the table of contents for the papertowel book.
 - [[Comment Thinning]](scrubber/comments.md)
 - [[Structural Fingerprints]](scrubber/structure.md)
 - [[Architecture Detection]](scrubber/architecture.md)
+- [[Security Vulnerabilities]](scrubber/security.md)
 - [[Recipes]](scrubber/recipes.md)
 
 ## The Wringer

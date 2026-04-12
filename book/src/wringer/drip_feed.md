@@ -13,7 +13,7 @@ When the Wringer "ticks" (either once or as a daemon):
 1. It loads the current queue.
 2. It identifies all entries where `target_time <= now`.
 3. For each eligible entry:
-    - It optionally injects **Archaeological artifacts** (see [Archaeology](#)).
+    - It optionally injects **Archaeological artifacts** (see [Archaeology](../profile/archaeology.md)).
     - It cherry-picks the source commits from the private branch.
     - It creates a new commit on the public branch with the persona-driven message and the exact `target_time` as the timestamp.
     - It marks the entry as `completed`.

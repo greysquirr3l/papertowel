@@ -45,6 +45,25 @@ The `structure` detector looks for suspiciously uniform code organization—such
 
 The `metadata` detector identifies the "instant project" syndrome: when a repository appears with a perfect `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` all in the very first commit.
 
+### Security Vulnerabilities
+
+The `security` detector flags insecure patterns frequently produced by AI code generation. It includes 15 regex-based rules covering OWASP Top 10 categories: SQL/shell injection, weak cryptography, disabled TLS verification, unsafe deserialization, hardcoded secrets, and more. Each rule carries a per-rule confidence score; see the [full rule reference](security.md) for details. See [Security Vulnerabilities](security.md) for the full rule reference.
+
+### Additional Detectors
+
+The following detectors run automatically alongside those described above. They can each be toggled individually in `.papertowel.toml` under `[detectors]`.
+
+| Detector | Category | What it detects |
+|----------|----------|-----------------|
+| `commit_pattern` | History | Machine-clean git history: perfectly uniform commit cadence, 100% conventional message format, zero recovery commits (`wip`, `oops`, `fixup`). |
+| `tests` | Testing | Missing or shallow test coverage — AI often generates a `tests/` directory with one trivial smoke test and nothing else. |
+| `workflow` | Workflow | Template-burst GitHub Actions workflows: multiple `.github/workflows/*.yml` files appearing in the first commit that contain obvious template boilerplate. |
+| `promotion` | Promotion | Disproportionate marketing language in README relative to actual codebase size — more sales copy than technical content. |
+| `maintenance` | Maintenance | Hollow repo shape: many code/config files but empty or placeholder docs, indicating a generated scaffold that was never actually used. |
+| `name_credibility` | Credibility | Generic or AI-flavoured project names (e.g. `ai-tool-app`, `nextgen-scaffold`) combined with repetitive self-promotional usage in the README. |
+| `idiom_mismatch` | Style | Language-specific idiom violations — e.g. getter/setter patterns in Rust where idiomatic code would use direct field access or a builder. |
+| `prompt` | Prompt Leakage | Residual LLM prompt fragments in source files or docs: phrases like "As an AI language model", "Assistant:", or "Let's break this down". |
+
 ## Using the Scrubber
 
 ### Scanning

@@ -20,6 +20,7 @@ pub enum FindingCategory {
     PromptLeakage,
     CommitPattern,
     Architecture,
+    Security,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

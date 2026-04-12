@@ -8,7 +8,8 @@ To solve this, `papertowel` includes a **Learn Mode**. Instead of relying on a p
 
 ### How it Works
 
-When you run `papertowel learn`, the tool performs a deep analysis of your recent commits:
+When you run `papertowel learn repo <path>`, the tool performs a deep analysis of your recent commits:
+
 1. **Temporal Analysis**: It maps out your actual active hours, productivity peaks, and session gaps.
 2. **Lexical Analysis**: It identifies the words and phrases you actually use in your commit messages.
 3. **Entropy Analysis**: It calculates your natural typo rate and your frequency of "wip" or "fix" commits.
@@ -21,9 +22,16 @@ When you then run `wring drip`, the Wringer uses this baseline instead of a gene
 
 ## Using the Baseline
 
-Once a baseline is generated, you can apply it to your project:
+Once a baseline is generated, apply it when dripping commits:
+
 ```bash
 papertowel wring drip --profile <your-baseline-name>
 ```
 
-By learning from the user's own history, `papertowel` moves from "simulating a human" to "simulating *you*."
+To inspect the stored baseline without re-running the analysis:
+
+```bash
+papertowel learn show .
+```
+
+By learning from your own history, `papertowel` moves from "simulating a human" to "simulating *you*."

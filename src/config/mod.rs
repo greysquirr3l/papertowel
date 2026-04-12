@@ -53,6 +53,7 @@ pub struct DetectorConfig {
     pub name_credibility: bool,
     pub idiom_mismatch: bool,
     pub prompt: bool,
+    pub security: bool,
 }
 
 impl Default for DetectorConfig {
@@ -71,6 +72,7 @@ impl Default for DetectorConfig {
             name_credibility: true,
             idiom_mismatch: true,
             prompt: true,
+            security: true,
         }
     }
 }

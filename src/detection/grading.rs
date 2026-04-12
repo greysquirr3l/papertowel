@@ -126,6 +126,7 @@ pub enum GradeCategory {
     Comments,
     Structure,
     Architecture,
+    Security,
     Metadata,
     Testing,
     Workflow,
@@ -136,10 +137,10 @@ impl GradeCategory {
     #[must_use]
     pub const fn weight(&self) -> f32 {
         match self {
-            Self::Lexical | Self::Architecture => 0.20,
-            Self::Comments | Self::Structure => 0.15,
-            Self::Metadata | Self::Testing | Self::History => 0.10,
-            Self::Workflow => 0.05,
+            Self::Lexical | Self::Architecture | Self::Security => 0.20,
+            Self::Comments | Self::Structure => 0.10,
+            Self::Metadata | Self::Testing | Self::History => 0.08,
+            Self::Workflow => 0.04,
         }
     }
 
@@ -151,6 +152,7 @@ impl GradeCategory {
             Self::Comments => "Comments",
             Self::Structure => "Structure",
             Self::Architecture => "Architecture",
+            Self::Security => "Security",
             Self::Metadata => "Metadata",
             Self::Testing => "Testing",
             Self::Workflow => "Workflow",
@@ -174,6 +176,7 @@ impl From<FindingCategory> for GradeCategory {
             | FindingCategory::IdiomMismatch
             | FindingCategory::PromptLeakage => Self::Structure,
             FindingCategory::Architecture => Self::Architecture,
+            FindingCategory::Security => Self::Security,
             FindingCategory::Readme
             | FindingCategory::Metadata
             | FindingCategory::Promotion
@@ -198,7 +201,11 @@ pub struct GradeReport {
 impl GradeReport {
     /// Build a grade report from scan findings.
     #[must_use]
-    pub fn from_findings(findings: &[Finding], files_scanned: usize, scan_duration_ms: u64) -> Self {
+    pub fn from_findings(
+        findings: &[Finding],
+        files_scanned: usize,
+        scan_duration_ms: u64,
+    ) -> Self {
         let mut category_findings: HashMap<GradeCategory, Vec<&Finding>> = HashMap::new();
 
         for f in findings {
@@ -215,6 +222,7 @@ impl GradeReport {
             GradeCategory::Comments,
             GradeCategory::Structure,
             GradeCategory::Architecture,
+            GradeCategory::Security,
             GradeCategory::Metadata,
             GradeCategory::Testing,
             GradeCategory::Workflow,

@@ -7,18 +7,22 @@ The behavior of the Wringer is governed by **Persona Profiles**. A profile is a 
 A profile determines not just *when* code is committed, but *how* those commits are presented.
 
 ### Schedule Configuration
+
 The `[persona.schedule]` section defines the working rhythm of the author:
+
 - `active_hours`: A list of time windows (e.g., `["09:00-17:00", "21:00-01:00"]`) when the author is active.
 - `peak_productivity`: The window where commits are most frequent.
 - `avg_commits_per_session`: How many commits typically occur in a single work session.
 - `session_variance`: The amount of randomness applied to session lengths and commit intervals.
 
 ### Message Style
+
 The `[persona.messages]` section defines the commit message aesthetic:
+
 - `style`:
-    - `conventional`: Uses the Conventional Commits specification (`feat(scope): description`).
-    - `lazy`: Uses shorthand, lowercase, and vague messages (`wip`, `fix stuff`).
-    - `mixed`: A probabilistic blend of both.
+  - `conventional`: Uses the Conventional Commits specification (`feat(scope): description`).
+  - `lazy`: Uses shorthand, lowercase, and vague messages (`wip`, `fix stuff`).
+  - `mixed`: A probabilistic blend of both.
 - `wip_frequency`: How often a commit is replaced by a "Work In Progress" message.
 - `typo_rate`: The probability that a commit message contains a simulated typo.
 - `profanity_frequency`: The probability of injecting mild frustration (`ugh`, `damn`).
@@ -34,9 +38,11 @@ The `[persona.messages]` section defines the commit message aesthetic:
 ## Creating Custom Profiles
 
 You can create your own persona using the interactive builder:
+
 ```bash
 papertowel profile create <name>
 ```
+
 Custom profiles are stored in `~/.config/papertowel/profiles/*.toml`.
 
 ## Managing Profiles

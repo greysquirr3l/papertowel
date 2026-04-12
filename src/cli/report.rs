@@ -480,6 +480,7 @@ fn category_label(c: FindingCategory) -> String {
         FindingCategory::PromptLeakage => "prompt_leakage".to_owned(),
         FindingCategory::CommitPattern => "commit_pattern".to_owned(),
         FindingCategory::Architecture => "architecture".to_owned(),
+        FindingCategory::Security => "security".to_owned(),
     }
 }
 

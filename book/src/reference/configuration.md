@@ -21,6 +21,7 @@ promotion = true
 name_credibility = true
 idiom_mismatch = true
 prompt = true
+security = true
 
 [severity]
 minimum = "medium"   # "low", "medium", or "high"

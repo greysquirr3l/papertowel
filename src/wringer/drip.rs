@@ -46,7 +46,7 @@ impl DripRunner {
             repo_root: root,
             config,
             archaeology: None,
-            rng: StdRng::from_entropy(),
+            rng: StdRng::from_os_rng(),
         })
     }
 

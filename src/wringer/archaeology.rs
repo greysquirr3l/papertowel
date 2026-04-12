@@ -44,11 +44,11 @@ pub fn inject_before_entry(
 ) -> Result<usize, PapertowelError> {
     let mut count: usize = 0;
 
-    if rng.gen_range(0.0_f32..1.0_f32) < settings.todo_inject_rate {
+    if rng.random_range(0.0_f32..1.0_f32) < settings.todo_inject_rate {
         count += inject_todo_pair(worktree_path, entry, rng)?;
     }
 
-    if rng.gen_range(0.0_f32..1.0_f32) < settings.dead_code_rate {
+    if rng.random_range(0.0_f32..1.0_f32) < settings.dead_code_rate {
         count += inject_dead_code_pair(worktree_path, entry, rng)?;
     }
 
@@ -69,7 +69,7 @@ fn inject_todo_pair(
         return Ok(0);
     }
 
-    let Some(target) = rs_files.get(rng.gen_range(0..rs_files.len())) else {
+    let Some(target) = rs_files.get(rng.random_range(0..rs_files.len())) else {
         return Ok(0); // unreachable given the empty check above
     };
     let rel = relative_to(target, worktree_path)?;
@@ -77,7 +77,7 @@ fn inject_todo_pair(
     let original =
         fs::read_to_string(target).map_err(|e| PapertowelError::io_with_path(target, e))?;
 
-    let Some(&comment) = TODO_COMMENTS.get(rng.gen_range(0..TODO_COMMENTS.len())) else {
+    let Some(&comment) = TODO_COMMENTS.get(rng.random_range(0..TODO_COMMENTS.len())) else {
         return Ok(0);
     };
     let with_todo = format!("{original}\n{comment}\n");
@@ -107,7 +107,7 @@ fn inject_dead_code_pair(
         return Ok(0);
     }
 
-    let Some(target) = rs_files.get(rng.gen_range(0..rs_files.len())) else {
+    let Some(target) = rs_files.get(rng.random_range(0..rs_files.len())) else {
         return Ok(0);
     };
     let rel = relative_to(target, worktree_path)?;
@@ -115,7 +115,8 @@ fn inject_dead_code_pair(
     let original =
         fs::read_to_string(target).map_err(|e| PapertowelError::io_with_path(target, e))?;
 
-    let Some(&snippet) = DEAD_CODE_SNIPPETS.get(rng.gen_range(0..DEAD_CODE_SNIPPETS.len())) else {
+    let Some(&snippet) = DEAD_CODE_SNIPPETS.get(rng.random_range(0..DEAD_CODE_SNIPPETS.len()))
+    else {
         return Ok(0);
     };
     let with_dead = format!("{original}{snippet}");

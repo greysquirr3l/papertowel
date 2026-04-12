@@ -181,8 +181,7 @@ pub fn detect_repo_with_config(
             ),
         )?;
         finding.suggestion = Some(
-            "Adopt a layered architecture pattern (Hexagonal, Clean Architecture, DDD)."
-                .to_owned(),
+            "Adopt a layered architecture pattern (Hexagonal, Clean Architecture, DDD).".to_owned(),
         );
         findings.push(finding);
     }
@@ -268,20 +267,20 @@ pub fn detect_repo_with_config(
     clippy::cast_sign_loss,
     reason = "max(0.0) ensures non-negative result"
 )]
-fn analyze_repo(root: &Path, config: &ArchitectureConfig) -> Result<ArchitectureMetrics, PapertowelError> {
+fn analyze_repo(
+    root: &Path,
+    config: &ArchitectureConfig,
+) -> Result<ArchitectureMetrics, PapertowelError> {
     let mut metrics = ArchitectureMetrics::default();
     let mut dir_depths: HashSet<usize> = HashSet::new();
     let mut found_layers: HashSet<String> = HashSet::new();
 
-    let trait_re = Regex::new(r"(?m)^[[:space:]]*(pub\s+)?trait\s+\w+").map_err(|e| {
-        PapertowelError::Detection(format!("invalid regex: {e}"))
-    })?;
-    let struct_re = Regex::new(r"(?m)^[[:space:]]*(pub\s+)?struct\s+\w+").map_err(|e| {
-        PapertowelError::Detection(format!("invalid regex: {e}"))
-    })?;
-    let impl_re = Regex::new(r"(?m)^[[:space:]]*impl\s+").map_err(|e| {
-        PapertowelError::Detection(format!("invalid regex: {e}"))
-    })?;
+    let trait_re = Regex::new(r"(?m)^[[:space:]]*(pub\s+)?trait\s+\w+")
+        .map_err(|e| PapertowelError::Detection(format!("invalid regex: {e}")))?;
+    let struct_re = Regex::new(r"(?m)^[[:space:]]*(pub\s+)?struct\s+\w+")
+        .map_err(|e| PapertowelError::Detection(format!("invalid regex: {e}")))?;
+    let impl_re = Regex::new(r"(?m)^[[:space:]]*impl\s+")
+        .map_err(|e| PapertowelError::Detection(format!("invalid regex: {e}")))?;
 
     for entry in WalkDir::new(root)
         .into_iter()

@@ -10,6 +10,7 @@ pub mod name_credibility;
 pub mod promotion;
 pub mod prompt;
 pub mod readme;
+pub mod security;
 pub mod structure;
 pub mod tests;
 pub mod workflow;
