@@ -17,7 +17,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Gate on release commit
+        id: gate
+        run: |
+          msg='${{ github.event.head_commit.message }}'
+          if [[ "$msg" == chore\(release\):* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Read workspace version
+        if: steps.gate.outputs.run == 'true'
         id: version
         run: |
           VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
@@ -25,6 +36,7 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag already exists
+        if: steps.gate.outputs.run == 'true'
         id: check
         run: |
           if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q .; then
@@ -34,9 +46,31 @@ jobs:
           fi
 
       - name: Push tag
-        if: steps.check.outputs.exists == 'false'
+        if: steps.gate.outputs.run == 'true' && steps.check.outputs.exists == 'false'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "${{ steps.version.outputs.tag }}"
+          if git push origin "${{ steps.version.outputs.tag }}"; then
+            echo "Pushed ${{ steps.version.outputs.tag }}"
+            exit 0
+          fi
+
+          # If a manual push raced us, treat that as success.
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "Tag ${{ steps.version.outputs.tag }} was created concurrently; continuing"
+            exit 0
+          fi
+
+          echo "Failed to push tag ${{ steps.version.outputs.tag }}"
+          exit 1
+
+      - name: Tag already exists
+        if: steps.gate.outputs.run == 'true' && steps.check.outputs.exists == 'true'
+        run: |
+          echo "Tag ${{ steps.version.outputs.tag }} already exists, skipping"
+
+      - name: Not a release commit
+        if: steps.gate.outputs.run != 'true'
+        run: |
+          echo "Skipping auto-tag: head commit is not a release commit"
