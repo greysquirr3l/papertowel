@@ -149,6 +149,7 @@ Analyzes the difference between your development branch and the public branch to
 **Options:**
 
 - `--from <branch>`: The source branch containing your development work.
+- `--profile <name>`: The persona profile to use when scheduling the replay plan.
 
 **Example:**
 
@@ -174,6 +175,10 @@ papertowel wring drip --daemon --profile night-owl
 ### `papertowel wring status`
 
 Shows the current state of the queue and the synchronization position.
+
+### `papertowel wring unlock-stale`
+
+Removes a stale drip lock file left behind by a previously crashed drip session. Safe to run while another drip is active — it only removes locks whose owning process is no longer running.
 
 ---
 
@@ -225,3 +230,31 @@ papertowel hook uninstall
 ### `papertowel hook status`
 
 Shows whether a papertowel pre-commit hook is installed, and whether the installed hook was created by papertowel or is a foreign hook.
+
+---
+
+## Learn Commands
+
+### `papertowel learn repo <path>`
+
+Analyses the git history and source files in `<path>` to produce a **Style Baseline** — a statistical model of your coding habits. The baseline is saved to `.papertowel/baseline.json` in the repo root and can be passed to `wring drip` to ensure humanized history mirrors your real style.
+
+**Arguments:**
+
+- `<path>`: Path to the repository root to analyse.
+
+**Example:**
+
+```bash
+papertowel learn repo .
+```
+
+### `papertowel learn show <path>`
+
+Displays the Style Baseline previously generated for the repository at `<path>`.
+
+**Example:**
+
+```bash
+papertowel learn show .
+```

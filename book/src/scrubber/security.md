@@ -2,7 +2,7 @@
 
 Detects common security vulnerabilities and insecure patterns frequently produced by AI code generation.
 
-The security detector runs **regex-based rules** covering OWASP Top 10 categories: injection attacks, broken authentication, insecure cryptography, unsafe deserialization, misconfiguration, and more. Each rule targets multiple languages: Rust, Go, TypeScript/TSX, JavaScript/JSX, Python, and C#.
+The security detector runs **regex-based rules** covering OWASP Top 10 categories: injection attacks, broken authentication, insecure cryptography, unsafe deserialization, misconfiguration, and more. Each rule targets multiple languages: Rust, Go, Zig, TypeScript/TSX, JavaScript/JSX, Python, and C#.
 
 ## Architecture
 
@@ -305,6 +305,7 @@ security = false
 
 - **Rust** (.rs)
 - **Go** (.go)
+- **Zig** (.zig)
 - **TypeScript/TSX** (.ts, .tsx)
 - **JavaScript/JSX** (.js, .jsx)
 - **Python** (.py)

@@ -29,6 +29,7 @@ Security detector language support:
 
 - Rust (`.rs`)
 - Go (`.go`)
+- Zig (`.zig`)
 - Python (`.py`)
 - TypeScript (`.ts`, `.tsx`)
 - JavaScript (`.js`, `.jsx`)

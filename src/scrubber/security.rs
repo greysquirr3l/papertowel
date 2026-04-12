@@ -1,6 +1,6 @@
 //! Detects common security mistakes AI models make when generating code.
 //!
-//! Covers Rust, Go, TypeScript, C#, Python, and React (JSX/TSX).
+//! Covers Rust, Go, Zig, TypeScript, C#, Python, and React (JSX/TSX).
 //!
 //! # Rule reference
 //!
@@ -30,7 +30,7 @@ use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "security";
 pub const SUPPORTED_SOURCE_EXTENSIONS: &[&str] =
-    &["rs", "go", "py", "ts", "tsx", "js", "jsx", "cs"];
+    &["rs", "go", "zig", "py", "ts", "tsx", "js", "jsx", "cs"];
 
 #[must_use]
 pub fn is_supported_source_extension(ext: &str) -> bool {
