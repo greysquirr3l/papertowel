@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-12
+
 ### Added
 
 - **MCP protocol regression coverage** in `papertowel-mcp` to lock down initialization and tool-surface fields:
@@ -16,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `"type": "stdio"`
   - `"command": "papertowel-mcp"`
   - `"env": { "RUST_LOG": "info" }`
+- **Explainability output** for scan and grade workflows:
+  - `--explain` support surfaces per-category contribution details
+  - report output includes explainability attribution and confidence contributions
+- **Detector calibration workflow** via `papertowel calibrate`:
+  - computes project-specific recommendations from observed findings and optional learning baseline
+  - optional recommendation file output for tuning follow-up
+- **Mixed-content analysis mode** for hybrid human+AI files:
+  - conservative segment-based aggregation/deduplication to reduce over-counting clustered findings
+  - shared collection path reused across scan/grade/calibrate/eval commands
+- **Evaluation harness** via `papertowel eval`:
+  - fixture-based confusion matrix output with precision, recall, and accuracy
+  - supports mixed-content mode during evaluation for like-for-like detector comparisons
 
 ### Changed
 
@@ -24,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `serverInfo.description` included in initialize result
 - `tools/list` now emits explicit tool safety annotations for both MCP tools.
 - CLI top-level help now shows descriptions for all subcommands (`scan`, `calibrate`, `eval`, `scrub`, `grade`, `wring`, `clean`, `learn`, `profile`, `recipe`, `hook`) for better discoverability.
+- CLI surface expanded with `calibrate` and `eval` subcommands; top-level help now documents these workflows alongside existing commands.
 
 ### Documentation
 

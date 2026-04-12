@@ -28,7 +28,7 @@ suspicious          = { level = "deny", priority = -1 }
 
 [package]
 name = "papertowel"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "AI code fingerprint scrubber and git history humanizer"
