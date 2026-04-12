@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-04-12
+
+### Fixed
+
+- **`#[error(...)]` and other Rust attributes stripped by scrub** ([#4](https://github.com/greysquirr3l/papertowel/pull/4)) — `is_comment_line` was treating any line starting with `#` as a comment. Rust inner (`#![...]`) and outer (`#[...]`) attributes are now excluded, so `#[derive(...)]`, `#[error(...)]`, `#[from]`, and any other attribute are preserved intact by both `transform_text` and `analyze_comments`.
+
 ## [0.3.2] — 2026-04-12
 
 ### Added

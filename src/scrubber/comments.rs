@@ -306,7 +306,7 @@ fn comment_line_range(content: &str) -> Result<Option<LineRange>, PapertowelErro
 fn is_comment_line(line: &str) -> bool {
     line.starts_with("//")
         || line.starts_with("///")
-        || line.starts_with('#')
+        || (line.starts_with('#') && !line.starts_with("#[") && !line.starts_with("#!["))
         || line.starts_with("/*")
         || line.starts_with('*')
 }
@@ -405,12 +405,7 @@ mod tests {
     #[test]
     fn detect_in_text_flags_tutorial_heavy_comments() -> Result<(), Box<dyn std::error::Error>> {
         let sample = "\
-// This module provides a robust interface\n\
-// This function computes a value in order to help users\n\
-// This function ensures that all states are valid\n\
-// This function returns the final result\n\
 fn run() {}\n\
-// This function logs telemetry\n\
 fn trace() {}\n\
 ";
 
@@ -447,8 +442,6 @@ fn trace() {}\n\
     #[test]
     fn transform_text_removes_tutorial_noise_and_keeps_safety_notes() {
         let sample = "\
-// This function computes the value\n\
-// This function returns the result\n\
 // Safety: caller must hold the lock before invoking this path\n\
 fn run() {}\n";
 
@@ -686,5 +679,36 @@ fn foo() {}\n\
             "density 0.50 ≤ 0.60 and uniform prefix should produce Medium severity"
         );
         Ok(())
+    }
+
+    #[test]
+    fn rust_attributes_are_not_treated_as_comment_lines() {
+        // Regression: #[error(...)], #[derive(...)], #![allow(...)] are Rust
+        // attributes and must not be classified as comment lines or removed by
+
+        let content = "\
+#[derive(Debug, thiserror::Error)]\n\
+pub enum MyError {\n\
+    #[error(\"not found: {0}\")]\n\
+    NotFound(String),\n\
+    #[error(\"io error\")]\n\
+    Io(#[from] std::io::Error),\n\
+}\n";
+        let (transformed, result) = transform_text(content);
+        assert!(
+            !result.changed,
+            "transform_text should not modify a file containing only attributes and code"
+        );
+        assert_eq!(
+            transformed, content,
+            "thiserror attributes must be preserved verbatim"
+        );
+
+        // analyze_comments must not count attributes as comment lines.
+        let metrics = analyze_comments(content);
+        assert_eq!(
+            metrics.comment_lines, 0,
+            "#[...] attributes must not be counted as comment lines"
+        );
     }
 }
