@@ -591,10 +591,7 @@ fn call_grade(args: &Value) -> Value {
 
     let mut out = format!(
         "Grade: {} (score {:.1})\nFiles: {}  Findings: {}\n",
-        report.overall_grade,
-        report.overall_score,
-        report.files_scanned,
-        report.total_findings,
+        report.overall_grade, report.overall_score, report.files_scanned, report.total_findings,
     );
 
     if explain {
