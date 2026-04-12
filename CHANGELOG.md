@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Added `rustfmt.toml` (`edition = "2024"`, `max_width = 100`) — project-wide formatter config.
+
 ## [0.3.3] — 2026-04-12
 
 ### Fixed
