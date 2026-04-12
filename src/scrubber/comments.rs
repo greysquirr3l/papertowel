@@ -306,7 +306,7 @@ fn comment_line_range(content: &str) -> Result<Option<LineRange>, PapertowelErro
 fn is_comment_line(line: &str) -> bool {
     line.starts_with("//")
         || line.starts_with("///")
-        || line.starts_with('#')
+        || (line.starts_with('#') && !line.starts_with("#[") && !line.starts_with("#!["))
         || line.starts_with("/*")
         || line.starts_with('*')
 }
@@ -599,6 +599,41 @@ fn foo() {}\n\
         // File should still exist and be readable.
         let _ = fs::read_to_string(&file_path)?;
         Ok(())
+    }
+
+    #[test]
+    fn transform_text_preserves_thiserror_error_attributes() {
+        // Regression: #[error(...)] is a required thiserror derive-macro attribute,
+        // not a documentation comment, and must never be removed.
+        let content = "\
+#[derive(Debug, thiserror::Error)]\n\
+pub enum MyError {\n\
+    /// TOML deserialization failed\n\
+    #[error(\"TOML parse error: {0}\")]\n\
+    ParseError(#[from] toml::de::Error),\n\
+\n\
+    /// Navigation failed\n\
+    #[error(\"Navigation to '{url}' failed: {reason}\")]\n\
+    NavigationFailed { url: String, reason: String },\n\
+}\n\
+";
+        let (transformed, _result) = transform_text(content);
+        assert!(
+            transformed.contains("#[error(\"TOML parse error: {0}\")]"),
+            "thiserror #[error] attribute must be preserved"
+        );
+        assert!(
+            transformed.contains("#[error(\"Navigation to '{url}' failed: {reason}\")]"),
+            "thiserror #[error] attribute with 'to' keyword must be preserved"
+        );
+        assert!(
+            transformed.contains("#[derive(Debug, thiserror::Error)]"),
+            "#[derive] attribute must be preserved"
+        );
+        assert!(
+            transformed.contains("#[from]"),
+            "#[from] attribute must be preserved"
+        );
     }
 
     #[test]
