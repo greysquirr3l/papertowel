@@ -8,7 +8,7 @@ The security detector runs **regex-based rules** covering OWASP Top 10 categorie
 
 - **15 rules** (SEC001–SEC015) covering high-frequency AI security anti-patterns
 - **Regex-based detection** with per-rule confidence scores (0.68–0.90)
-- **Per-language filtering** — each rule specifies target file extensions
+- **Per-language filtering** — most rules target specific extensions; rules with no explicit extensions apply to all supported source languages
 - **Compiled once, reused per file** — regexes cached in `LazyLock` for performance (no per-file recompilation)
 - **Cross-platform path handling** — uses `Path::components()` instead of string contains for Windows compatibility
 
@@ -28,7 +28,7 @@ cursor.execute(f"SELECT * FROM users WHERE name = {name}")
 cursor.execute("SELECT * FROM users WHERE name = ?", (name,))
 ```
 
-**Suggestion:** Use parameterised queries (prepared statements) for SQL. For shell commands, use an argument list API (`Process::Command`, `subprocess.run([...])`) instead of string interpolation.
+**Suggestion:** Use parameterised queries (prepared statements) for SQL. For shell commands, use an argument list API (`std::process::Command`, `subprocess.run([...])`) instead of string interpolation.
 
 ---
 

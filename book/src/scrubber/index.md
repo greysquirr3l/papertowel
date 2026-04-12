@@ -47,7 +47,7 @@ The `metadata` detector identifies the "instant project" syndrome: when a reposi
 
 ### Security Vulnerabilities
 
-The `security` detector flags insecure patterns frequently produced by AI code generation. It includes 15 regex-based rules covering OWASP Top 10 categories: SQL/shell injection, weak cryptography, disabled TLS verification, unsafe deserialization, hardcoded secrets, and more. Each rule produces a high-confidence finding when it matches. See [Security Vulnerabilities](security.md) for the full rule reference.
+The `security` detector flags insecure patterns frequently produced by AI code generation. It includes 15 regex-based rules covering OWASP Top 10 categories: SQL/shell injection, weak cryptography, disabled TLS verification, unsafe deserialization, hardcoded secrets, and more. Each rule carries a per-rule confidence score; see the [full rule reference](security.md) for details. See [Security Vulnerabilities](security.md) for the full rule reference.
 
 ### Additional Detectors
 

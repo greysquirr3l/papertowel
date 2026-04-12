@@ -219,7 +219,7 @@ fn run_file_detectors(
         run_detector(findings, || security::detect_file(path));
     }
 
-    // Run recipe-based detection on text files.
+    // Run recipe-based detection on text files under the size limit. Skip
     // binaries, compiled objects, and other large assets.
     if let Some(matcher) = recipe_matcher
         && path

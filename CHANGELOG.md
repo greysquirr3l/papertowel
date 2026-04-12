@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cross-language support: Rust, Go, TypeScript/TSX, JavaScript/JSX, Python, C#
   - Regex-based detection with per-rule confidence scoring
   - Performance optimization: regexes compiled once at startup and cached in `LazyLock`
-- Security category added to `FindingCategory` and enabled by default in `.papertowel.toml`
+- Security category added to `FindingCategory`; enabled by default, disable via `[detectors] security = false` in `.papertowel.toml`
 - **`papertowel grade` command**: Get a letter grade (A+ to F) for your project's AI fingerprint level. Lower slop = better grade. Supports `--min-grade` for CI gating and `--format json` for automation. Inspired by [vibescore](https://github.com/chand1012/vibescore).
 - **Architecture detector**: New detector category analyzing code organization patterns:
   - **ARCH001**: Flat module structure (no meaningful subdirectories)

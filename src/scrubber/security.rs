@@ -9,14 +9,17 @@
 //! | SEC001  | Injection        | String-interpolated SQL / shell commands             |
 //! | SEC002  | Injection        | `eval()` / `exec()` with dynamic input               |
 //! | SEC003  | Secrets          | Hardcoded secrets, API keys, or passwords            |
+//! | SEC004  | Cryptography     | Weak or broken crypto algorithm (MD5, SHA-1, etc.)  |
 //! | SEC005  | Auth             | Disabled TLS verification                            |
 //! | SEC006  | Auth             | JWT `alg: none` / signature not verified             |
 //! | SEC007  | Input            | `dangerouslySetInnerHTML` (XSS in React)             |
 //! | SEC008  | Input            | Path traversal without sanitisation                  |
+//! | SEC009  | Logging          | Logging credentials or secrets                       |
 //! | SEC010  | Misconfiguration | Debug mode / verbose errors in prod                  |
 //! | SEC011  | Randomness       | Non-CSPRNG used for security-sensitive values        |
 //! | SEC012  | Deserialisation  | Unsafe deserialisation (pickle, yaml.load, etc.)     |
 //! | SEC013  | SSRF             | Raw user-controlled URL fetched without allow-list   |
+//! | SEC014  | Cryptography     | Hardcoded IV or nonce for symmetric encryption       |
 //! | SEC015  | Auth             | TODO/FIXME in authentication or authorisation logic  |
 
 use std::fs;
@@ -90,7 +93,7 @@ static RULES: &[Rule] = &[
         suggestion: "Load secrets from environment variables or a secrets manager. \
                      Rotate any committed credentials immediately.",
         extensions: &[],
-        pattern: r#"(?i)(?:password|passwd|secret|api_key|apikey|auth_token|access_token|private_key|client_secret)\s*[:=]\s*["'][^"'\s]{6,}["']"#,
+        pattern: r#"(?i)(?:password|passwd|secret|api_key|apikey|auth_token|access_token|private_key|client_secret)\s*(?::=|[:=])\s*["'][^"'\s]{6,}["']"#,
         ignore_case: true,
     },
     Rule {
@@ -157,7 +160,7 @@ static RULES: &[Rule] = &[
         suggestion: "Canonicalise the resolved path and assert it remains within an allowed base \
                      directory before opening the file. Reject paths containing '..' components.",
         extensions: &["rs", "go", "ts", "tsx", "cs", "py"],
-        pattern: r"(?:open|read_to_string|File::open|os\.Open|fs\.readFile|File\.Open|open\s*\()\s*\([^)]*(?:req\.|request\.|params\.|query\.|body\.)[a-z_]+[^)]*\)",
+        pattern: r"(?:open|read_to_string|File::open|os\.Open|fs\.readFile|File\.Open)\s*\([^)]*(?:req\.|request\.|params\.|query\.|body\.)[a-z_]+[^)]*\)",
         ignore_case: false,
     },
     // ── SEC009 · logging credentials ──────────────────────────────────────────
@@ -298,17 +301,7 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
         return Ok(Vec::new());
     }
 
-    let content = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::debug!("security: skipping {}: {e}", path.display());
-            return Ok(Vec::new());
-        }
-    };
-
-    let mut findings = Vec::new();
-
-    // Skip obviously non-source files (lock files, generated assets, etc.).
+    // Skip generated/vendor directories and minified assets before reading the file.
     let skip_dirs = ["target", "vendor", "node_modules", ".git"];
     if path.components().any(|c| {
         c.as_os_str()
@@ -325,6 +318,16 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
     {
         return Ok(Vec::new());
     }
+
+    let content = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("security: could not read {}: {e}", path.display());
+            return Ok(Vec::new());
+        }
+    };
+
+    let mut findings = Vec::new();
 
     for (rule, re) in RULES.iter().zip(COMPILED_RULES.iter()) {
         let rule_extensions = if rule.extensions.is_empty() {
@@ -515,6 +518,34 @@ mod tests {
     #[test]
     fn sec013_ssrf_user_url() {
         check("const resp = await fetch(req.query.url);", "ts", "SEC013");
+    }
+
+    #[test]
+    fn sec001_sql_injection_python_single_quote() {
+        check(
+            "cursor.execute(f'SELECT * FROM users WHERE name = {name}')",
+            "py",
+            "SEC001",
+        );
+    }
+
+    #[test]
+    fn sec002_exec_dynamic() {
+        check("exec(user_code)", "py", "SEC002");
+    }
+
+    #[test]
+    fn sec003_go_short_decl() {
+        check("password := \"s3cr3tP@ss!\"", "go", "SEC003");
+    }
+
+    #[test]
+    fn sec008_no_path_traversal_fixed_path() {
+        check_no_finding(
+            "let file = std::fs::File::open(\"/fixed/path/file.txt\")?;",
+            "rs",
+            "SEC008",
+        );
     }
 
     #[test]
