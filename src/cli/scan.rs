@@ -211,8 +211,11 @@ fn run_file_detectors(
         if lang == LanguageKind::Rust {
             run_detector(findings, || idiom_mismatch::detect_file(path));
         }
-        run_detector(findings, || security::detect_file(path));
     }
+
+    // Security detection runs for all source extensions (including js/jsx which
+    // detect_file() handles its own extension and skip-dir filtering.
+    run_detector(findings, || security::detect_file(path));
 
     // Run recipe-based detection on text files.
     // binaries, compiled objects, and other large assets.

@@ -1,25 +1,27 @@
-//!
 //! Detects common security mistakes AI models make when generating code.
 //!
-//! code across Rust, Go, TypeScript, C#, Python, and React (JSX/TSX).
+//! Covers Rust, Go, TypeScript, C#, Python, and React (JSX/TSX).
 //!
 //! # Rule reference
 //!
-//! | ID      | Category       | What it catches                                      |
-//! |---------|----------------|------------------------------------------------------|
-//! | SEC001  | Injection      | String-interpolated SQL / shell commands             |
-//! | SEC002  | Injection      | `eval()` / `exec()` with dynamic input               |
-//! | SEC005  | Auth           | Disabled TLS verification                           |
-//! | SEC006  | Auth           | JWT `alg: none` / signature not verified             |
-//! | SEC007  | Input          | `dangerouslySetInnerHTML` (XSS in React)             |
-//! | SEC008  | Input          | Path traversal without sanitisation                  |
-//! | SEC010  | Misconfiguration | Debug mode / verbose errors in prod               |
-//! | SEC011  | Randomness     | Non-CSPRNG used for security-sensitive values        |
-//! | SEC013  | SSRF           | Raw user-controlled URL fetched without allow-list   |
-//! | SEC015  | Auth           | TODO/FIXME in authentication or authorisation logic  |
+//! | ID      | Category         | What it catches                                      |
+//! |---------|------------------|------------------------------------------------------|
+//! | SEC001  | Injection        | String-interpolated SQL / shell commands             |
+//! | SEC002  | Injection        | `eval()` / `exec()` with dynamic input               |
+//! | SEC003  | Secrets          | Hardcoded secrets, API keys, or passwords            |
+//! | SEC005  | Auth             | Disabled TLS verification                            |
+//! | SEC006  | Auth             | JWT `alg: none` / signature not verified             |
+//! | SEC007  | Input            | `dangerouslySetInnerHTML` (XSS in React)             |
+//! | SEC008  | Input            | Path traversal without sanitisation                  |
+//! | SEC010  | Misconfiguration | Debug mode / verbose errors in prod                  |
+//! | SEC011  | Randomness       | Non-CSPRNG used for security-sensitive values        |
+//! | SEC012  | Deserialisation  | Unsafe deserialisation (pickle, yaml.load, etc.)     |
+//! | SEC013  | SSRF             | Raw user-controlled URL fetched without allow-list   |
+//! | SEC015  | Auth             | TODO/FIXME in authentication or authorisation logic  |
 
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
@@ -54,7 +56,7 @@ static RULES: &[Rule] = &[
                      For shell commands use an argument list API (e.g. std::process::Command, subprocess.run([...])). \
                      Never interpolate untrusted data into a command string.",
         extensions: &["rs", "go", "ts", "tsx", "cs", "py"],
-        pattern: r#"(?i)(?:format!|fmt\.Sprintf|string\.Format|f")\s*\(?\s*["']?\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|EXECUTE|CALL)\s[^"'\n]*(?:\{\d*\}|%[sdvf]|\{[a-z_]+\})[^"'\n]*["']?"#,
+        pattern: r#"(?i)(?:format!|fmt\.Sprintf|string\.Format|(?:f"|f'))\s*\(?\s*["']?\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|EXECUTE|CALL)\s[^"'\n]*(?:\{\d*\}|%[sdvf]|\{[a-z_]+\})[^"'\n]*["']?"#,
         ignore_case: true,
     },
     // ── SEC002 · eval / exec with dynamic data ───────────────────────────────
@@ -63,11 +65,11 @@ static RULES: &[Rule] = &[
         severity: Severity::High,
         confidence: 0.85,
         description: "Dynamic code execution via eval() or exec() with a non-literal argument. \
-                       AI often reaches for eval as the simplest dynamic-dispatch solution.",
+                       AI often reaches for eval or exec as the simplest dynamic-dispatch solution.",
         suggestion: "Replace with a safe alternative (a dispatch table, match statement, \
                      or a proper plugin API) that does not execute arbitrary code.",
         extensions: &["ts", "tsx", "py", "js"],
-        pattern: r"\beval\s*\(\s*(?:[a-zA-Z_$][a-zA-Z0-9_$]*|`[^`]*\$\{)",
+        pattern: r"\b(?:eval|exec)\s*\(\s*(?:[a-zA-Z_$][a-zA-Z0-9_$]*|`[^`]*\$\{)",
         ignore_case: false,
     },
     // ── SEC003 · hardcoded secrets ────────────────────────────────────────────
@@ -249,6 +251,21 @@ static RULES: &[Rule] = &[
     },
 ];
 
+// ─── Compiled rules (built once, reused across all files) ───────────────────
+
+static COMPILED_RULES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    RULES
+        .iter()
+        .map(|r| {
+            regex::RegexBuilder::new(r.pattern)
+                .case_insensitive(r.ignore_case)
+                .multi_line(true)
+                .build()
+                .unwrap_or_else(|e| panic!("SEC regex compile error [{}]: {e}", r.id))
+        })
+        .collect()
+});
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /// Scan a single file for security findings.
@@ -259,32 +276,35 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
         .unwrap_or_default()
         .to_lowercase();
 
-    let Ok(content) = fs::read_to_string(path) else {
-        return Ok(Vec::new()); // Binary or unreadable: skip
+    let content = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::debug!("security: skipping {}: {e}", path.display());
+            return Ok(Vec::new());
+        }
     };
 
     let mut findings = Vec::new();
 
-    for rule in RULES {
+    // Skip obviously non-source files (lock files, generated assets, etc.).
+    let skip_dirs = ["target", "vendor", "node_modules", ".git"];
+    if path
+        .components()
+        .any(|c| c.as_os_str().to_str().is_some_and(|s| skip_dirs.contains(&s)))
+        || path.extension().and_then(|e| e.to_str()).is_some_and(|e| e == "lock")
+        || path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|f| f.ends_with(".min.js") || f.ends_with(".min.css"))
+    {
+        return Ok(Vec::new());
+    }
+
+    for (rule, re) in RULES.iter().zip(COMPILED_RULES.iter()) {
         // Check extension filter
         if !rule.extensions.is_empty() && !rule.extensions.contains(&ext.as_str()) {
             continue;
         }
-
-        // Skip obviously non-source files (lock files, generated assets, etc.)
-        let path_str = path.to_string_lossy();
-        if path_str.contains("/target/")
-            || path_str.contains("/vendor/")
-            || path_str.contains("/node_modules/")
-            || path_str.contains("/.git/")
-            || path_str.ends_with(".lock")
-            || path_str.ends_with(".min.js")
-            || path_str.ends_with(".min.css")
-        {
-            continue;
-        }
-
-        let re = build_regex(rule)?;
 
         for (line_idx, line) in content.lines().enumerate() {
             if re.is_match(line) {
@@ -307,16 +327,6 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
     findings.dedup_by(|a, b| a.id == b.id && a.line_range == b.line_range);
 
     Ok(findings)
-}
-
-fn build_regex(rule: &Rule) -> Result<Regex, PapertowelError> {
-    regex::RegexBuilder::new(rule.pattern)
-        .case_insensitive(rule.ignore_case)
-        .multi_line(true)
-        .build()
-        .map_err(|e| {
-            PapertowelError::Detection(format!("SEC regex compile error [{}]: {e}", rule.id))
-        })
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -461,6 +471,24 @@ mod tests {
     #[test]
     fn sec014_hardcoded_iv_zero() {
         check("iv = b\"0000000000000000\"", "py", "SEC014");
+    }
+
+    #[test]
+    fn sec008_path_traversal_request_param() {
+        check(
+            "let file = std::fs::File::open(req.params.filename)?;",
+            "rs",
+            "SEC008",
+        );
+    }
+
+    #[test]
+    fn sec013_ssrf_user_url() {
+        check(
+            "const resp = await fetch(req.query.url);",
+            "ts",
+            "SEC013",
+        );
     }
 
     #[test]
