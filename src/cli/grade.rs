@@ -25,8 +25,8 @@ use crate::scrubber::{
     structure, tests as scrubber_tests, workflow,
 };
 
-use super::scan::MAX_RECIPE_SCAN_BYTES;
 use super::OutputFormat;
+use super::scan::MAX_RECIPE_SCAN_BYTES;
 
 #[derive(Debug, Args)]
 pub struct GradeArgs {
@@ -187,7 +187,10 @@ fn write_grade_report(
 
     // Category table
     writeln!(out, "┌────────────────────────┬────────┬───────┐")?;
-    writeln!(out, "│ {bold}Category{reset}               │ {bold}Score{reset}  │ {bold}Grade{reset} │")?;
+    writeln!(
+        out,
+        "│ {bold}Category{reset}               │ {bold}Score{reset}  │ {bold}Grade{reset} │"
+    )?;
     writeln!(out, "├────────────────────────┼────────┼───────┤")?;
 
     for cat_score in &report.categories {

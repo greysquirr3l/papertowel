@@ -201,7 +201,11 @@ pub struct GradeReport {
 impl GradeReport {
     /// Build a grade report from scan findings.
     #[must_use]
-    pub fn from_findings(findings: &[Finding], files_scanned: usize, scan_duration_ms: u64) -> Self {
+    pub fn from_findings(
+        findings: &[Finding],
+        files_scanned: usize,
+        scan_duration_ms: u64,
+    ) -> Self {
         let mut category_findings: HashMap<GradeCategory, Vec<&Finding>> = HashMap::new();
 
         for f in findings {
