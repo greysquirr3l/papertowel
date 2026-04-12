@@ -22,6 +22,7 @@ promotion        = true   # Marketing / superlative language in code comments
 name_credibility = true   # Implausible or generic identifier naming
 idiom_mismatch   = true   # Language idioms that don't match the project's style
 prompt           = true   # Probable prompt-leakage markers in source text
+security         = true   # Security anti-patterns in supported source languages
 
 # ── Severity ──────────────────────────────────────────────────────────────────
 # Minimum severity level to include in scan output and exit-code evaluation.

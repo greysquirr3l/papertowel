@@ -29,6 +29,14 @@ use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "security";
+pub const SUPPORTED_SOURCE_EXTENSIONS: &[&str] =
+    &["rs", "go", "py", "ts", "tsx", "js", "jsx", "cs"];
+
+#[must_use]
+pub fn is_supported_source_extension(ext: &str) -> bool {
+    let normalized = ext.to_ascii_lowercase();
+    SUPPORTED_SOURCE_EXTENSIONS.contains(&normalized.as_str())
+}
 
 // ─── Rule definitions ─────────────────────────────────────────────────────────
 
@@ -286,6 +294,10 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
         .unwrap_or_default()
         .to_lowercase();
 
+    if !is_supported_source_extension(&ext) {
+        return Ok(Vec::new());
+    }
+
     let content = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -315,8 +327,12 @@ pub fn detect_file(path: &Path) -> Result<Vec<Finding>, PapertowelError> {
     }
 
     for (rule, re) in RULES.iter().zip(COMPILED_RULES.iter()) {
-        // Check extension filter
-        if !rule.extensions.is_empty() && !rule.extensions.contains(&ext.as_str()) {
+        let rule_extensions = if rule.extensions.is_empty() {
+            SUPPORTED_SOURCE_EXTENSIONS
+        } else {
+            rule.extensions
+        };
+        if !rule_extensions.contains(&ext.as_str()) {
             continue;
         }
 

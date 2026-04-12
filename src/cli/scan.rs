@@ -72,7 +72,7 @@ fn load_recipe_matcher(project_root: &Path) -> Option<Arc<RecipeMatcher>> {
 
 pub fn handle(args: &ScanArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
-    let (project_root, _config, ignore) = resolve_config(&root)?;
+    let (project_root, config, ignore) = resolve_config(&root)?;
 
     let (effective_fail_on, effective_format) = effective_ci_settings(args);
 
@@ -140,6 +140,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
             &mut findings,
             comment_config,
             recipe_matcher.as_deref(),
+            config.detectors.security,
         );
 
         if !directives.suppressed_lines.is_empty() {
@@ -192,6 +193,7 @@ fn run_file_detectors(
     findings: &mut Vec<Finding>,
     comment_config: CommentDetectionConfig,
     recipe_matcher: Option<&RecipeMatcher>,
+    security_enabled: bool,
 ) {
     let ext = path
         .extension()
@@ -213,9 +215,9 @@ fn run_file_detectors(
         }
     }
 
-    // Security detection runs for all source extensions (including js/jsx which
-    // detect_file() handles its own extension and skip-dir filtering.
-    run_detector(findings, || security::detect_file(path));
+    if security_enabled && security::is_supported_source_extension(ext) {
+        run_detector(findings, || security::detect_file(path));
+    }
 
     // Run recipe-based detection on text files.
     // binaries, compiled objects, and other large assets.

@@ -210,6 +210,12 @@ jobs:
         run: cargo build --release -p papertowel
 
       - name: Run papertowel scan
-        run: ./target/release/papertowel scan ./src --ci --fail-on high
+        run: |
+          scan_path="."
+          if [ -d "./src" ]; then
+            scan_path="./src"
+          fi
+          echo "Scanning path: ${scan_path}"
+          ./target/release/papertowel scan "${scan_path}" --ci --fail-on high
         # Fails CI if any high-severity AI fingerprints are found.
         # Medium findings are reported but do not block merges.
