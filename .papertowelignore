@@ -6,10 +6,15 @@ src/scrubber/prompt.rs
 src/scrubber/readme.rs
 src/scrubber/structure.rs
 src/scrubber/promotion.rs
+src/scrubber/security.rs
 src/learning/learner.rs
 src/cli/scrub.rs
 src/cli/hook.rs
 src/recipe/scrubber.rs
+
+# Test fixtures intentionally contain slop/security patterns
+tests/fixtures/slop_repo/
+tests/fixtures/template_repo/
 
 # Recipe definition files contain the patterns we detect — exclude them
 src/recipes/*.toml
