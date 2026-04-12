@@ -20,8 +20,6 @@
 //! | `papertowel_scan` | Scan a path for AI-fingerprint findings |
 //! | `papertowel_scrub` | Dry-run scrub: show what would be changed |
 
-#![allow(clippy::multiple_crate_versions)]
-
 use std::fmt::Write as _;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Upgraded `rand` from 0.8 to 0.9 to resolve RUSTSEC-2026-0097 (potential unsoundness in `ThreadRng` with custom loggers)
+- Upgraded `dirs` from 5 to 6 (routine semver bump; no API changes used by this project)
 
 ## [0.1.5] — 2026-04-10
 
