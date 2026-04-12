@@ -45,6 +45,10 @@ The `structure` detector looks for suspiciously uniform code organization—such
 
 The `metadata` detector identifies the "instant project" syndrome: when a repository appears with a perfect `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` all in the very first commit.
 
+### Security Vulnerabilities
+
+The `security` detector flags insecure patterns frequently produced by AI code generation. It includes 15 regex-based rules covering OWASP Top 10 categories: SQL/shell injection, weak cryptography, disabled TLS verification, unsafe deserialization, hardcoded secrets, and more. Each rule produces a high-confidence finding when it matches. See [Security Vulnerabilities](security.md) for the full rule reference.
+
 ## Using the Scrubber
 
 ### Scanning

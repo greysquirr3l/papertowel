@@ -256,7 +256,6 @@ mod tests {
     };
 
     #[test]
-    #[ignore = "requires local git workspace with commit history; run with --include-ignored"]
     fn handle_queue_returns_ok_on_current_branch() {
         // Runs against the workspace git repo; detects current branch and builds
         // a wring queue. Run locally with: cargo test -- --include-ignored
@@ -268,7 +267,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires local git workspace with commit history; run with --include-ignored"]
     fn handle_queue_with_from_branch_returns_ok() {
         let args = QueueArgs {
             from: Some(String::from("main")),
