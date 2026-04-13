@@ -7,15 +7,13 @@ use crate::domain::errors::PapertowelError;
 
 pub const DETECTOR_NAME: &str = "comments";
 
-const TUTORIAL_PHRASES: [&str; 8] = [
+const TUTORIAL_PHRASES: [&str; 6] = [
     "this function",
     "this module",
     "helper to",
     "we can see",
     "as mentioned",
-    "to",
     "this ensures",
-    "for",
 ];
 
 const PRESERVE_COMMENT_HINTS: [&str; 12] = [
@@ -56,7 +54,13 @@ impl Default for CommentDetectionConfig {
 pub struct CommentMetrics {
     pub non_empty_lines: usize,
     pub comment_lines: usize,
+    /// Subset of `comment_lines` that are doc comments (`///` or `//!`).
+    /// Used to distinguish API documentation from inline narration.
+    pub doc_comment_lines: usize,
     pub density: f32,
+    /// Comment density computed from inline-only comments (excludes `///`/`//!`).
+    /// Used for the over-documentation check to avoid flagging API libraries.
+    pub inline_density: f32,
     pub tutorial_phrase_hits: usize,
     pub dominant_prefix_ratio: f32,
 }
@@ -97,7 +101,7 @@ pub fn detect_in_text(
         return Ok(Vec::new());
     }
 
-    let over_dense = analysis.density >= config.high_density_threshold;
+    let over_dense = analysis.inline_density >= config.high_density_threshold;
     let tutorial_heavy = analysis.tutorial_phrase_hits >= config.tutorial_phrase_threshold;
     let uniform = analysis.dominant_prefix_ratio >= config.uniform_prefix_threshold;
 
@@ -124,8 +128,8 @@ pub fn detect_in_text(
 
     let line_range = comment_line_range(content)?;
     let description = format!(
-        "Detected over-documentation pattern: comment density {:.2}, tutorial-style hits {}, dominant prefix ratio {:.2}",
-        analysis.density, analysis.tutorial_phrase_hits, analysis.dominant_prefix_ratio
+        "Detected over-documentation pattern: inline comment density {:.2}, tutorial-style hits {}, dominant prefix ratio {:.2}",
+        analysis.inline_density, analysis.tutorial_phrase_hits, analysis.dominant_prefix_ratio
     );
 
     let mut finding = Finding::new(
@@ -231,6 +235,7 @@ pub fn transform_text(content: &str) -> (String, CommentTransformResult) {
 pub fn analyze_comments(content: &str) -> CommentMetrics {
     let mut non_empty_lines = 0_usize;
     let mut comment_lines = 0_usize;
+    let mut doc_comment_lines = 0_usize;
     let mut tutorial_phrase_hits = 0_usize;
     let mut prefix_counts: HashMap<String, usize> = HashMap::new();
 
@@ -246,13 +251,22 @@ pub fn analyze_comments(content: &str) -> CommentMetrics {
         }
 
         comment_lines += 1;
-        let lowered = trimmed.to_ascii_lowercase();
+        let is_doc = is_doc_comment_line(trimmed);
+        if is_doc {
+            doc_comment_lines += 1;
+        }
 
-        if TUTORIAL_PHRASES
-            .iter()
-            .any(|phrase| lowered.contains(phrase))
-        {
-            tutorial_phrase_hits += 1;
+        // Only flag tutorial phrases on inline comments (`//`), not on API doc
+        // comments (`///`/`//!`). A well-documented library naturally uses
+        // phrases like "this function" or "this module" in its public docs.
+        if !is_doc {
+            let lowered = trimmed.to_ascii_lowercase();
+            if TUTORIAL_PHRASES
+                .iter()
+                .any(|phrase| lowered.contains(phrase))
+            {
+                tutorial_phrase_hits += 1;
+            }
         }
 
         if let Some(prefix) = normalize_prefix(trimmed) {
@@ -267,6 +281,12 @@ pub fn analyze_comments(content: &str) -> CommentMetrics {
         comment_lines as f32 / non_empty_lines as f32
     };
 
+    let inline_density = if non_empty_lines == 0 {
+        0.0
+    } else {
+        comment_lines.saturating_sub(doc_comment_lines) as f32 / non_empty_lines as f32
+    };
+
     let dominant_prefix_ratio = if comment_lines == 0 {
         0.0
     } else {
@@ -277,7 +297,9 @@ pub fn analyze_comments(content: &str) -> CommentMetrics {
     CommentMetrics {
         non_empty_lines,
         comment_lines,
+        doc_comment_lines,
         density,
+        inline_density,
         tutorial_phrase_hits,
         dominant_prefix_ratio,
     }
@@ -305,10 +327,16 @@ fn comment_line_range(content: &str) -> Result<Option<LineRange>, PapertowelErro
 
 fn is_comment_line(line: &str) -> bool {
     line.starts_with("//")
-        || line.starts_with("///")
         || (line.starts_with('#') && !line.starts_with("#[") && !line.starts_with("#!["))
         || line.starts_with("/*")
         || line.starts_with('*')
+}
+
+/// Returns `true` for Rustdoc / module-doc lines (`///` or `//!`).
+/// These carry intentional API documentation and should not be penalised
+/// by the inline-comment density check.
+fn is_doc_comment_line(line: &str) -> bool {
+    line.starts_with("///") || line.starts_with("//!")
 }
 
 fn normalize_comment_body(line: &str) -> String {

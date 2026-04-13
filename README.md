@@ -55,6 +55,14 @@ cargo install papertowel
 - `papertowel_scrub`
 - `papertowel_grade`
 
+The main CLI also exposes MCP helpers:
+
+```sh
+papertowel mcp serve    # run the MCP stdio server
+papertowel mcp tools    # list available MCP tools
+papertowel mcp version  # print protocol + build version
+```
+
 Add this server block to your MCP config:
 
 ```jsonc
@@ -67,6 +75,14 @@ Add this server block to your MCP config:
    }
 }
 ```
+
+## Release Automation
+
+Release flow is wired through GitHub Actions:
+
+- `.github/workflows/auto-tag.yml` watches `main`, gates on `chore(release):*`, and pushes `vX.Y.Z` tags when missing.
+- Auto-tag then dispatches `.github/workflows/release.yml` on the created tag ref.
+- `.github/workflows/release.yml` supports both tag-push triggers and `workflow_dispatch`.
 
 ## Usage
 

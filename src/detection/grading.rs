@@ -84,7 +84,7 @@ impl fmt::Display for Grade {
             Self::DMinus => "D-",
             Self::F => "F",
         };
-        write!(f, "{s}")
+        f.pad(s)
     }
 }
 

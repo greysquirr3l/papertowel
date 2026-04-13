@@ -6,6 +6,7 @@ on:
       - main
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -69,6 +70,13 @@ jobs:
         if: steps.gate.outputs.run == 'true' && steps.check.outputs.exists == 'true'
         run: |
           echo "Tag ${{ steps.version.outputs.tag }} already exists, skipping"
+
+      - name: Dispatch release workflow
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release.yml --ref "${{ steps.version.outputs.tag }}"
 
       - name: Not a release commit
         if: steps.gate.outputs.run != 'true'

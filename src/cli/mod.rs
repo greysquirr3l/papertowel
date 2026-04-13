@@ -3,6 +3,7 @@ mod eval;
 mod grade;
 mod hook;
 mod learn;
+mod mcp;
 mod profile;
 pub mod recipe;
 pub mod report;
@@ -62,6 +63,8 @@ enum Command {
     Learn(LearnArgs),
     /// Manage human persona profiles used by the wringer.
     Profile(ProfileArgs),
+    /// Run or inspect the MCP server integration.
+    Mcp(McpArgs),
     /// Inspect and validate loaded scrubber recipes.
     Recipe(RecipeArgs),
     /// Install or remove the papertowel pre-commit git hook.
@@ -119,6 +122,22 @@ struct CleanArgs {
 struct ProfileArgs {
     #[command(subcommand)]
     command: ProfileCommand,
+}
+
+#[derive(Debug, Args)]
+struct McpArgs {
+    #[command(subcommand)]
+    command: McpCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum McpCommand {
+    /// Start the MCP stdio server process.
+    Serve(mcp::ServeArgs),
+    /// Print available MCP tool names.
+    Tools(mcp::ToolsArgs),
+    /// Print MCP protocol and server version information.
+    Version(mcp::VersionArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -200,6 +219,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             ProfileCommand::List(list_args) => profile::handle_list(list_args),
             ProfileCommand::Show(show_args) => profile::handle_show(&show_args),
         },
+        Command::Mcp(args) => match args.command {
+            McpCommand::Serve(ref serve_args) => mcp::handle_serve(serve_args),
+            McpCommand::Tools(ref tools_args) => {
+                mcp::handle_tools(tools_args);
+                Ok(())
+            }
+            McpCommand::Version(ref version_args) => {
+                mcp::handle_version(version_args);
+                Ok(())
+            }
+        },
         Command::Recipe(args) => match args.command {
             RecipeCommand::List(ref list_args) => recipe::handle_list(list_args),
             RecipeCommand::Show(ref show_args) => recipe::handle_show(show_args),
@@ -217,7 +247,9 @@ fn dispatch(cli: Cli) -> Result<()> {
 mod tests {
     use clap::Parser;
 
-    use super::{Cli, Command, OutputFormat, ProfileCommand, SeverityArg, WringCommand};
+    use super::{
+        Cli, Command, McpCommand, OutputFormat, ProfileCommand, SeverityArg, WringCommand,
+    };
 
     #[test]
     fn parses_scan_command_with_options() -> Result<(), Box<dyn std::error::Error>> {
@@ -316,6 +348,28 @@ mod tests {
                 _ => unreachable!("expected profile show"),
             },
             _ => unreachable!("expected profile command"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parses_mcp_subcommands() -> Result<(), Box<dyn std::error::Error>> {
+        let tools = Cli::try_parse_from(["papertowel", "mcp", "tools"])?;
+        match tools.command {
+            Command::Mcp(mcp) => match mcp.command {
+                McpCommand::Tools(_) => {}
+                _ => unreachable!("expected mcp tools"),
+            },
+            _ => unreachable!("expected mcp command"),
+        }
+
+        let version = Cli::try_parse_from(["papertowel", "mcp", "version"])?;
+        match version.command {
+            Command::Mcp(mcp) => match mcp.command {
+                McpCommand::Version(_) => {}
+                _ => unreachable!("expected mcp version"),
+            },
+            _ => unreachable!("expected mcp command"),
         }
         Ok(())
     }

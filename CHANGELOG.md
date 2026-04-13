@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-04-13
+
+### Added
+
+- **`papertowel mcp` subcommand group** — the main CLI now exposes MCP integration directly:
+  - `papertowel mcp serve` — runs the `papertowel-mcp` stdio server from the same binary directory
+  - `papertowel mcp tools` — lists available MCP tool names
+  - `papertowel mcp version` — prints MCP protocol and server build version
+
+### Fixed
+
+- **Comment detector false positive on API documentation** — `///` and `//!` doc-comment lines are now excluded from inline-comment density checks and tutorial-phrase scoring, so well-documented libraries no longer trigger `comments.over_documented`. `TUTORIAL_PHRASES` also drops the overly broad `"to"` and `"for"` entries.
+- **`grade` table column misalignment** — `Grade::Display` now calls `f.pad(s)` instead of `write!(f, "{s}")`, so format specifiers like `{grade:>5}` correctly right-align grades within the box-drawing table.
+- **MCP scan parity with CLI detector coverage** — `papertowel-mcp` now runs repository-level detectors (`commit_pattern`, `architecture`, `workflow`, `promotion`, `metadata`, `maintenance`, `name_credibility`) when scanning a git repo, includes the security detector path, and aligns prompt-detector extension coverage with the CLI (`zig`, `cpp`, `cc`, `cxx`, `hpp`, `hxx`).
+
+### Changed
+
+- **Release automation wiring** — auto-tag now dispatches `release.yml` on the created version tag ref. `.github/workflows/auto-tag.yml` now requests `actions: write` and invokes `gh workflow run release.yml --ref <tag>`, while `.github/workflows/release.yml` now supports `workflow_dispatch` in addition to tag-push triggers.
+
 ## [0.3.4] — 2026-04-12
 
 ### Changed

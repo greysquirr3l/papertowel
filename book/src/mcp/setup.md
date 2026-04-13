@@ -12,6 +12,7 @@ The MCP server exposes the core functionality of the Scrubber as a set of tools 
 | :--- | :--- |
 | `papertowel_scan` | Scans a directory for AI fingerprints and returns a structured report of findings. |
 | `papertowel_scrub` | Applies fixes to the detected fingerprints in a target directory. |
+| `papertowel_grade` | Grades a file or directory from A+ to F for overall AI fingerprint presence. |
 
 ## Installation
 
@@ -48,5 +49,6 @@ Once configured, you can simply ask Claude to clean up your code:
 
 - *"Scan my current directory for AI fingerprints and tell me what you find."*
 - *"Run the papertowel scrubber on the `src/` directory to remove any obvious slop."*
+- *"Grade this repo and explain which categories contributed most to the score."*
 
-The AI will call the `papertowel_scan` and `papertowel_scrub` tools, receive the results, and report back to you.
+The AI will call `papertowel_scan`, `papertowel_scrub`, and `papertowel_grade` as needed, receive the results, and report back to you.

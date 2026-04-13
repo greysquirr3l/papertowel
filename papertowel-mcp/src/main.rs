@@ -444,6 +444,38 @@ fn call_scan(args: &Value) -> Value {
         scan_file_into(&mut all_findings, file, recipe_matcher.as_ref());
     }
 
+    // Run repository-level detectors when scanning a directory that is a git repo.
+    if path.is_dir() && path.join(".git").exists() {
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::commit_pattern::detect_repo(&path),
+        );
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::architecture::detect_repo(&path),
+        );
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::workflow::detect_repo(&path),
+        );
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::promotion::detect_repo(&path),
+        );
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::metadata::detect_repo(&path),
+        );
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::maintenance::detect_repo(&path),
+        );
+        run_detector_into(
+            &mut all_findings,
+            papertowel::scrubber::name_credibility::detect_repo(&path),
+        );
+    }
+
     // Filter by severity.
     all_findings.retain(|f: &papertowel::detection::finding::Finding| {
         severity_value(f.severity) >= severity_value(min_severity)
@@ -640,9 +672,28 @@ fn scan_file_into(
         }
     }
 
+    if papertowel::scrubber::security::is_supported_source_extension(ext) {
+        run_detector_into(out, papertowel::scrubber::security::detect_file(file));
+    }
+
     if matches!(
         ext,
-        "rs" | "py" | "go" | "ts" | "tsx" | "cs" | "md" | "toml" | "yaml" | "yml" | "txt"
+        "rs" | "py"
+            | "go"
+            | "ts"
+            | "tsx"
+            | "cs"
+            | "zig"
+            | "cpp"
+            | "cc"
+            | "cxx"
+            | "hpp"
+            | "hxx"
+            | "md"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "txt"
     ) {
         run_detector_into(out, papertowel::scrubber::prompt::detect_file(file));
     }
