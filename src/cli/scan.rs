@@ -125,7 +125,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
         OutputFormat::Sarif => write_sarif_report(&mut out, &collection.findings, &summary)?,
     }
 
-    // CI gate: exit 1 if any finding is at or above the --fail-on threshold.
+    // CI gate: fail if any finding is at or above the --fail-on threshold.
     if let Some(fail_sev) = effective_fail_on {
         let threshold = match fail_sev {
             SeverityArg::Low => Severity::Low,
@@ -133,7 +133,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
             SeverityArg::High => Severity::High,
         };
         if collection.findings.iter().any(|f| f.severity >= threshold) {
-            std::process::exit(1);
+            anyhow::bail!("scan found issues at or above {fail_sev:?} severity threshold");
         }
     }
 
