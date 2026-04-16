@@ -190,7 +190,8 @@ pub fn handle_validate(args: &ValidateArgs) -> Result<()> {
             );
         }
         Err(e) => {
-            anyhow::bail!("invalid recipe at {}: {e}", args.path.display());
+            return Err(anyhow::Error::from(e)
+                .context(format!("invalid recipe at {}", args.path.display())));
         }
     }
 
