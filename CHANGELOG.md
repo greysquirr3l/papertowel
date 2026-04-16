@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] — 2026-04-15
+
+### Fixed
+
+- **CLI handlers no longer call `std::process::exit(1)` directly** — CI gate failures in `scan` and `grade`, and recipe validation errors, were bypassing Rust's `Result` chain. Replaced with `anyhow::bail!()` so errors surface through `dispatch()` → `run()` → `main()` and carry proper context.
+- **`clean` command now propagates CI mode to post-scrub scan** — `Command::Clean` was hardcoding `ci: false, fail_on: None` for the scan phase after scrub, so `--fail-on` and the `CI` environment variable were silently ignored. Now calls `scan::effective_ci_settings()` and threads the derived values through.
+- **`InitArgs.branch` uses `String` instead of `Option<String>`** — clap always fills `default_value`, so the `Option` wrapper was misleading and required an unnecessary `unwrap_or_else`. Changed to `String`.
+- **Structured tracing fields in scrub comment-transform warning** — replaced ad-hoc string interpolation with `error = %e` structured field form.
+- **MCP handler return types are `Result<()>`** — `handle_tools` and `handle_version` previously returned `()`, forcing the dispatch site to manually wrap in `Ok(())`. Made consistent with all other CLI handlers.
+- **Preserve TOML error chain in `recipe validate`** — recipe parse errors now use `anyhow::Error::from(e).context(...)` instead of `bail!("...: {e}")`, so the full `toml::de::Error` source chain is visible in output.
+
 ## [0.3.5] — 2026-04-13
 
 ### Added

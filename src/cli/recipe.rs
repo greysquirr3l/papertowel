@@ -190,8 +190,8 @@ pub fn handle_validate(args: &ValidateArgs) -> Result<()> {
             );
         }
         Err(e) => {
-            eprintln!("✗ Invalid recipe: {e}");
-            std::process::exit(1);
+            return Err(anyhow::Error::from(e)
+                .context(format!("invalid recipe at {}", args.path.display())));
         }
     }
 

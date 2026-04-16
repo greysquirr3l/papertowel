@@ -71,11 +71,11 @@ pub fn handle(args: &GradeArgs) -> Result<()> {
             .parse()
             .map_err(|e| anyhow::anyhow!("invalid --min-grade: {e}"))?;
         if !report.overall_grade.meets_minimum(min_grade) {
-            eprintln!(
-                "Grade {} does not meet minimum {}",
-                report.overall_grade, min_grade
+            anyhow::bail!(
+                "grade {} does not meet minimum {}",
+                report.overall_grade,
+                min_grade
             );
-            std::process::exit(1);
         }
     }
 
