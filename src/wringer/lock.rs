@@ -85,10 +85,10 @@ pub fn read_lock_info(repo_root: &Path) -> Result<Option<DripLockInfo>, Papertow
     // (even within the same process) returns OS error 33 (ERROR_LOCK_VIOLATION).
     // In that case the file is clearly active; continue with empty contents and
     // let the try_lock probe below determine the active flag.
-    if let Err(e) = file.read_to_string(&mut contents) {
-        if !is_already_locked(&e) {
-            return Err(PapertowelError::io_with_path(&lock_path, e));
-        }
+    if let Err(e) = file.read_to_string(&mut contents)
+        && !is_already_locked(&e)
+    {
+        return Err(PapertowelError::io_with_path(&lock_path, e));
     }
 
     let mut pid: Option<u32> = None;
