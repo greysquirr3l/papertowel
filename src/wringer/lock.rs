@@ -8,6 +8,15 @@ use fs2::FileExt;
 
 use crate::domain::errors::PapertowelError;
 
+/// Returns `true` when `e` means a byte-range lock is already held.
+///
+/// On Unix, `fs2` maps this to `WouldBlock`. On Windows, `LockFileEx` returns
+/// `ERROR_LOCK_VIOLATION` (os error 33) for intra-process re-lock attempts as
+/// well as cross-handle conflicts — both mean "already locked".
+fn is_already_locked(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::WouldBlock || e.raw_os_error() == Some(33)
+}
+
 const LOCK_FILE_NAME: &str = "drip.lock";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +46,7 @@ impl DripProcessLock {
             .map_err(|e| PapertowelError::io_with_path(&lock_path, e))?;
 
         if let Err(error) = file.try_lock_exclusive() {
-            if error.kind() == std::io::ErrorKind::WouldBlock {
+            if is_already_locked(&error) {
                 return Err(PapertowelError::Config(format!(
                     "another papertowel drip instance is already running (lock: {})",
                     lock_path.display()
@@ -72,8 +81,15 @@ pub fn read_lock_info(repo_root: &Path) -> Result<Option<DripLockInfo>, Papertow
         .map_err(|e| PapertowelError::io_with_path(&lock_path, e))?;
 
     let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .map_err(|e| PapertowelError::io_with_path(&lock_path, e))?;
+    // On Windows, reading a byte range locked exclusively by another handle
+    // (even within the same process) returns OS error 33 (ERROR_LOCK_VIOLATION).
+    // In that case the file is clearly active; continue with empty contents and
+    // let the try_lock probe below determine the active flag.
+    if let Err(e) = file.read_to_string(&mut contents) {
+        if !is_already_locked(&e) {
+            return Err(PapertowelError::io_with_path(&lock_path, e));
+        }
+    }
 
     let mut pid: Option<u32> = None;
     let mut started_at: Option<String> = None;
@@ -97,7 +113,7 @@ pub fn read_lock_info(repo_root: &Path) -> Result<Option<DripLockInfo>, Papertow
                 .map_err(|e| PapertowelError::io_with_path(&lock_path, e))?;
             false
         }
-        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => true,
+        Err(error) if is_already_locked(&error) => true,
         Err(error) => return Err(PapertowelError::io_with_path(&lock_path, error)),
     };
 
@@ -134,7 +150,7 @@ pub fn recover_stale_lock(repo_root: &Path) -> Result<bool, PapertowelError> {
                 .map_err(|e| PapertowelError::io_with_path(&lock_path, e))?;
             Ok(true)
         }
-        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(false),
+        Err(error) if is_already_locked(&error) => Ok(false),
         Err(error) => Err(PapertowelError::io_with_path(&lock_path, error)),
     }
 }
@@ -190,6 +206,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn lock_file_is_created_with_metadata() -> Result<(), Box<dyn Error>> {
         let tmp = TempDir::new()?;
@@ -235,8 +252,13 @@ mod tests {
 
         let active = read_lock_info(tmp.path())?.ok_or("missing lock info")?;
         assert!(active.active);
-        assert!(active.pid.is_some());
-        assert!(active.started_at.is_some());
+        // On Windows, the lock file cannot be read while held by another handle;
+        // metadata fields are only guaranteed to be populated on Unix.
+        #[cfg(not(windows))]
+        {
+            assert!(active.pid.is_some());
+            assert!(active.started_at.is_some());
+        }
 
         drop(lock);
 
