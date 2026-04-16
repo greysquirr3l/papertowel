@@ -197,7 +197,12 @@ fn stage_and_commit(
     message: &str,
 ) -> Result<git2::Oid, PapertowelError> {
     let mut index = repo.index()?;
-    index.add_path(rel_path)?;
+    // git2/libgit2 requires POSIX-style forward-slash paths regardless of OS.
+    let posix = rel_path
+        .to_str()
+        .ok_or_else(|| PapertowelError::Config("non-UTF-8 path in worktree".to_owned()))?
+        .replace('\\', "/");
+    index.add_path(Path::new(&posix))?;
     index.write()?;
 
     let tree_oid = index.write_tree()?;
