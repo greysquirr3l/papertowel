@@ -407,6 +407,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn extract_baseline_skips_unreadable_file_and_continues() {
         // Creates a.rs file with no read permission alongside a readable 8-line file.

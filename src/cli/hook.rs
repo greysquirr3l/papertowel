@@ -1,4 +1,5 @@
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -85,6 +86,7 @@ pub fn handle_install(args: &InstallArgs) -> Result<()> {
         .with_context(|| format!("failed to write hook at {}", hook_path.display()))?;
 
     let mut perms = fs::metadata(&hook_path)?.permissions();
+    #[cfg(unix)]
     perms.set_mode(0o755);
     fs::set_permissions(&hook_path, perms)?;
 
@@ -146,6 +148,7 @@ mod tests {
     #![expect(clippy::unwrap_used, reason = "test assertions")]
 
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
@@ -181,8 +184,11 @@ mod tests {
         assert!(content.contains("papertowel"));
         assert!(content.contains("papertowel scan"));
 
-        let mode = fs::metadata(&hook).expect("metadata").permissions().mode();
-        assert_ne!(mode & 0o111, 0, "hook must be executable");
+        #[cfg(unix)]
+        {
+            let mode = fs::metadata(&hook).expect("metadata").permissions().mode();
+            assert_ne!(mode & 0o111, 0, "hook must be executable");
+        }
     }
 
     #[test]
