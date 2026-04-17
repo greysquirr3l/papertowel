@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release workflow not triggering after auto-tag** — `release.yml` relied on `on: push: tags`, which GitHub suppresses when a tag is pushed by `GITHUB_TOKEN` (loop prevention). Replaced with `on: workflow_run` targeting "Auto-tag on release merge", added a `resolve-tag` job that derives the tag and SHA from the triggering commit SHA, and retained `on: push: tags` + `workflow_dispatch` as fallback triggers. Annotated tag refs (`^{}`) are now stripped during tag resolution.
+
 ## [0.3.7] — 2026-04-16
 
 ### Fixed
