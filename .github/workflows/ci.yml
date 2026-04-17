@@ -184,7 +184,7 @@ jobs:
 
       # Skip doc-tests due to rustdoc line-offset bug with thiserror
       - name: Run tests
-        run: cargo test --workspace --lib --bins --tests
+        run: cargo test --workspace --lib --bins --tests --no-fail-fast -- --nocapture 2>&1
 
   scan:
     name: Scan for AI fingerprints

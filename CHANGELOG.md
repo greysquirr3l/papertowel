@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.6] — 2026-04-15
+## [0.3.7] — 2026-04-16
+
+### Fixed
+
+- **Windows CI: normalize path separators for git2 index** — `Path::strip_prefix()` returns backslash-separated paths on Windows; `index.add_path` (libgit2) requires POSIX forward-slash paths on all platforms. Added `#[cfg(windows)]` normalization in `stage_and_commit`.
+- **Windows CI: gate `std::os::unix` APIs behind `#[cfg(unix)]`** — `hook.rs` and `learner.rs` used `PermissionsExt` unconditionally, causing compile errors on Windows. Entire permission-mode blocks and related tests now gated.
+- **Windows CI: handle `ERROR_LOCK_VIOLATION` (OS error 33) in `fs2` lock** — Windows returns OS error 33 instead of `WouldBlock` when re-locking an already-locked file or reading bytes from a range locked by another handle. Added `is_already_locked()` helper that matches both kinds; all lock probes and tests updated.
+- **Clippy: collapse nested `if let` / `if` blocks** — `collapsible_if` lint in `lock.rs` introduced by the OS error 33 fix; collapsed to `if let Err(e) = … && !is_already_locked(&e)` form.
 
 ### Fixed
 

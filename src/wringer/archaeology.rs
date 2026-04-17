@@ -197,7 +197,16 @@ fn stage_and_commit(
     message: &str,
 ) -> Result<git2::Oid, PapertowelError> {
     let mut index = repo.index()?;
-    index.add_path(rel_path)?;
+    // git2/libgit2 requires POSIX-style forward-slash paths on Windows.
+    #[cfg(windows)]
+    {
+        let posix = rel_path.to_string_lossy().replace('\\', "/");
+        index.add_path(Path::new(&posix))?;
+    }
+    #[cfg(not(windows))]
+    {
+        index.add_path(rel_path)?;
+    }
     index.write()?;
 
     let tree_oid = index.write_tree()?;
