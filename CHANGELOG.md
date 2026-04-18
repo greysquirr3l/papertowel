@@ -7,21 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Release workflow not triggering after auto-tag** — `release.yml` relied on `on: push: tags`, which GitHub suppresses when a tag is pushed by `GITHUB_TOKEN` (loop prevention). Replaced with `on: workflow_run` targeting "Auto-tag on release merge", added a `resolve-tag` job that derives the tag and SHA from the triggering commit SHA, and retained `on: push: tags` + `workflow_dispatch` as fallback triggers. Annotated tag refs (`^{}`) are now stripped during tag resolution.
-
-## [0.3.7] — 2026-04-16
+## [0.3.7] — 2026-04-18
 
 ### Fixed
 
+- **Release workflow not triggering after auto-tag** — `release.yml` relied on `on: push: tags`, which GitHub suppresses when a tag is pushed by `GITHUB_TOKEN` (loop prevention). Replaced with `on: workflow_run` targeting "Auto-tag on release merge", added a `resolve-tag` job that derives the tag and SHA from the triggering commit SHA, and retained `on: push: tags` + `workflow_dispatch` as fallback triggers. Annotated tag refs (`^{}`) are now stripped during tag resolution. Release workflow now skips gracefully when no semver tag is found on non-release commits.
 - **Windows CI: normalize path separators for git2 index** — `Path::strip_prefix()` returns backslash-separated paths on Windows; `index.add_path` (libgit2) requires POSIX forward-slash paths on all platforms. Added `#[cfg(windows)]` normalization in `stage_and_commit`.
 - **Windows CI: gate `std::os::unix` APIs behind `#[cfg(unix)]`** — `hook.rs` and `learner.rs` used `PermissionsExt` unconditionally, causing compile errors on Windows. Entire permission-mode blocks and related tests now gated.
 - **Windows CI: handle `ERROR_LOCK_VIOLATION` (OS error 33) in `fs2` lock** — Windows returns OS error 33 instead of `WouldBlock` when re-locking an already-locked file or reading bytes from a range locked by another handle. Added `is_already_locked()` helper that matches both kinds; all lock probes and tests updated.
 - **Clippy: collapse nested `if let` / `if` blocks** — `collapsible_if` lint in `lock.rs` introduced by the OS error 33 fix; collapsed to `if let Err(e) = … && !is_already_locked(&e)` form.
-
-### Fixed
-
 - **CLI handlers no longer call `std::process::exit(1)` directly** — CI gate failures in `scan` and `grade`, and recipe validation errors, were bypassing Rust's `Result` chain. Replaced with `anyhow::bail!()` so errors surface through `dispatch()` → `run()` → `main()` and carry proper context.
 - **`clean` command now propagates CI mode to post-scrub scan** — `Command::Clean` was hardcoding `ci: false, fail_on: None` for the scan phase after scrub, so `--fail-on` and the `CI` environment variable were silently ignored. Now calls `scan::effective_ci_settings()` and threads the derived values through.
 - **`InitArgs.branch` uses `String` instead of `Option<String>`** — clap always fills `default_value`, so the `Option` wrapper was misleading and required an unnecessary `unwrap_or_else`. Changed to `String`.
