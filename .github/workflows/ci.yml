@@ -54,10 +54,8 @@ jobs:
           key: ${{ runner.os }}-cargo-test-v5-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-v5-
 
-      # Skip doc-tests due to rustdoc line-offset bug with thiserror
-      # See: https://github.com/greysquirr3l/papertowel/issues/TBD
       - name: Run tests
-        run: cargo test --workspace --lib --bins --tests
+        run: cargo test --workspace --no-fail-fast
 
   clippy:
     name: Clippy
@@ -81,7 +79,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-clippy-v4-
 
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
@@ -182,9 +180,8 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-v4-
         # Note: target/ not cached due to rustdoc/thiserror interaction bug
 
-      # Skip doc-tests due to rustdoc line-offset bug with thiserror
       - name: Run tests
-        run: cargo test --workspace --lib --bins --tests --no-fail-fast -- --nocapture 2>&1
+        run: cargo test --workspace --no-fail-fast -- --nocapture 2>&1
 
   scan:
     name: Scan for AI fingerprints

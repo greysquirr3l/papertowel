@@ -1,3 +1,8 @@
+#![expect(
+    clippy::multiple_crate_versions,
+    reason = "dependency graph includes unavoidable transitive duplicates"
+)]
+
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 

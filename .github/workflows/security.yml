@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_AUDIT_VERSION: "0.22.1"
+  CARGO_DENY_VERSION: "0.19.4"
+
 jobs:
   cargo-audit:
     name: Audit dependencies for CVEs
@@ -28,11 +32,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache cargo tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-tools-audit-${{ env.CARGO_AUDIT_VERSION }}
+          restore-keys: ${{ runner.os }}-cargo-tools-audit-
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --locked --version "${CARGO_AUDIT_VERSION}"
 
       - name: Run cargo audit
         run: cargo audit
@@ -43,8 +57,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache cargo tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-tools-deny-${{ env.CARGO_DENY_VERSION }}
+          restore-keys: ${{ runner.os }}-cargo-tools-deny-
+
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --locked --version "${CARGO_DENY_VERSION}"
 
       - name: Run cargo deny
         run: cargo deny check
