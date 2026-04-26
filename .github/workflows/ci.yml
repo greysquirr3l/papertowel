@@ -183,6 +183,28 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --no-fail-fast -- --nocapture 2>&1
 
+  deny:
+    name: Dependency Licenses and Bans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-deny-0.19.4
+          restore-keys: ${{ runner.os }}-cargo-deny-
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version "0.19.4"
+
+      - name: Run cargo deny
+        run: cargo deny check
+
   scan:
     name: Scan for AI fingerprints
     runs-on: ubuntu-latest

@@ -165,23 +165,42 @@ jobs:
         run: |
           VERSION=$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "papertowel") | .version')
-          if cargo search papertowel --limit 1 2>/dev/null | grep -q "^papertowel = \"$VERSION\""; then
-            echo "papertowel@$VERSION already published, skipping"
+          if curl -fsSL "https://crates.io/api/v1/crates/papertowel/${VERSION}" \
+               -H "User-Agent: papertowel-release-workflow" 2>/dev/null \
+             | jq -e '.version.num' >/dev/null 2>&1; then
+            echo "papertowel@${VERSION} already published, skipping"
           else
             cargo publish -p papertowel
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Wait for crates.io index propagation
-        run: sleep 30
+      - name: Wait for papertowel to appear on crates.io
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "papertowel") | .version')
+          echo "Polling crates.io for papertowel@${VERSION}..."
+          for attempt in {1..20}; do
+            if curl -fsSL "https://crates.io/api/v1/crates/papertowel/${VERSION}" \
+                 -H "User-Agent: papertowel-release-workflow" 2>/dev/null \
+               | jq -e '.version.num' >/dev/null 2>&1; then
+              echo "papertowel@${VERSION} is live on crates.io"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/20: not yet available; waiting 15s..."
+            sleep 15
+          done
+          echo "Timed out waiting for papertowel@${VERSION} to appear on crates.io"
+          exit 1
 
       - name: Publish papertowel-mcp
         run: |
           VERSION=$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "papertowel-mcp") | .version')
-          if cargo search papertowel-mcp --limit 1 2>/dev/null | grep -q "^papertowel-mcp = \"$VERSION\""; then
-            echo "papertowel-mcp@$VERSION already published, skipping"
+          if curl -fsSL "https://crates.io/api/v1/crates/papertowel-mcp/${VERSION}" \
+               -H "User-Agent: papertowel-release-workflow" 2>/dev/null \
+             | jq -e '.version.num' >/dev/null 2>&1; then
+            echo "papertowel-mcp@${VERSION} already published, skipping"
           else
             cargo publish -p papertowel-mcp
           fi
