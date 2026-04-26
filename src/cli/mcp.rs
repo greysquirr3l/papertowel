@@ -61,8 +61,15 @@ pub fn handle_version(_args: &VersionArgs) {
 fn resolve_mcp_executable() -> Result<OsString> {
     if let Some(path) = env::var_os("PAPERTOWEL_MCP_PATH") {
         let configured = PathBuf::from(path);
-        if configured.exists() {
+        if configured.is_file() {
             return Ok(configured.into_os_string());
+        }
+
+        if configured.exists() {
+            return Err(anyhow!(
+                "PAPERTOWEL_MCP_PATH points to {}, but it is not a file",
+                configured.display()
+            ));
         }
 
         return Err(anyhow!(
@@ -73,14 +80,13 @@ fn resolve_mcp_executable() -> Result<OsString> {
 
     let binary_name = format!("papertowel-mcp{}", env::consts::EXE_SUFFIX);
     for candidate in candidate_paths(&binary_name) {
-        if candidate.exists() {
+        if candidate.is_file() {
             return Ok(candidate.into_os_string());
         }
     }
 
-    Err(anyhow!(
-        "could not find {binary_name} next to the papertowel binary. Install papertowel-mcp or set PAPERTOWEL_MCP_PATH to the executable location"
-    ))
+    // Fall back to PATH lookup to support common split-install layouts.
+    Ok(OsString::from(binary_name))
 }
 
 fn candidate_paths(binary_name: &str) -> Vec<PathBuf> {

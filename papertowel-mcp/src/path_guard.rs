@@ -16,7 +16,6 @@ pub fn validate_mcp_path(raw_path: &str) -> Result<PathBuf, String> {
         "/proc",
         "/sys",
         "/dev",
-        "/private/tmp/../etc", // paranoia
     ];
     const DENIED_SEGMENTS: &[&str] = &[
         ".ssh",

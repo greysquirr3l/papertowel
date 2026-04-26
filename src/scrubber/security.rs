@@ -255,7 +255,7 @@ static RULES: &[Rule] = &[
                      If this is intentional, track it in the issue tracker and add a test that \
                      will fail until it is addressed.",
         extensions: &[],
-        pattern: r"(?i)//\s*(?:TODO|FIXME|HACK|XXX)[^\n]*(?:auth(?:entication|orization)?|authori[sz]e|permission|rbac|acl|oauth|sso|role|token|jwt|session|credential|access\s+control|privilege)",
+        pattern: r"//\s*(?:TODO|FIXME|HACK|XXX)[^\n]*(?:auth(?:entication|orization)?|authori[sz]e|permission|rbac|acl|oauth|sso|role|token|jwt|session|credential|access\s+control|privilege)",
         ignore_case: true,
     },
 ];

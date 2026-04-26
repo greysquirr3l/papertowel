@@ -1,8 +1,3 @@
-#![expect(
-    clippy::multiple_crate_versions,
-    reason = "dependency graph includes unavoidable transitive duplicates"
-)]
-
 //! `papertowel-mcp` — MCP server that exposes papertowel scan and scrub
 //! capabilities as tools consumable by LLM clients (e.g. Claude Desktop,
 //! Cursor, Continue.dev).
