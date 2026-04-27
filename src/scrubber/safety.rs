@@ -50,15 +50,13 @@ pub fn check_safety(original: &str, transformed: &str, config: &SafetyConfig) ->
         return SafetyOutcome::Allowed;
     }
 
-    // Byte-size ratio check.
+    // Byte-size ratio check using integer percent math to avoid float casts.
     let new_bytes = transformed.len();
-    let size_ratio = (new_bytes as f64) / (orig_bytes as f64);
-    let min_ratio = f64::from(config.min_size_percent) / 100.0;
-    if size_ratio < min_ratio {
+    let size_percent = ratio_percent(new_bytes, orig_bytes);
+    if size_percent < usize::from(config.min_size_percent) {
         return SafetyOutcome::Blocked(format!(
-            "output is {:.0}% of original size (minimum: {}%)",
-            size_ratio * 100.0,
-            config.min_size_percent,
+            "output is {}% of original size (minimum: {}%)",
+            size_percent, config.min_size_percent,
         ));
     }
 
@@ -67,18 +65,25 @@ pub fn check_safety(original: &str, transformed: &str, config: &SafetyConfig) ->
     if orig_lines > 0 {
         let new_lines = transformed.lines().count();
         let lines_dropped = orig_lines.saturating_sub(new_lines);
-        let drop_ratio = (lines_dropped as f64) / (orig_lines as f64);
-        let max_ratio = f64::from(config.max_line_drop_percent) / 100.0;
-        if drop_ratio > max_ratio {
+        let drop_percent = ratio_percent(lines_dropped, orig_lines);
+        if drop_percent > usize::from(config.max_line_drop_percent) {
             return SafetyOutcome::Blocked(format!(
-                "dropped {lines_dropped}/{orig_lines} lines ({:.0}%); maximum allowed: {}%",
-                drop_ratio * 100.0,
-                config.max_line_drop_percent,
+                "dropped {lines_dropped}/{orig_lines} lines ({}%); maximum allowed: {}%",
+                drop_percent, config.max_line_drop_percent,
             ));
         }
     }
 
     SafetyOutcome::Allowed
+}
+
+const fn ratio_percent(numerator: usize, denominator: usize) -> usize {
+    if denominator == 0 {
+        return 100;
+    }
+
+    // Rounded to nearest integer percent.
+    ((numerator * 100) + (denominator / 2)) / denominator
 }
 
 #[cfg(test)]
@@ -92,8 +97,18 @@ mod tests {
         }
     }
 
-    fn is_blocked(o: SafetyOutcome) -> bool {
-        matches!(o, SafetyOutcome::Blocked(_))
+    fn is_blocked(outcome: &SafetyOutcome) -> bool {
+        matches!(outcome, SafetyOutcome::Blocked(_))
+    }
+
+    fn build_lines(start: usize, end: usize) -> String {
+        let mut out = String::new();
+        for i in start..end {
+            out.push_str("line ");
+            out.push_str(&i.to_string());
+            out.push('\n');
+        }
+        out
     }
 
     #[test]
@@ -118,7 +133,7 @@ mod tests {
         let original = "a".repeat(1000);
         let transformed = "a".repeat(100); // 10% of original
         let outcome = check_safety(&original, &transformed, &cfg(50, 60));
-        assert!(is_blocked(outcome));
+        assert!(is_blocked(&outcome));
     }
 
     #[test]
@@ -131,18 +146,18 @@ mod tests {
 
     #[test]
     fn over_aggressive_line_drop_is_blocked() {
-        let original = (0..100).map(|i| format!("line {i}\n")).collect::<String>();
+        let original = build_lines(0, 100);
         // Drop 80 lines — above 60% threshold.
-        let transformed = (0..20).map(|i| format!("line {i}\n")).collect::<String>();
+        let transformed = build_lines(0, 20);
         let outcome = check_safety(&original, &transformed, &cfg(10, 60));
-        assert!(is_blocked(outcome));
+        assert!(is_blocked(&outcome));
     }
 
     #[test]
     fn line_drop_exactly_at_threshold_passes() {
-        let original = (0..100).map(|i| format!("line {i}\n")).collect::<String>();
+        let original = build_lines(0, 100);
         // Drop exactly 60 lines — exactly at threshold.
-        let transformed = (0..40).map(|i| format!("line {i}\n")).collect::<String>();
+        let transformed = build_lines(0, 40);
         let outcome = check_safety(&original, &transformed, &cfg(10, 60));
         assert!(matches!(outcome, SafetyOutcome::Allowed));
     }

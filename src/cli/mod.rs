@@ -203,6 +203,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 detectors: Vec::new(),
                 ci: false,
                 allow_unsafe_scrub: false,
+                verify: false,
             };
             scrub::handle(&scrub_args)?;
             let scan_args = scan::ScanArgs {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,7 +7,9 @@ use anyhow::Result;
 use clap::Args;
 use walkdir::WalkDir;
 
+use crate::cli::scan::collect_findings_for_root;
 use crate::config::{is_ignored, resolve_config};
+use crate::detection::finding::Severity;
 use crate::detection::language::LanguageKind;
 use crate::recipe::loader::RecipeLoader;
 use crate::recipe::scrubber::RecipeScrubber;
@@ -30,6 +33,111 @@ pub struct ScrubArgs {
     /// Use only for debugging or intentional aggressive transformations.
     #[arg(long)]
     pub allow_unsafe_scrub: bool,
+    /// After scrubbing, re-scan and compare scores; exit non-zero in CI mode if score regresses.
+    #[arg(long)]
+    pub verify: bool,
+}
+
+// ── Verification types ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum VerificationStatus {
+    Improved,
+    Unchanged,
+    Regressed,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VerificationMetrics {
+    pub findings: usize,
+    pub weighted_score: u64,
+    pub per_category: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VerificationResult {
+    pub status: VerificationStatus,
+    pub before: VerificationMetrics,
+    pub after: VerificationMetrics,
+}
+
+fn run_verification(root: &Path, pre: Option<VerificationMetrics>) -> Result<VerificationResult> {
+    let after_scan = collect_findings_for_root(root, false)?;
+    let after_metrics = verification_metrics(&after_scan.findings);
+    Ok(compare_verification(
+        pre.unwrap_or_else(|| VerificationMetrics {
+            findings: 0,
+            weighted_score: 0,
+            per_category: BTreeMap::new(),
+        }),
+        after_metrics,
+    ))
+}
+
+fn enforce_ci_guards(
+    ci: bool,
+    safety_blocked_count: usize,
+    verification: Option<&VerificationResult>,
+) -> Result<()> {
+    if ci && safety_blocked_count > 0 {
+        anyhow::bail!(
+            "{safety_blocked_count} file{} blocked by the scrub safety valve; \
+             use --allow-unsafe-scrub to override",
+            if safety_blocked_count == 1 { "" } else { "s" }
+        );
+    }
+
+    if ci
+        && let Some(v) = verification
+        && v.status == VerificationStatus::Regressed
+    {
+        anyhow::bail!(
+            "scrub verification failed: weighted score increased from {} to {}",
+            v.before.weighted_score,
+            v.after.weighted_score
+        );
+    }
+
+    Ok(())
+}
+
+/// Compute severity-weighted score and per-category counts from a finding slice.
+fn verification_metrics(findings: &[crate::detection::finding::Finding]) -> VerificationMetrics {
+    let weighted_score = findings
+        .iter()
+        .map(|f| match f.severity {
+            Severity::Low => 1u64,
+            Severity::Medium => 3,
+            Severity::High => 9,
+        })
+        .sum();
+    let mut per_category: BTreeMap<String, usize> = BTreeMap::new();
+    for f in findings {
+        let key = format!("{:?}", f.category);
+        *per_category.entry(key).or_insert(0) += 1;
+    }
+    VerificationMetrics {
+        findings: findings.len(),
+        weighted_score,
+        per_category,
+    }
+}
+
+/// Compare before/after metrics and return a `VerificationResult`.
+pub fn compare_verification(
+    before: VerificationMetrics,
+    after: VerificationMetrics,
+) -> VerificationResult {
+    let status = match before.weighted_score.cmp(&after.weighted_score) {
+        std::cmp::Ordering::Greater => VerificationStatus::Improved,
+        std::cmp::Ordering::Equal => VerificationStatus::Unchanged,
+        std::cmp::Ordering::Less => VerificationStatus::Regressed,
+    };
+    VerificationResult {
+        status,
+        before,
+        after,
+    }
 }
 
 #[derive(Debug, Default)]
@@ -111,6 +219,14 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
         Some(safety_config)
     };
 
+    // Pre-scrub scan snapshot (only collected when --verify is requested).
+    let pre_scrub_metrics: Option<VerificationMetrics> = if args.verify {
+        let pre_scan = collect_findings_for_root(&root, false)?;
+        Some(verification_metrics(&pre_scan.findings))
+    } else {
+        None
+    };
+
     // Load recipe scrubber once for all files.
     let recipe_scrubber = if wants_detector(&args.detectors, RECIPE_DETECTOR_NAME) {
         load_recipe_scrubber(&project_root)
@@ -171,15 +287,23 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
 
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    write_report(&mut out, &changed_results, &summary, args.dry_run)?;
 
-    if args.ci && safety_blocked_count > 0 {
-        anyhow::bail!(
-            "{safety_blocked_count} file{} blocked by the scrub safety valve; \
-             use --allow-unsafe-scrub to override",
-            if safety_blocked_count == 1 { "" } else { "s" }
-        );
-    }
+    // ── Verification pass ────────────────────────────────────────────────────
+    let verification: Option<VerificationResult> = if args.verify {
+        Some(run_verification(&root, pre_scrub_metrics)?)
+    } else {
+        None
+    };
+
+    write_report(
+        &mut out,
+        &changed_results,
+        &summary,
+        args.dry_run,
+        verification.as_ref(),
+    )?;
+
+    enforce_ci_guards(args.ci, safety_blocked_count, verification.as_ref())?;
 
     Ok(())
 }
@@ -248,35 +372,35 @@ fn apply_transforms(
 
     // Safety check: compare original snapshot against current file content.
     // If any transform was over-aggressive, revert to the snapshot.
-    if let (Some(original), Some(cfg)) = (&original_snapshot, safety) {
-        if result.changed() {
-            match std::fs::read_to_string(path) {
-                Ok(current) => match check_safety(original, &current, cfg) {
-                    SafetyOutcome::Allowed => {}
-                    SafetyOutcome::Blocked(reason) => {
-                        tracing::warn!(
-                            path = %path.display(),
-                            "safety guard blocked transform: {reason}; reverting"
-                        );
-                        if let Err(e) = std::fs::write(path, original) {
-                            tracing::error!(
-                                path = %path.display(),
-                                "failed to revert after safety block: {e}"
-                            );
-                        } else {
-                            result.recipe = None;
-                            result.comments = None;
-                            result.readme = None;
-                            result.safety_blocked = Some(reason);
-                        }
-                    }
-                },
-                Err(e) => {
+    if let (Some(original), Some(cfg)) = (&original_snapshot, safety)
+        && result.changed()
+    {
+        match std::fs::read_to_string(path) {
+            Ok(current) => match check_safety(original, &current, cfg) {
+                SafetyOutcome::Allowed => {}
+                SafetyOutcome::Blocked(reason) => {
                     tracing::warn!(
                         path = %path.display(),
-                        "could not re-read for safety check: {e}"
+                        "safety guard blocked transform: {reason}; reverting"
                     );
+                    if let Err(e) = std::fs::write(path, original) {
+                        tracing::error!(
+                            path = %path.display(),
+                            "failed to revert after safety block: {e}"
+                        );
+                    } else {
+                        result.recipe = None;
+                        result.comments = None;
+                        result.readme = None;
+                        result.safety_blocked = Some(reason);
+                    }
                 }
+            },
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    "could not re-read for safety check: {e}"
+                );
             }
         }
     }
@@ -289,6 +413,7 @@ fn write_report(
     results: &[FileResult],
     summary: &ScrubSummary,
     dry_run: bool,
+    verification: Option<&VerificationResult>,
 ) -> io::Result<()> {
     let action = if dry_run { "would change" } else { "changed" };
 
@@ -349,6 +474,46 @@ fn write_report(
     }
     writeln!(out, "{divider}")?;
 
+    // ── Verification section ────────────────────────────────────────
+    if let Some(v) = verification {
+        let status_label = match v.status {
+            VerificationStatus::Improved => "improved",
+            VerificationStatus::Unchanged => "unchanged",
+            VerificationStatus::Regressed => "REGRESSED",
+        };
+        writeln!(out, " verification: {status_label}")?;
+        writeln!(
+            out,
+            "  before  findings={} score={}",
+            v.before.findings, v.before.weighted_score
+        )?;
+        writeln!(
+            out,
+            "  after   findings={} score={}",
+            v.after.findings, v.after.weighted_score
+        )?;
+        // Per-category deltas for categories that changed.
+        let all_keys: std::collections::BTreeSet<&String> = v
+            .before
+            .per_category
+            .keys()
+            .chain(v.after.per_category.keys())
+            .collect();
+        for key in all_keys {
+            let before_n = v.before.per_category.get(key).copied().unwrap_or(0);
+            let after_n = v.after.per_category.get(key).copied().unwrap_or(0);
+            if before_n != after_n {
+                let (sign, magnitude) = if after_n >= before_n {
+                    ('+', after_n - before_n)
+                } else {
+                    ('-', before_n - after_n)
+                };
+                writeln!(out, "  {key}: {before_n} → {after_n} ({sign}{magnitude})")?;
+            }
+        }
+        writeln!(out, "{divider}")?;
+    }
+
     Ok(())
 }
 
@@ -389,6 +554,7 @@ fn main() {}
             detectors: vec![],
             ci: false,
             allow_unsafe_scrub: false,
+            verify: false,
         })?;
 
         assert_eq!(fs::read_to_string(&path)?, original);
@@ -408,6 +574,7 @@ fn main() {}
             detectors: vec![],
             ci: false,
             allow_unsafe_scrub: false,
+            verify: false,
         })?;
 
         let after = fs::read_to_string(&path)?;
@@ -425,6 +592,7 @@ fn main() {}
             detectors: vec![],
             ci: false,
             allow_unsafe_scrub: false,
+            verify: false,
         })?;
         Ok(())
     }

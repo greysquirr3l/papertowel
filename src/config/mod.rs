@@ -40,7 +40,7 @@ pub enum MinimumSeverity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DetectorConfig {
-    pub lexical: bool,
+    pub lexical: LexicalDetectorConfig,
     pub comments: bool,
     pub structure: bool,
     pub readme: bool,
@@ -56,10 +56,66 @@ pub struct DetectorConfig {
     pub security: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LexicalRulesConfig {
+    pub enabled: bool,
+    pub extra_terms: Vec<String>,
+    pub extra_phrases: Vec<String>,
+    pub exclude_terms: Vec<String>,
+    pub case_sensitive: bool,
+}
+
+impl Default for LexicalRulesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            extra_terms: Vec::new(),
+            extra_phrases: Vec::new(),
+            exclude_terms: Vec::new(),
+            case_sensitive: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LexicalDetectorConfig {
+    Enabled(bool),
+    Rules(LexicalRulesConfig),
+}
+
+impl Default for LexicalDetectorConfig {
+    fn default() -> Self {
+        Self::Enabled(true)
+    }
+}
+
+impl LexicalDetectorConfig {
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        match self {
+            Self::Enabled(enabled) => *enabled,
+            Self::Rules(cfg) => cfg.enabled,
+        }
+    }
+
+    #[must_use]
+    pub fn rules(&self) -> LexicalRulesConfig {
+        match self {
+            Self::Enabled(enabled) => LexicalRulesConfig {
+                enabled: *enabled,
+                ..LexicalRulesConfig::default()
+            },
+            Self::Rules(cfg) => cfg.clone(),
+        }
+    }
+}
+
 impl Default for DetectorConfig {
     fn default() -> Self {
         Self {
-            lexical: true,
+            lexical: LexicalDetectorConfig::default(),
             comments: true,
             structure: true,
             readme: true,
@@ -324,9 +380,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        CONFIG_FILE_NAME, DetectorConfig, GLOBAL_CONFIG_FILE_NAME, IGNORE_FILE_NAME, ProjectConfig,
-        ScrubberAggression, SeverityConfig, build_ignore_matcher, discover_project_root,
-        is_ignored, load_config, load_config_from_file, resolve_config, save_config,
+        CONFIG_FILE_NAME, DetectorConfig, GLOBAL_CONFIG_FILE_NAME, IGNORE_FILE_NAME,
+        LexicalDetectorConfig, ProjectConfig, ScrubberAggression, SeverityConfig,
+        build_ignore_matcher, discover_project_root, is_ignored, load_config,
+        load_config_from_file, resolve_config, save_config,
     };
 
     fn scratch() -> TempDir {
@@ -344,7 +401,7 @@ mod tests {
     fn config_roundtrips_toml() {
         let dir = scratch();
         let mut config = ProjectConfig::default();
-        config.detectors.lexical = false;
+        config.detectors.lexical = LexicalDetectorConfig::Enabled(false);
         config.scrubber.aggression = ScrubberAggression::Aggressive;
 
         save_config(dir.path(), &config).expect("save_config");
@@ -364,6 +421,33 @@ aggression = "gentle"
         assert_eq!(config.scrubber.aggression, ScrubberAggression::Gentle);
         assert_eq!(config.detectors, DetectorConfig::default());
         assert_eq!(config.severity, SeverityConfig::default());
+    }
+
+    #[test]
+    fn lexical_detector_accepts_nested_rules_table() {
+        let dir = scratch();
+        let partial = r#"
+[detectors.lexical]
+enabled = true
+extra_terms = ["slopword"]
+extra_phrases = ["it should be noted"]
+exclude_terms = ["robust"]
+case_sensitive = false
+"#;
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), partial).expect("write");
+
+        let config = load_config(dir.path()).expect("load_config");
+        assert!(matches!(
+            config.detectors.lexical,
+            LexicalDetectorConfig::Rules(_)
+        ));
+        if let LexicalDetectorConfig::Rules(rules) = config.detectors.lexical {
+            assert!(rules.enabled);
+            assert_eq!(rules.extra_terms, vec!["slopword".to_owned()]);
+            assert_eq!(rules.extra_phrases, vec!["it should be noted".to_owned()]);
+            assert_eq!(rules.exclude_terms, vec!["robust".to_owned()]);
+            assert!(!rules.case_sensitive);
+        }
     }
 
     #[test]

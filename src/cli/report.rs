@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 use crate::detection::finding::{Finding, FindingCategory, Severity};
+use crate::scrubber::lexical::LexicalRulesExplainability;
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
@@ -38,11 +39,17 @@ pub struct ExplainabilityEvidence {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ExplainabilityReport {
     pub mixed_mode: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lexical_rules: Option<LexicalRulesExplainability>,
     pub category_contributions: Vec<ExplainabilityContribution>,
     pub evidence: Vec<ExplainabilityEvidence>,
 }
 
-pub fn build_explainability(findings: &[Finding], mixed_mode: bool) -> ExplainabilityReport {
+pub fn build_explainability(
+    findings: &[Finding],
+    mixed_mode: bool,
+    lexical_rules: Option<&LexicalRulesExplainability>,
+) -> ExplainabilityReport {
     let mut by_category: HashMap<String, (usize, f32)> = HashMap::new();
     let mut evidence = Vec::with_capacity(findings.len());
 
@@ -98,6 +105,7 @@ pub fn build_explainability(findings: &[Finding], mixed_mode: bool) -> Explainab
 
     ExplainabilityReport {
         mixed_mode,
+        lexical_rules: lexical_rules.cloned(),
         category_contributions,
         evidence,
     }
@@ -251,6 +259,18 @@ fn write_text_explainability(
     writeln!(out, "{}", a.bold("Explainability"))?;
     if explainability.mixed_mode {
         writeln!(out, " {} mixed-content aggregation enabled", a.dim("•"))?;
+    }
+    if let Some(rules) = &explainability.lexical_rules {
+        writeln!(out, " {} lexical rules:", a.dim("•"))?;
+        writeln!(
+            out,
+            "   - case_sensitive={} effective_terms={} custom_terms={} custom_phrases={} excludes={}",
+            rules.case_sensitive,
+            rules.effective_terms.len(),
+            rules.extra_terms.len(),
+            rules.extra_phrases.len(),
+            rules.exclude_terms.len(),
+        )?;
     }
     writeln!(out, " {} category contributions:", a.dim("•"))?;
     for c in &explainability.category_contributions {

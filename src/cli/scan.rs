@@ -20,6 +20,7 @@ use crate::recipe::loader::RecipeLoader;
 use crate::recipe::matcher::RecipeMatcher;
 use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::ignore_directives;
+use crate::scrubber::lexical::{LexicalMatcher, LexicalRulesExplainability};
 use crate::scrubber::{
     comments, idiom_mismatch, lexical, maintenance, metadata, name_credibility, promotion, readme,
     security, structure, tests as scrubber_tests, workflow,
@@ -52,6 +53,7 @@ pub struct ScanArgs {
 pub struct ScanCollection {
     pub findings: Vec<Finding>,
     pub files_scanned: usize,
+    pub lexical_explainability: Option<LexicalRulesExplainability>,
 }
 
 pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFormat) {
@@ -98,9 +100,13 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     }
 
     let summary = build_summary(&collection.findings);
-    let explainability = args
-        .explain
-        .then(|| crate::cli::report::build_explainability(&collection.findings, args.mixed));
+    let explainability = args.explain.then(|| {
+        crate::cli::report::build_explainability(
+            &collection.findings,
+            args.mixed,
+            collection.lexical_explainability.as_ref(),
+        )
+    });
     let stdout = io::stdout();
     let use_color = std::io::IsTerminal::is_terminal(&stdout);
     let mut out = BufWriter::new(stdout.lock());
@@ -155,6 +161,13 @@ pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollect
         });
 
     let recipe_matcher = load_recipe_matcher(&project_root);
+    let lexical_rules = config.detectors.lexical.rules();
+    let lexical_matcher = if config.detectors.lexical.enabled() {
+        Some(LexicalMatcher::from_rules(&lexical_rules)?)
+    } else {
+        None
+    };
+    let lexical_explainability = lexical_matcher.as_ref().map(|m| m.explainability().clone());
 
     let mut findings: Vec<Finding> = Vec::new();
 
@@ -195,6 +208,7 @@ pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollect
             &mut findings,
             comment_config,
             recipe_matcher.as_deref(),
+            lexical_matcher.as_ref(),
             config.detectors.security,
         );
 
@@ -220,6 +234,7 @@ pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollect
     Ok(ScanCollection {
         findings,
         files_scanned: files.len(),
+        lexical_explainability,
     })
 }
 
@@ -265,6 +280,7 @@ fn run_file_detectors(
     findings: &mut Vec<Finding>,
     comment_config: CommentDetectionConfig,
     recipe_matcher: Option<&RecipeMatcher>,
+    lexical_matcher: Option<&LexicalMatcher>,
     security_enabled: bool,
 ) {
     let ext = path
@@ -274,7 +290,11 @@ fn run_file_detectors(
     let lang = LanguageKind::from_extension(ext);
 
     if lang.is_analysable() {
-        run_detector(findings, || lexical::detect_file(path));
+        if let Some(matcher) = lexical_matcher {
+            run_detector(findings, || {
+                matcher.detect_file(path, lexical::LexicalDetectionConfig::default())
+            });
+        }
         run_detector(findings, || {
             comments::detect_file_with_config(path, comment_config)
         });
