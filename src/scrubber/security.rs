@@ -65,7 +65,7 @@ static RULES: &[Rule] = &[
                      For shell commands use an argument list API (e.g. std::process::Command, subprocess.run([...])). \
                      Never interpolate untrusted data into a command string.",
         extensions: &["rs", "go", "ts", "tsx", "cs", "py"],
-        pattern: r#"(?i)(?:format!|fmt\.Sprintf|string\.Format|(?:f"|f'))\s*\(?\s*["']?\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|EXECUTE|CALL)\s[^"'\n]*(?:\{\d*\}|%[sdvf]|\{[a-z_]+\})[^"'\n]*["']?"#,
+        pattern: r#"(?:format!|fmt\.Sprintf|string\.Format|(?:f"|f'))\s*\(?\s*["']?\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|EXECUTE|CALL)\s[^"'\n]*(?:\{\d*\}|%[sdvf]|\{[a-z_]+\})[^"'\n]*["']?"#,
         ignore_case: true,
     },
     // ── SEC002 · eval / exec with dynamic data ───────────────────────────────

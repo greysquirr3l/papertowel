@@ -96,7 +96,13 @@ papertowel grade . --min-grade B --ci  # fail CI if below threshold
 
 # Fix the code fingerprints
 papertowel scrub .
-papertowel scrub . --dry-run  # preview first
+papertowel scrub . --dry-run         # preview first
+papertowel scrub . --verify          # scrub then re-scan for convergence
+
+# Install AI workflow prompts into any repo
+papertowel prompt install            # AGENTS.md + god-is-dead workflow
+papertowel prompt install --vscode   # also add VS Code agent prompt
+papertowel prompt list               # see what's available
 
 # Set up the git humanizer
 papertowel wring init --branch public
@@ -158,6 +164,23 @@ This tool helps you sidestep the purity police so you can focus on actually ship
 - `.papertowel.toml` — repo-level configuration (detectors, severity, exclusions)
 - `.papertowelignore` — paths to skip (gitignore syntax)
 - `~/.config/papertowel/profiles/*.toml` — persona profiles
+
+### AI Workflow Prompts
+
+For large decomposition work, install the bundled god-file refactor workflow into any repo:
+
+```sh
+papertowel prompt install             # universal files (AGENTS.md + .papertowel/god-is-dead.md)
+papertowel prompt install --vscode   # also adds .vscode/god-is-dead.prompt.md (VS Code agent mode)
+papertowel prompt list                # show available templates
+```
+
+The default install drops two files:
+
+- `AGENTS.md` — project coding standards and the god-file approval gate, compatible with any AI coding assistant (Claude Code, Cursor, Windsurf, Gemini Code Assist, GitHub Copilot, etc.)
+- `.papertowel/god-is-dead.md` — the full five-phase refactoring workflow: discovery, scoring, strategy, plan, and gated execution
+
+Neither file references a specific editor or AI product. The `--vscode` flag adds a `.prompt.md` variant with VS Code agent mode frontmatter if you want that.
 
 ### Inline Directives
 

@@ -1,8 +1,3 @@
-#![expect(
-    clippy::multiple_crate_versions,
-    reason = "transitive dependency graph currently pulls multiple hashbrown versions"
-)]
-
 #[doc(hidden)]
 pub mod cli;
 #[doc(hidden)]

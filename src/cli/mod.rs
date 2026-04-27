@@ -5,6 +5,7 @@ mod hook;
 mod learn;
 mod mcp;
 mod profile;
+pub mod prompt;
 pub mod recipe;
 pub mod report;
 pub mod scan;
@@ -69,6 +70,22 @@ enum Command {
     Recipe(RecipeArgs),
     /// Install or remove the papertowel pre-commit git hook.
     Hook(HookArgs),
+    /// Install AI workflow prompts and project instructions into a repository.
+    Prompt(PromptArgs),
+}
+
+#[derive(Debug, Args)]
+struct PromptArgs {
+    #[command(subcommand)]
+    command: PromptCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum PromptCommand {
+    /// Install prompt templates into the current repository.
+    Install(prompt::InstallArgs),
+    /// List available prompt templates.
+    List(prompt::ListArgs),
 }
 
 #[derive(Debug, Args)]
@@ -242,6 +259,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             HookCommand::Install(ref install_args) => hook::handle_install(install_args),
             HookCommand::Uninstall(ref uninstall_args) => hook::handle_uninstall(uninstall_args),
             HookCommand::Status(ref status_args) => hook::handle_status(status_args),
+        },
+        Command::Prompt(args) => match args.command {
+            PromptCommand::Install(ref install_args) => prompt::handle_install(install_args),
+            PromptCommand::List(ref list_args) => {
+                prompt::handle_list(list_args);
+                Ok(())
+            }
         },
     }
 }
