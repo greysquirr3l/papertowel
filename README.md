@@ -98,6 +98,12 @@ papertowel grade . --min-grade B --ci  # fail CI if below threshold
 papertowel scrub .
 papertowel scrub . --dry-run         # preview first
 papertowel scrub . --verify          # scrub then re-scan for convergence
+papertowel scrub . --detectors recipe
+
+# Cleanup engine (assess -> status -> policy-gated apply)
+papertowel cleanup assess . --format json --out .papertowel/cleanup/latest.json
+papertowel cleanup status . --format json
+papertowel cleanup apply .papertowel/cleanup/latest.json --dry-run --ci
 
 # Install AI workflow prompts into any repo
 papertowel prompt install            # AGENTS.md + god-is-dead workflow
@@ -117,6 +123,11 @@ papertowel wring unlock-stale
 papertowel hook install
 papertowel hook status
 ```
+
+`scrub --detectors lexical` is a legacy alias for `recipe` and is deprecated.
+Use `--detectors recipe` going forward. The alias will be removed in `v0.4.0 (2026-07-01)`.
+
+Cleanup CI rollout guidance and workflow snippets are documented in [docs/dev/cleanup-ci-workflows.md](docs/dev/cleanup-ci-workflows.md).
 
 ## Persona profiles
 

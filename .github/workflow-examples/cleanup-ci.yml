@@ -1,0 +1,76 @@
+name: Cleanup CI Example
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cleanup-assess:
+    name: Cleanup Assess (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cleanup assess
+        run: |
+          set -euo pipefail
+          mkdir -p .papertowel/cleanup
+          cargo run -- cleanup assess . \
+            --format json \
+            --out .papertowel/cleanup/latest.json \
+            --ci
+
+      - name: Upload cleanup assess artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleanup-assess-report
+          path: .papertowel/cleanup/latest.json
+
+  cleanup-policy-gate:
+    name: Cleanup Policy Gate (optional blocking)
+    runs-on: ubuntu-latest
+    needs: [cleanup-assess]
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download cleanup assess artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cleanup-assess-report
+          path: .papertowel/cleanup
+
+      - name: Run cleanup policy gate (dry-run apply)
+        run: |
+          set -euo pipefail
+          cargo run -- cleanup apply .papertowel/cleanup/latest.json \
+            --format json \
+            --dry-run \
+            --ci
+
+  cleanup-trend:
+    name: Cleanup Trend (advisory)
+    runs-on: ubuntu-latest
+    needs: [cleanup-assess]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cleanup status and append to job summary
+        run: |
+          set -euo pipefail
+          report=$(cargo run -- cleanup status . --format json)
+          echo "## Cleanup Trend" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$report" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
