@@ -16,9 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--force` overwrites existing files; default errors if a target already exists
   - `papertowel prompt list` shows all available templates and which flags gate each one
 
-- **Scrub safety valve** (`--allow-unsafe-scrub`) — `papertowel scrub` now aborts before writing if the scrubbed content is more than 20% smaller than the original or the line count drops by more than 15%. Both thresholds are configurable via `[scrub] min_size_percent` and `max_line_drop_percent` in `.papertowel.toml`. Destructive scrubs require `--allow-unsafe-scrub` to proceed.
+- **Scrub safety valve** (`--allow-unsafe-scrub`) — `papertowel scrub` now aborts before writing if the scrubbed content is more than 50% smaller than the original or the line count drops by more than 60%. Both thresholds are configurable via `[scrubber] min_size_percent` and `max_line_drop_percent` in `.papertowel.toml`. Destructive scrubs require `--allow-unsafe-scrub` to proceed.
 
-- **Post-scrub convergence check** (`--verify`) — after a scrub run, re-scans the output and reports whether findings decreased, stayed the same, or increased. In `--ci` mode, exits non-zero if the finding count did not decrease. Includes per-category delta breakdown in both text and JSON formats.
+- **Post-scrub convergence check** (`--verify`) — after a scrub run, re-scans the output and compares a severity-weighted score, reporting whether the score improved, stayed the same, or regressed. In `--ci` mode, exits non-zero only if the score regresses (increases). Includes per-category delta breakdown in both text and JSON formats.
 
 - **Custom lexical rules via config** — `.papertowel.toml` now accepts a `[detectors.lexical]` table to extend or trim the built-in slop vocabulary at the repo level:
 

@@ -31,7 +31,7 @@ fn parse_naive_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::from_hms_opt(hour, minute, 0)
 }
 
-/// Find the next moment >= `from` that falls inside any of the persona's active
+/// Find the next moment >= `from` that falls inside any of the persona's active windows.
 pub(super) fn next_active_time(
     from: DateTime<Utc>,
     windows: &[ActiveWindow],
@@ -93,7 +93,7 @@ pub(super) fn jitter_minutes(schedule: &PersonaSchedule) -> Duration {
     // Spread commits roughly evenly across ~2 hour sessions.
     let session_minutes: i64 = 120;
     let per_commit_minutes = session_minutes / avg;
-    // Simple deterministic jitter: vary by ±25% of per-commit interval.
+    // Simple deterministic jitter: add a positive variance based on session settings.
     let variance = (f64::from(schedule.session_variance)
         * f64::from(i32::try_from(per_commit_minutes).unwrap_or(15)))
     .round() as i64;

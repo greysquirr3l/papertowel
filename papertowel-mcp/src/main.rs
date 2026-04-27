@@ -178,13 +178,13 @@ mod tests {
             .and_then(serde_json::Value::as_array)
             .expect("tools/list should return a tools array");
 
-        for (expected_name, read_only, idempotent) in [
-            ("papertowel_scan", true, true),
-            ("papertowel_scrub", true, true),
-            ("papertowel_grade", true, true),
-            ("papertowel_cleanup_assess", false, true),
-            ("papertowel_cleanup_status", true, true),
-            ("papertowel_cleanup_apply", false, false),
+        for (expected_name, read_only, destructive, idempotent, open_world) in [
+            ("papertowel_scan", true, false, true, false),
+            ("papertowel_scrub", true, false, true, false),
+            ("papertowel_grade", true, false, true, false),
+            ("papertowel_cleanup_assess", false, false, true, false),
+            ("papertowel_cleanup_status", true, false, true, false),
+            ("papertowel_cleanup_apply", false, true, false, true),
         ] {
             let tool = tools
                 .iter()
@@ -199,7 +199,7 @@ mod tests {
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("destructiveHint")),
-                Some(&json!(false))
+                Some(&json!(destructive))
             );
             assert_eq!(
                 tool.get("annotations")
@@ -209,7 +209,7 @@ mod tests {
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("openWorldHint")),
-                Some(&json!(false))
+                Some(&json!(open_world))
             );
         }
     }

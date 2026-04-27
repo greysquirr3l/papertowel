@@ -190,9 +190,9 @@ fn tool_cleanup_apply_definition() -> Value {
         "description": "Select applicable cleanup findings using strict policy gates and run validation commands from the cleanup report.",
         "annotations": {
             "readOnlyHint": false,
-            "destructiveHint": false,
+            "destructiveHint": true,
             "idempotentHint": false,
-            "openWorldHint": false
+            "openWorldHint": true
         },
         "inputSchema": {
             "type": "object",
@@ -283,6 +283,22 @@ fn load_recipe_matcher(path: &std::path::Path) -> Option<papertowel::recipe::Rec
     matcher
 }
 
+fn load_lexical_matcher(
+    path: &std::path::Path,
+) -> std::result::Result<Option<papertowel::scrubber::lexical::LexicalMatcher>, String> {
+    let (_, config, _) = papertowel::config::resolve_config(path)
+        .map_err(|e| format!("failed to load project config: {e}"))?;
+
+    if !config.detectors.lexical.enabled() {
+        return Ok(None);
+    }
+
+    let rules = config.detectors.lexical.rules();
+    papertowel::scrubber::lexical::LexicalMatcher::from_rules(&rules)
+        .map(Some)
+        .map_err(|e| format!("failed to build lexical matcher: {e}"))
+}
+
 /// Run the papertowel scan pipeline against a path and return findings as text.
 fn call_scan(args: &Value) -> Value {
     let raw_path = match required_str_arg(args, "path") {
@@ -313,10 +329,19 @@ fn call_scan(args: &Value) -> Value {
 
     // Load recipe matcher from the path's project root (best-effort).
     let recipe_matcher = load_recipe_matcher(&path);
+    let lexical_matcher = match load_lexical_matcher(&path) {
+        Ok(matcher) => matcher,
+        Err(message) => return tool_error(message),
+    };
 
     let mut all_findings = Vec::new();
     for file in &files {
-        scan_file_into(&mut all_findings, file, recipe_matcher.as_ref());
+        scan_file_into(
+            &mut all_findings,
+            file,
+            recipe_matcher.as_ref(),
+            lexical_matcher.as_ref(),
+        );
     }
 
     // Run repository-level detectors when scanning a directory that is a git repo.
@@ -819,6 +844,7 @@ fn scan_file_into(
     out: &mut Vec<papertowel::detection::finding::Finding>,
     file: &std::path::Path,
     recipe_matcher: Option<&papertowel::recipe::RecipeMatcher>,
+    lexical_matcher: Option<&papertowel::scrubber::lexical::LexicalMatcher>,
 ) {
     let ext = file
         .extension()
@@ -827,7 +853,15 @@ fn scan_file_into(
     let lang = papertowel::detection::language::LanguageKind::from_extension(ext);
 
     if lang.is_analysable() {
-        run_detector_into(out, papertowel::scrubber::lexical::detect_file(file));
+        if let Some(matcher) = lexical_matcher {
+            run_detector_into(
+                out,
+                matcher.detect_file(
+                    file,
+                    papertowel::scrubber::lexical::LexicalDetectionConfig::default(),
+                ),
+            );
+        }
         run_detector_into(out, papertowel::scrubber::comments::detect_file(file));
         run_detector_into(
             out,
