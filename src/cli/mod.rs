@@ -201,6 +201,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 path: args.path.clone(),
                 dry_run: args.dry_run,
                 detectors: Vec::new(),
+                ci: false,
+                allow_unsafe_scrub: false,
             };
             scrub::handle(&scrub_args)?;
             let scan_args = scan::ScanArgs {

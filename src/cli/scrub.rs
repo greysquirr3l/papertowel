@@ -11,6 +11,7 @@ use crate::detection::language::LanguageKind;
 use crate::recipe::loader::RecipeLoader;
 use crate::recipe::scrubber::RecipeScrubber;
 use crate::scrubber::ignore_directives;
+use crate::scrubber::safety::{SafetyConfig, SafetyOutcome, check_safety};
 use crate::scrubber::{comments, readme};
 
 pub const RECIPE_DETECTOR_NAME: &str = "recipe";
@@ -22,6 +23,13 @@ pub struct ScrubArgs {
     pub dry_run: bool,
     #[arg(long, value_delimiter = ',')]
     pub detectors: Vec<String>,
+    /// Treat elevated warnings as hard failures (mirror scan --ci behaviour).
+    #[arg(long)]
+    pub ci: bool,
+    /// Bypass the scrub safety valve even when thresholds would be violated.
+    /// Use only for debugging or intentional aggressive transformations.
+    #[arg(long)]
+    pub allow_unsafe_scrub: bool,
 }
 
 #[derive(Debug, Default)]
@@ -40,6 +48,8 @@ struct FileResult {
     comments: Option<usize>,
     /// README framework lines removed.
     readme: Option<usize>,
+    /// Set when the safety guard reverted an over-aggressive transform.
+    safety_blocked: Option<String>,
 }
 
 impl FileResult {
@@ -90,7 +100,16 @@ fn load_recipe_scrubber(project_root: &Path) -> Option<Arc<RecipeScrubber>> {
 
 pub fn handle(args: &ScrubArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
-    let (project_root, _config, ignore) = resolve_config(&root)?;
+    let (project_root, config, ignore) = resolve_config(&root)?;
+    let safety_config = SafetyConfig {
+        min_size_percent: config.scrubber.min_size_percent,
+        max_line_drop_percent: config.scrubber.max_line_drop_percent,
+    };
+    let effective_safety = if args.allow_unsafe_scrub {
+        None
+    } else {
+        Some(safety_config)
+    };
 
     // Load recipe scrubber once for all files.
     let recipe_scrubber = if wants_detector(&args.detectors, RECIPE_DETECTOR_NAME) {
@@ -113,6 +132,7 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
 
     let mut changed_results: Vec<FileResult> = Vec::new();
     let mut summary = ScrubSummary::default();
+    let mut safety_blocked_count = 0usize;
 
     for path in &files {
         // Respect inline ignore-file directives.
@@ -123,7 +143,15 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
             continue;
         }
 
-        let result = apply_transforms(path, args, recipe_scrubber.as_deref());
+        let result = apply_transforms(
+            path,
+            args,
+            recipe_scrubber.as_deref(),
+            effective_safety.as_ref(),
+        );
+        if result.safety_blocked.is_some() {
+            safety_blocked_count += 1;
+        }
         if result.changed() {
             summary.files_changed += 1;
             if let Some(n) = result.recipe {
@@ -136,12 +164,22 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
                 summary.readme_lines_removed += n;
             }
             changed_results.push(result);
+        } else if result.safety_blocked.is_some() {
+            changed_results.push(result);
         }
     }
 
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
     write_report(&mut out, &changed_results, &summary, args.dry_run)?;
+
+    if args.ci && safety_blocked_count > 0 {
+        anyhow::bail!(
+            "{safety_blocked_count} file{} blocked by the scrub safety valve; \
+             use --allow-unsafe-scrub to override",
+            if safety_blocked_count == 1 { "" } else { "s" }
+        );
+    }
 
     Ok(())
 }
@@ -150,6 +188,7 @@ fn apply_transforms(
     path: &Path,
     args: &ScrubArgs,
     recipe_scrubber: Option<&RecipeScrubber>,
+    safety: Option<&SafetyConfig>,
 ) -> FileResult {
     let ext = path
         .extension()
@@ -157,11 +196,26 @@ fn apply_transforms(
         .unwrap_or_default();
     let lang = LanguageKind::from_extension(ext);
 
+    // Snapshot original content once so we can check safety and revert if needed.
+    // Only read when we might actually write (not dry-run, safety active).
+    let original_snapshot: Option<String> = if !args.dry_run && safety.is_some() {
+        match std::fs::read_to_string(path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::debug!(path = %path.display(), "could not snapshot for safety check: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let mut result = FileResult {
         path: path.to_path_buf(),
         recipe: None,
         comments: None,
         readme: None,
+        safety_blocked: None,
     };
 
     if lang.is_analysable() && wants_detector(&args.detectors, comments::DETECTOR_NAME) {
@@ -189,6 +243,41 @@ fn apply_transforms(
             Ok(r) if r.changed => result.readme = Some(r.removed_lines),
             Ok(_) => {}
             Err(e) => tracing::warn!(path = %path.display(), "readme transform error: {e}"),
+        }
+    }
+
+    // Safety check: compare original snapshot against current file content.
+    // If any transform was over-aggressive, revert to the snapshot.
+    if let (Some(original), Some(cfg)) = (&original_snapshot, safety) {
+        if result.changed() {
+            match std::fs::read_to_string(path) {
+                Ok(current) => match check_safety(original, &current, cfg) {
+                    SafetyOutcome::Allowed => {}
+                    SafetyOutcome::Blocked(reason) => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            "safety guard blocked transform: {reason}; reverting"
+                        );
+                        if let Err(e) = std::fs::write(path, original) {
+                            tracing::error!(
+                                path = %path.display(),
+                                "failed to revert after safety block: {e}"
+                            );
+                        } else {
+                            result.recipe = None;
+                            result.comments = None;
+                            result.readme = None;
+                            result.safety_blocked = Some(reason);
+                        }
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        "could not re-read for safety check: {e}"
+                    );
+                }
+            }
         }
     }
 
@@ -225,6 +314,9 @@ fn write_report(
                 " [readme] {n} line{} removed",
                 if n == 1 { "" } else { "s" }
             )?;
+        }
+        if let Some(ref reason) = r.safety_blocked {
+            writeln!(out, " [safety] blocked — {reason} (original preserved)")?;
         }
         writeln!(out)?;
     }
@@ -295,6 +387,8 @@ fn main() {}
             path: tmp.path().to_string_lossy().into_owned(),
             dry_run: true,
             detectors: vec![],
+            ci: false,
+            allow_unsafe_scrub: false,
         })?;
 
         assert_eq!(fs::read_to_string(&path)?, original);
@@ -312,6 +406,8 @@ fn main() {}
             path: tmp.path().to_string_lossy().into_owned(),
             dry_run: false,
             detectors: vec![],
+            ci: false,
+            allow_unsafe_scrub: false,
         })?;
 
         let after = fs::read_to_string(&path)?;
@@ -327,6 +423,8 @@ fn main() {}
             path: tmp.path().to_string_lossy().into_owned(),
             dry_run: false,
             detectors: vec![],
+            ci: false,
+            allow_unsafe_scrub: false,
         })?;
         Ok(())
     }

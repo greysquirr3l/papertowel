@@ -95,12 +95,30 @@ impl Default for SeverityConfig {
 #[serde(default)]
 pub struct ScrubberConfig {
     pub aggression: ScrubberAggression,
+    /// Minimum ratio of output bytes to input bytes (0–100 percent).
+    /// Writes that reduce file size below this threshold are blocked.
+    /// Default: 50.
+    #[serde(default = "default_min_size_percent")]
+    pub min_size_percent: u8,
+    /// Maximum fraction of original lines that may be dropped (0–100 percent).
+    /// Writes that remove more lines than this are blocked.  Default: 60.
+    #[serde(default = "default_max_line_drop_percent")]
+    pub max_line_drop_percent: u8,
+}
+
+const fn default_min_size_percent() -> u8 {
+    50
+}
+const fn default_max_line_drop_percent() -> u8 {
+    60
 }
 
 impl Default for ScrubberConfig {
     fn default() -> Self {
         Self {
             aggression: ScrubberAggression::Moderate,
+            min_size_percent: default_min_size_percent(),
+            max_line_drop_percent: default_max_line_drop_percent(),
         }
     }
 }
