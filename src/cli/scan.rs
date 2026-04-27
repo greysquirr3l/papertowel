@@ -13,10 +13,10 @@ use crate::cli::report::{
     write_text_report,
 };
 use crate::config::{is_ignored, resolve_config};
-use crate::detection::finding::{Finding, Severity};
+use crate::detection::finding::Finding;
 use crate::detection::language::LanguageKind;
 use crate::learning::StyleBaseline;
-use crate::recipe::loader::RecipeLoader;
+use crate::recipe::loader::load_recipe_matcher_for_path;
 use crate::recipe::matcher::RecipeMatcher;
 use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::ignore_directives;
@@ -72,14 +72,7 @@ pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFor
 }
 
 fn load_recipe_matcher(project_root: &Path) -> Option<Arc<RecipeMatcher>> {
-    let loader = RecipeLoader::new(Some(project_root.to_path_buf()));
-    match loader.load_all() {
-        Ok(recipes) => RecipeMatcher::compile(recipes).ok().map(Arc::new),
-        Err(e) => {
-            tracing::warn!("failed to load recipes: {e}");
-            None
-        }
-    }
+    load_recipe_matcher_for_path(project_root).map(Arc::new)
 }
 
 pub fn handle(args: &ScanArgs) -> Result<()> {
@@ -88,11 +81,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 
     let mut collection = collect_findings_for_root(&root, args.mixed)?;
 
-    let min_severity = args.severity.map(|s| match s {
-        SeverityArg::Low => Severity::Low,
-        SeverityArg::Medium => Severity::Medium,
-        SeverityArg::High => Severity::High,
-    });
+    let min_severity = args.severity.map(SeverityArg::as_severity);
 
     // ── Severity filtering ───────────────────────────────────────────────────
     if let Some(min) = min_severity {
@@ -133,11 +122,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
 
     // CI gate: fail if any finding is at or above the --fail-on threshold.
     if let Some(fail_sev) = effective_fail_on {
-        let threshold = match fail_sev {
-            SeverityArg::Low => Severity::Low,
-            SeverityArg::Medium => Severity::Medium,
-            SeverityArg::High => Severity::High,
-        };
+        let threshold = fail_sev.as_severity();
         if collection.findings.iter().any(|f| f.severity >= threshold) {
             anyhow::bail!("scan found issues at or above {fail_sev:?} severity threshold");
         }

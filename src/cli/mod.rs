@@ -1,4 +1,5 @@
 mod calibrate;
+mod cleanup;
 mod eval;
 mod grade;
 mod hook;
@@ -15,6 +16,8 @@ mod wring;
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::detection::finding::Severity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     Json,
@@ -30,6 +33,23 @@ pub enum SeverityArg {
     Low,
     Medium,
     High,
+}
+
+impl From<SeverityArg> for Severity {
+    fn from(value: SeverityArg) -> Self {
+        value.as_severity()
+    }
+}
+
+impl SeverityArg {
+    #[must_use]
+    pub const fn as_severity(self) -> Severity {
+        match self {
+            Self::Low => Severity::Low,
+            Self::Medium => Severity::Medium,
+            Self::High => Severity::High,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -52,6 +72,8 @@ enum Command {
     Calibrate(calibrate::CalibrateArgs),
     /// Run fixture-based evaluation and print a confusion matrix.
     Eval(eval::EvalArgs),
+    /// Run cleanup assessments using conservative, evidence-driven tracks.
+    Cleanup(cleanup::CleanupArgs),
     /// Rewrite detected AI fingerprints in place.
     Scrub(scrub::ScrubArgs),
     /// Score a project with a letter grade for AI fingerprint presence.
@@ -198,6 +220,11 @@ fn dispatch(cli: Cli) -> Result<()> {
         Command::Scan(args) => scan::handle(&args),
         Command::Calibrate(args) => calibrate::handle(&args),
         Command::Eval(args) => eval::handle(&args),
+        Command::Cleanup(args) => match args.command {
+            cleanup::CleanupCommand::Assess(assess_args) => cleanup::handle_assess(&assess_args),
+            cleanup::CleanupCommand::Status(status_args) => cleanup::handle_status(&status_args),
+            cleanup::CleanupCommand::Apply(apply_args) => cleanup::handle_apply(&apply_args),
+        },
         Command::Scrub(args) => scrub::handle(&args),
         Command::Grade(args) => grade::handle(&args),
         Command::Wring(args) => match args.command {
@@ -398,6 +425,75 @@ mod tests {
             },
             _ => unreachable!("expected mcp command"),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn parses_cleanup_assess_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cleanup = Cli::try_parse_from([
+            "papertowel",
+            "cleanup",
+            "assess",
+            ".",
+            "--format",
+            "json",
+            "--tracks",
+            "dead_code,error_handling",
+        ])?;
+
+        let Command::Cleanup(args) = cleanup.command else {
+            unreachable!("expected cleanup command");
+        };
+        let super::cleanup::CleanupCommand::Assess(assess_args) = args.command else {
+            unreachable!("expected cleanup assess");
+        };
+        assert_eq!(assess_args.path, ".");
+        assert_eq!(assess_args.format, OutputFormat::Json);
+        assert_eq!(assess_args.tracks.len(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn parses_cleanup_status_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cleanup =
+            Cli::try_parse_from(["papertowel", "cleanup", "status", ".", "--format", "json"])?;
+
+        let Command::Cleanup(args) = cleanup.command else {
+            unreachable!("expected cleanup command");
+        };
+        let super::cleanup::CleanupCommand::Status(status_args) = args.command else {
+            unreachable!("expected cleanup status");
+        };
+        assert_eq!(status_args.path, ".");
+        assert_eq!(status_args.format, OutputFormat::Json);
+
+        Ok(())
+    }
+
+    #[test]
+    fn parses_cleanup_apply_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cleanup = Cli::try_parse_from([
+            "papertowel",
+            "cleanup",
+            "apply",
+            "report.json",
+            "--dry-run",
+            "--min-confidence",
+            "medium",
+            "--max-risk",
+            "medium",
+        ])?;
+
+        let Command::Cleanup(args) = cleanup.command else {
+            unreachable!("expected cleanup command");
+        };
+        let super::cleanup::CleanupCommand::Apply(apply_args) = args.command else {
+            unreachable!("expected cleanup apply");
+        };
+        assert_eq!(apply_args.report, "report.json");
+        assert!(apply_args.dry_run);
+
         Ok(())
     }
 

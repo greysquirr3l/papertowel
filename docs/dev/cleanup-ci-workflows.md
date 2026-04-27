@@ -114,10 +114,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 ### Evidence gaps block apply candidates
 
 Symptoms:
+
 - `cleanup apply` reports many blocked findings.
 - Reasons include `missing_mandatory_evidence` or `not_marked_apply`.
 
 Actions:
+
 1. Start with advisory-only mode until evidence quality improves.
 2. Restrict apply scope with `--allow-tracks` to low-risk tracks first.
 3. Keep `--dry-run` in CI until trend data is stable for several runs.
@@ -125,9 +127,11 @@ Actions:
 ### False positives in cleanup assess
 
 Symptoms:
+
 - Findings are consistently deferred on known-safe code.
 
 Actions:
+
 1. Review track/evidence reasoning in the assess report JSON.
 2. Re-run assess on a narrow path to isolate noisy patterns.
 3. Prefer documenting and deferring over forcing broader apply thresholds.
@@ -135,6 +139,7 @@ Actions:
 ### Policy gate too strict for early rollout
 
 Actions:
+
 1. Gate only selected branches first.
 2. Use `--allow-tracks` to pilot one track at a time.
 3. Keep `cleanup-policy-gate` disabled or advisory until confidence stabilizes.

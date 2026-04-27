@@ -12,15 +12,13 @@ use crate::domain::errors::PapertowelError;
 pub const DETECTOR_NAME: &str = "lexical";
 pub const MAX_CUSTOM_LEXICAL_ENTRIES: usize = 256;
 
-pub const SLOP_PATTERNS: [&str; 92] = [
+pub const SLOP_PATTERNS: &[&str] = &[
     "accordingly",
     "additionally",
     "arguably",
     "certainly",
     "consequently",
     "hence",
-    "however",
-    "indeed",
     "moreover",
     "nevertheless",
     "nonetheless",
@@ -45,6 +43,8 @@ pub const SLOP_PATTERNS: [&str; 92] = [
     "cutting-edge",
     "game-changing",
     "pivotal",
+    "comprehensive",
+    "ergonomic",
     "innovation",
     "tapestry",
     "realm",
@@ -63,9 +63,7 @@ pub const SLOP_PATTERNS: [&str; 92] = [
     "revolutionize",
     "bolster",
     "streamline",
-    "a testament to",
-    "in summary",
-    "in conclusion",
+    "leveraging",
     "it\'s important to note",
     "it\'s important to consider",
     "it\'s worth noting that",
@@ -73,13 +71,15 @@ pub const SLOP_PATTERNS: [&str; 92] = [
     "that being said",
     "at its core",
     "to put it simply",
-    "this underscores the importance of",
-    "a key takeaway is",
-    "from a broader perspective",
     "generally speaking",
     "broadly speaking",
-    "tends to",
     "to some extent",
+    "from a broader perspective",
+    "a testament to",
+    "in summary",
+    "in conclusion",
+    "this underscores the importance of",
+    "a key takeaway is",
     "shed light on",
     "sheds light on",
     "seamless integration",
@@ -87,24 +87,14 @@ pub const SLOP_PATTERNS: [&str; 92] = [
     "actionable insights",
     "data-driven insights",
     "data-driven decisions",
-    "leveraging",
-    "this ensures that",
-    "helper function to",
-    "helper to",
-    "this module provides",
-    "this module offers",
-    "we can see that",
     "under the hood",
     "out of the box",
     "at the end of the day",
+    "ready for production",
     "as mentioned above",
     "for the sake of",
     "in order to",
-    "a comprehensive",
     "provides a streamlined",
-    "comprehensive",
-    "ergonomic",
-    "ready for production",
 ];
 
 static MATCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
@@ -114,8 +104,16 @@ static MATCHER: LazyLock<AhoCorasick> = LazyLock::new(|| {
     )]
     AhoCorasick::builder()
         .ascii_case_insensitive(true)
-        .build(SLOP_PATTERNS)
+        .build(ACTIVE_SLOP_PATTERNS.as_slice())
         .expect("valid lexical matcher patterns")
+});
+
+static ACTIVE_SLOP_PATTERNS: LazyLock<Vec<&str>> = LazyLock::new(|| {
+    SLOP_PATTERNS
+        .iter()
+        .filter(|term| !term.trim().is_empty())
+        .copied()
+        .collect()
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,12 +134,27 @@ impl Default for LexicalDetectionConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LexicalTermSource {
+    Default,
+    CustomTerm,
+    CustomPhrase,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LexicalEffectiveTermExplainability {
+    pub term: String,
+    pub source: LexicalTermSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct LexicalRulesExplainability {
     pub case_sensitive: bool,
     pub extra_terms: Vec<String>,
     pub extra_phrases: Vec<String>,
     pub exclude_terms: Vec<String>,
     pub effective_terms: Vec<String>,
+    pub effective_entries: Vec<LexicalEffectiveTermExplainability>,
 }
 
 #[derive(Debug)]
@@ -169,17 +182,25 @@ impl LexicalMatcher {
 
         let mut seen: BTreeMap<String, String> = BTreeMap::new();
         let mut patterns = Vec::new();
+        let mut effective_entries = Vec::new();
 
-        for term in SLOP_PATTERNS {
+        for &term in SLOP_PATTERNS {
+            if term.trim().is_empty() {
+                continue;
+            }
             let normalized = normalize(term, rules.case_sensitive);
             if excluded.contains(&normalized) {
                 continue;
             }
             seen.insert(normalized, term.to_owned());
             patterns.push(term.to_owned());
+            effective_entries.push(LexicalEffectiveTermExplainability {
+                term: term.to_owned(),
+                source: LexicalTermSource::Default,
+            });
         }
 
-        for term in rules.extra_terms.iter().chain(rules.extra_phrases.iter()) {
+        for term in &rules.extra_terms {
             let cleaned = clean_entry(term)?;
             let normalized = normalize(&cleaned, rules.case_sensitive);
 
@@ -194,7 +215,33 @@ impl LexicalMatcher {
             }
 
             seen.insert(normalized, cleaned.clone());
-            patterns.push(cleaned);
+            patterns.push(cleaned.clone());
+            effective_entries.push(LexicalEffectiveTermExplainability {
+                term: cleaned,
+                source: LexicalTermSource::CustomTerm,
+            });
+        }
+
+        for phrase in &rules.extra_phrases {
+            let cleaned = clean_entry(phrase)?;
+            let normalized = normalize(&cleaned, rules.case_sensitive);
+
+            if let Some(existing) = seen.get(&normalized) {
+                return Err(PapertowelError::Validation(format!(
+                    "duplicate lexical rule entry after normalization: '{cleaned}' conflicts with '{existing}'"
+                )));
+            }
+
+            if excluded.contains(&normalized) {
+                continue;
+            }
+
+            seen.insert(normalized, cleaned.clone());
+            patterns.push(cleaned.clone());
+            effective_entries.push(LexicalEffectiveTermExplainability {
+                term: cleaned,
+                source: LexicalTermSource::CustomPhrase,
+            });
         }
 
         let matcher = AhoCorasick::builder()
@@ -211,6 +258,7 @@ impl LexicalMatcher {
                 extra_phrases: rules.extra_phrases.clone(),
                 exclude_terms: rules.exclude_terms.clone(),
                 effective_terms: patterns,
+                effective_entries,
             },
         })
     }
@@ -290,7 +338,7 @@ fn normalize(term: &str, case_sensitive: bool) -> String {
 
 #[must_use]
 pub const fn corpus() -> &'static [&'static str] {
-    &SLOP_PATTERNS
+    SLOP_PATTERNS
 }
 
 pub fn detect_file(path: impl AsRef<Path>) -> Result<Vec<Finding>, PapertowelError> {
@@ -321,7 +369,7 @@ pub fn detect_in_text(
         last_offset = Some(candidate.end());
 
         let index = candidate.pattern().as_usize();
-        if let Some(term) = SLOP_PATTERNS.get(index) {
+        if let Some(term) = ACTIVE_SLOP_PATTERNS.get(index) {
             terms.insert((*term).to_owned());
         }
     }
@@ -422,8 +470,8 @@ mod tests {
     use crate::config::LexicalRulesConfig;
     use crate::detection::finding::Severity;
     use crate::scrubber::lexical::{
-        DETECTOR_NAME, LexicalDetectionConfig, LexicalMatcher, MAX_CUSTOM_LEXICAL_ENTRIES, corpus,
-        detect_file, detect_in_text,
+        DETECTOR_NAME, LexicalDetectionConfig, LexicalMatcher, LexicalTermSource,
+        MAX_CUSTOM_LEXICAL_ENTRIES, corpus, detect_file, detect_in_text,
     };
 
     #[test]
@@ -513,6 +561,24 @@ mod tests {
                 .explainability()
                 .effective_terms
                 .contains(&"slopword".to_owned())
+        );
+        assert!(
+            matcher
+                .explainability()
+                .effective_entries
+                .iter()
+                .any(|entry| entry.term == "slopword"
+                    && entry.source == LexicalTermSource::CustomTerm)
+        );
+        assert!(
+            matcher
+                .explainability()
+                .effective_entries
+                .iter()
+                .any(|entry| {
+                    entry.term == "it should be noted"
+                        && entry.source == LexicalTermSource::CustomPhrase
+                })
         );
         Ok(())
     }

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::multiple_crate_versions,
+    reason = "transitive dependency graph currently includes duplicate versions"
+)]
+
 //! `papertowel-mcp` — MCP server that exposes papertowel scan and scrub
 //! capabilities as tools consumable by LLM clients (e.g. Claude Desktop,
 //! Cursor, Continue.dev).
@@ -24,6 +29,17 @@ use protocol::{
 };
 use tools::{handle_tools_call, handle_tools_list};
 use transport::{read_message, write_response};
+
+fn write_response_observed(
+    writer: &mut impl Write,
+    resp: &Response,
+    phase: &str,
+    method: Option<&str>,
+) {
+    if let Err(e) = write_response(resp, writer) {
+        error!(error = %e, phase, method, "failed to write response");
+    }
+}
 
 fn main() {
     tracing_subscriber::fmt()
@@ -54,7 +70,7 @@ fn main() {
             Err(e) => {
                 error!(error = %e, "failed to read message");
                 let resp = Response::err(Value::Null, ERR_PARSE, format!("read error: {e}"));
-                let _ = write_response(&resp, &mut writer);
+                write_response_observed(&mut writer, &resp, "read_error", None);
             }
         }
     }
@@ -67,7 +83,7 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
         Ok(m) => m,
         Err(e) => {
             let resp = Response::err(Value::Null, ERR_PARSE, format!("invalid JSON: {e}"));
-            let _ = write_response(&resp, writer);
+            write_response_observed(writer, &resp, "parse_error", None);
             return;
         }
     };
@@ -75,13 +91,14 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
     if msg.jsonrpc != "2.0" {
         if let Some(id) = msg.id {
             let resp = Response::err(id, ERR_INVALID_REQ, "jsonrpc must be \"2.0\"");
-            let _ = write_response(&resp, writer);
+            write_response_observed(writer, &resp, "invalid_jsonrpc", Some(msg.method.as_str()));
         }
         return;
     }
 
     // Notifications (no id) are processed but never get a response.
     let is_notification = msg.id.is_none();
+    let method_name = msg.method.clone();
 
     let result: Result<Value> = match msg.method.as_str() {
         "initialize" => Ok(handle_initialize(msg.params.as_ref())),
@@ -115,9 +132,7 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
         }
     };
 
-    if let Err(e) = write_response(&resp, writer) {
-        error!(error = %e, "failed to write response");
-    }
+    write_response_observed(writer, &resp, "method_result", Some(method_name.as_str()));
 }
 
 #[cfg(test)]
@@ -152,7 +167,7 @@ mod tests {
             init.get("serverInfo")
                 .and_then(|info| info.get("description")),
             Some(&json!(
-                "Scan and dry-run scrub code for AI-generated fingerprint patterns."
+                "Scan, scrub, grade, and run cleanup workflows for AI-generated fingerprint patterns."
             )),
             "initialize should include serverInfo.description"
         );
@@ -163,7 +178,14 @@ mod tests {
             .and_then(serde_json::Value::as_array)
             .expect("tools/list should return a tools array");
 
-        for expected_name in ["papertowel_scan", "papertowel_scrub", "papertowel_grade"] {
+        for (expected_name, read_only, idempotent) in [
+            ("papertowel_scan", true, true),
+            ("papertowel_scrub", true, true),
+            ("papertowel_grade", true, true),
+            ("papertowel_cleanup_assess", false, true),
+            ("papertowel_cleanup_status", true, true),
+            ("papertowel_cleanup_apply", false, false),
+        ] {
             let tool = tools
                 .iter()
                 .find(|tool| tool.get("name") == Some(&json!(expected_name)))
@@ -172,7 +194,7 @@ mod tests {
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("readOnlyHint")),
-                Some(&json!(true))
+                Some(&json!(read_only))
             );
             assert_eq!(
                 tool.get("annotations")
@@ -182,7 +204,7 @@ mod tests {
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("idempotentHint")),
-                Some(&json!(true))
+                Some(&json!(idempotent))
             );
             assert_eq!(
                 tool.get("annotations")

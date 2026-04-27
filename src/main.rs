@@ -1,3 +1,8 @@
+#![expect(
+    clippy::multiple_crate_versions,
+    reason = "transitive dependency graph currently includes duplicate versions"
+)]
+
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 

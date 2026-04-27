@@ -32,7 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Up to 256 custom entries combined. Extra entries are validated at startup (empty strings and duplicates rejected). Explainability output now tags which findings came from custom rules vs. built-in defaults.
 
+- **Dead-code verification workflow docs** — added [docs/dev/dead-code-verification.md](docs/dev/dead-code-verification.md) with local reproduction commands for `cargo machete` and `cargo +nightly udeps`, plus a manual verification checklist to reduce false-positive removals.
+
  — 2026-04-18
+
+### Changed
+
+- **Legacy scrub detector alias deprecation path** — `papertowel scrub --detectors lexical` remains supported as a compatibility alias for `recipe`, but now emits an explicit deprecation warning in non-CI runs. Migrate to `--detectors recipe`; alias support is scheduled for removal in `v0.4.0 (2026-07-01)`.
+- **Incremental report module split** — internal helpers for category/severity labeling, GitHub Actions emission, and SARIF rendering were extracted from `src/cli/report.rs` into focused submodules. External CLI behavior and output formats remain unchanged.
+- **Incremental MCP tools module split** — MCP tool argument parsing and response formatting helpers were extracted from `papertowel-mcp/src/tools.rs` into dedicated submodules, reducing duplication while preserving tool behavior.
+- **Incremental wringer queue module split** — queue scheduling/time-window logic and queue-plan persistence were extracted from `src/wringer/queue.rs` into `schedule` and `storage` submodules with planner behavior preserved.
+- **CI dead-code advisory signals** — CI now includes advisory dead-code jobs for `cargo machete` and `cargo +nightly udeps` (`continue-on-error: true`) to surface cleanup opportunities without blocking merges.
 
 ### Fixed
 

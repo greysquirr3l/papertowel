@@ -1,5 +1,50 @@
 use std::path::PathBuf;
 
+fn normalize_component(component: &str) -> String {
+    #[cfg(windows)]
+    {
+        component.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        component.to_owned()
+    }
+}
+
+fn path_components(path: &std::path::Path) -> Vec<String> {
+    path.components()
+        .map(|component| normalize_component(&component.as_os_str().to_string_lossy()))
+        .collect()
+}
+
+fn parse_subpath_components(subpath: &str) -> Vec<String> {
+    subpath
+        .split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .map(normalize_component)
+        .collect()
+}
+
+fn contains_component_sequence(haystack: &[String], needle: &[String]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
+#[cfg(windows)]
+fn denied_prefix_match(canonical: &std::path::Path, denied: &str) -> bool {
+    canonical
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .starts_with(&denied.to_ascii_lowercase())
+}
+
+#[cfg(not(windows))]
+fn denied_prefix_match(canonical: &std::path::Path, denied: &str) -> bool {
+    canonical.starts_with(denied)
+}
+
 /// Validate that `raw_path` is safe for the MCP server to operate on.
 ///
 /// Rejects:
@@ -54,7 +99,7 @@ pub fn validate_mcp_path(raw_path: &str) -> Result<PathBuf, String> {
         .map_err(|e| format!("path is invalid or does not exist: {e}"))?;
 
     for denied in DENIED_PREFIXES {
-        if canonical.starts_with(denied) {
+        if denied_prefix_match(&canonical, denied) {
             return Err(format!(
                 "scanning '{denied}' is not permitted by the MCP server"
             ));
@@ -74,18 +119,12 @@ pub fn validate_mcp_path(raw_path: &str) -> Result<PathBuf, String> {
         }
     }
 
-    // Check multi-component sub-paths by joining canonical components into a
-    // normalized forward-slash string and searching for the sub-path.
-    let normalized: String = canonical
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/");
-
+    // Check multi-component sub-paths via component windows to avoid
+    // false positives from substring matches.
+    let canonical_components = path_components(&canonical);
     for subpath in DENIED_SUBPATHS {
-        // Normalize the denied sub-path to forward slashes for comparison.
-        let needle = subpath.replace('\\', "/");
-        if normalized.contains(needle.as_str()) {
+        let denied_components = parse_subpath_components(subpath);
+        if contains_component_sequence(&canonical_components, &denied_components) {
             return Err(format!(
                 "path contains sensitive segment '{subpath}'; scanning is not permitted"
             ));

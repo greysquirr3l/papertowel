@@ -53,7 +53,7 @@ pub fn check_safety(original: &str, transformed: &str, config: &SafetyConfig) ->
     // Byte-size ratio check using integer percent math to avoid float casts.
     let new_bytes = transformed.len();
     let size_percent = ratio_percent(new_bytes, orig_bytes);
-    if size_percent < usize::from(config.min_size_percent) {
+    if size_percent < config.min_size_percent {
         return SafetyOutcome::Blocked(format!(
             "output is {}% of original size (minimum: {}%)",
             size_percent, config.min_size_percent,
@@ -66,7 +66,7 @@ pub fn check_safety(original: &str, transformed: &str, config: &SafetyConfig) ->
         let new_lines = transformed.lines().count();
         let lines_dropped = orig_lines.saturating_sub(new_lines);
         let drop_percent = ratio_percent(lines_dropped, orig_lines);
-        if drop_percent > usize::from(config.max_line_drop_percent) {
+        if drop_percent > config.max_line_drop_percent {
             return SafetyOutcome::Blocked(format!(
                 "dropped {lines_dropped}/{orig_lines} lines ({}%); maximum allowed: {}%",
                 drop_percent, config.max_line_drop_percent,
@@ -77,13 +77,18 @@ pub fn check_safety(original: &str, transformed: &str, config: &SafetyConfig) ->
     SafetyOutcome::Allowed
 }
 
-const fn ratio_percent(numerator: usize, denominator: usize) -> usize {
-    if denominator == 0 {
-        return 100;
+fn ratio_percent(part: usize, whole: usize) -> u8 {
+    if whole == 0 {
+        return 0;
     }
 
     // Rounded to nearest integer percent.
-    ((numerator * 100) + (denominator / 2)) / denominator
+    // Rounded integer percentage using wider math to avoid overflow.
+    let part_u128 = part as u128;
+    let whole_u128 = whole as u128;
+    let pct = ((part_u128 * 100) + (whole_u128 / 2)) / whole_u128;
+    let clamped = pct.min(100);
+    u8::try_from(clamped).unwrap_or(100)
 }
 
 #[cfg(test)]

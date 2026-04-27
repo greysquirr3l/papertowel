@@ -266,7 +266,9 @@ fn load_config_from_file(path: &Path) -> Result<ProjectConfig, PapertowelError> 
     }
     let text =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
-    toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)
+    let config = toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)?;
+    validate_scrubber_thresholds(&config)?;
+    Ok(config)
 }
 
 /// Discover the project root from `scan_path`, load the global and project
@@ -280,6 +282,7 @@ pub fn resolve_config(
     let global = load_global_config()?;
     let project = load_config(&project_root)?;
     let merged = merge_configs(global, project);
+    validate_scrubber_thresholds(&merged)?;
     let ignore = build_ignore_matcher(&project_root, &merged)?;
     Ok((project_root, merged, ignore))
 }
@@ -316,7 +319,28 @@ pub fn load_config(repo_root: impl AsRef<Path>) -> Result<ProjectConfig, Paperto
 
     let text =
         fs::read_to_string(&path).map_err(|error| PapertowelError::io_with_path(&path, error))?;
-    toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)
+    let config = toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)?;
+    validate_scrubber_thresholds(&config)?;
+    Ok(config)
+}
+
+fn validate_scrubber_thresholds(config: &ProjectConfig) -> Result<(), PapertowelError> {
+    let min_size_percent = config.scrubber.min_size_percent;
+    let max_line_drop_percent = config.scrubber.max_line_drop_percent;
+
+    if min_size_percent > 100 {
+        return Err(PapertowelError::Validation(format!(
+            "scrubber.min_size_percent must be between 0 and 100, got {min_size_percent}"
+        )));
+    }
+
+    if max_line_drop_percent > 100 {
+        return Err(PapertowelError::Validation(format!(
+            "scrubber.max_line_drop_percent must be between 0 and 100, got {max_line_drop_percent}"
+        )));
+    }
+
+    Ok(())
 }
 
 pub fn save_config(
@@ -448,6 +472,37 @@ case_sensitive = false
             assert_eq!(rules.exclude_terms, vec!["robust".to_owned()]);
             assert!(!rules.case_sensitive);
         }
+    }
+
+    #[test]
+    fn rejects_min_size_percent_above_100() {
+        let dir = scratch();
+        let config = r"
+[scrubber]
+min_size_percent = 101
+    ";
+
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), config).expect("write");
+        let error = load_config(dir.path()).expect_err("validation error");
+        let message = error.to_string();
+        assert!(message.contains("scrubber.min_size_percent"), "{message}");
+    }
+
+    #[test]
+    fn rejects_max_line_drop_percent_above_100() {
+        let dir = scratch();
+        let config = r"
+[scrubber]
+max_line_drop_percent = 101
+    ";
+
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), config).expect("write");
+        let error = load_config(dir.path()).expect_err("validation error");
+        let message = error.to_string();
+        assert!(
+            message.contains("scrubber.max_line_drop_percent"),
+            "{message}"
+        );
     }
 
     #[test]

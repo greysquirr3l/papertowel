@@ -1,14 +1,16 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, Duration, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use git2::{BranchType, Oid, Repository};
 use serde::{Deserialize, Serialize};
 
 use crate::domain::errors::PapertowelError;
 use crate::profile::persona::PersonaProfile;
+
+mod schedule;
+mod storage;
 
 pub const COMPONENT_NAME: &str = "queue";
 
@@ -138,11 +140,11 @@ pub fn build_queue_plan(
     let tz: Tz = persona.timezone.parse().unwrap_or(chrono_tz::UTC);
 
     // Build active windows from persona schedule.
-    let windows = parse_active_windows(&persona.schedule.active_hours, tz);
+    let windows = schedule::parse_active_windows(&persona.schedule.active_hours, tz);
 
     // We schedule entries starting from `now`, advancing through persona
     // windows.
-    let mut cursor = next_active_time(now, &windows, tz);
+    let mut cursor = schedule::next_active_time(now, &windows, tz);
 
     for session_commits in &sessions {
         let groups = squash_groups(session_commits);
@@ -161,8 +163,8 @@ pub fn build_queue_plan(
             });
 
             // Advance cursor by a jitter interval within the session.
-            let jitter = jitter_minutes(&persona.schedule);
-            cursor = advance_cursor(cursor, jitter, &windows, tz);
+            let jitter = schedule::jitter_minutes(&persona.schedule);
+            cursor = schedule::advance_cursor(cursor, jitter, &windows, tz);
         }
     }
 
@@ -178,20 +180,11 @@ pub fn save_queue_plan(
     repo_path: impl AsRef<Path>,
     plan: &QueuePlan,
 ) -> Result<(), PapertowelError> {
-    let state_dir = repo_path.as_ref().join(".papertowel");
-    fs::create_dir_all(&state_dir).map_err(|e| PapertowelError::io_with_path(&state_dir, e))?;
-
-    let path = state_dir.join("queue.json");
-    let json = serde_json::to_string_pretty(plan)?;
-    fs::write(&path, json).map_err(|e| PapertowelError::io_with_path(&path, e))?;
-    Ok(())
+    storage::save_queue_plan(repo_path, plan)
 }
 
 pub fn load_queue_plan(repo_path: impl AsRef<Path>) -> Result<QueuePlan, PapertowelError> {
-    let path = repo_path.as_ref().join(".papertowel").join("queue.json");
-    let json = fs::read_to_string(&path).map_err(|e| PapertowelError::io_with_path(&path, e))?;
-    let plan = serde_json::from_str(&json)?;
-    Ok(plan)
+    storage::load_queue_plan(repo_path)
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -301,111 +294,6 @@ fn classify_action(group: &[&PendingCommit]) -> ReplayAction {
     }
 
     ReplayAction::Squash
-}
-
-/// A parsed active-hours window: (start, end) in naive local time.
-struct ActiveWindow {
-    start: NaiveTime,
-    end: NaiveTime,
-    /// Whether the window wraps midnight (e.g., "22:00-02:00").
-    wraps: bool,
-}
-
-fn parse_active_windows(windows: &[String], _tz: Tz) -> Vec<ActiveWindow> {
-    windows
-        .iter()
-        .filter_map(|s| {
-            let (start_str, end_str) = s.split_once('-')?;
-            let start = parse_naive_time(start_str)?;
-            let end = parse_naive_time(end_str)?;
-            let wraps = end <= start;
-            Some(ActiveWindow { start, end, wraps })
-        })
-        .collect()
-}
-
-fn parse_naive_time(s: &str) -> Option<NaiveTime> {
-    let (h, m) = s.split_once(':')?;
-    let hour: u32 = h.parse().ok()?;
-    let minute: u32 = m.parse().ok()?;
-    NaiveTime::from_hms_opt(hour, minute, 0)
-}
-
-/// Find the next moment >= `from` that falls inside any of the persona's active
-fn next_active_time(from: DateTime<Utc>, windows: &[ActiveWindow], tz: Tz) -> DateTime<Utc> {
-    if windows.is_empty() {
-        return from + Duration::hours(1);
-    }
-
-    let local = from.with_timezone(&tz);
-    let local_time = local.time();
-
-    for window in windows {
-        if time_in_window(local_time, window) {
-            return from;
-        }
-    }
-
-    // Find the nearest upcoming window start.
-    let mut best: Option<DateTime<Utc>> = None;
-    for window in windows {
-        let candidate_local = local.date_naive().and_time(window.start);
-        let candidate_utc = tz
-            .from_local_datetime(&candidate_local)
-            .single()
-            .map(|dt| dt.with_timezone(&Utc));
-
-        if let Some(candidate) = candidate_utc {
-            let candidate_adjusted = if candidate <= from {
-                candidate + Duration::days(1)
-            } else {
-                candidate
-            };
-
-            if best.is_none_or(|b| candidate_adjusted < b) {
-                best = Some(candidate_adjusted);
-            }
-        }
-    }
-
-    best.unwrap_or_else(|| from + Duration::hours(1))
-}
-
-fn time_in_window(t: NaiveTime, window: &ActiveWindow) -> bool {
-    if window.wraps {
-        t >= window.start || t < window.end
-    } else {
-        t >= window.start && t < window.end
-    }
-}
-
-/// Compute a jitter duration in minutes based on persona session variance.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "jitter is bounded by session minutes, fits i64"
-)]
-fn jitter_minutes(schedule: &crate::profile::persona::PersonaSchedule) -> Duration {
-    let avg = i64::from(schedule.avg_commits_per_session).max(1);
-    // Spread commits roughly evenly across ~2 hour sessions.
-    let session_minutes: i64 = 120;
-    let per_commit_minutes = session_minutes / avg;
-    // Simple deterministic jitter: vary by ±25% of per-commit interval.
-    let variance = (f64::from(schedule.session_variance)
-        * f64::from(i32::try_from(per_commit_minutes).unwrap_or(15)))
-    .round() as i64;
-    let jitter = variance.max(1);
-    Duration::minutes(per_commit_minutes + jitter)
-}
-
-/// Advance cursor by `interval`, staying within active windows where possible.
-fn advance_cursor(
-    cursor: DateTime<Utc>,
-    interval: Duration,
-    windows: &[ActiveWindow],
-    tz: Tz,
-) -> DateTime<Utc> {
-    let next = cursor + interval;
-    next_active_time(next, windows, tz)
 }
 
 pub fn file_touch_counts(pending: &[PendingCommit]) -> HashMap<String, usize> {
@@ -731,7 +619,7 @@ mod tests {
     #[test]
     fn next_active_time_empty_windows_returns_plus_one_hour() {
         // Covers line 366: windows.is_empty() → from + 1 hour.
-        use super::next_active_time;
+        use super::schedule::next_active_time;
         use chrono::Utc;
         use chrono_tz::UTC;
 

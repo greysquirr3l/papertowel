@@ -98,9 +98,9 @@ pub fn handle_initialize(params: Option<&Value>) -> Value {
             "name": SERVER_NAME,
             "title": "papertowel MCP Server",
             "version": SERVER_VERSION,
-            "description": "Scan and dry-run scrub code for AI-generated fingerprint patterns."
+            "description": "Scan, scrub, grade, and run cleanup workflows for AI-generated fingerprint patterns."
         },
-        "instructions": "Use papertowel_scan to detect AI-generated code fingerprints in a file or directory. Use papertowel_scrub for a dry-run view of suggested changes without modifying any files. Use papertowel_grade to get a letter grade (A+ through F) summarising overall AI fingerprint presence across a project."
+        "instructions": "Use papertowel_scan to detect AI-generated code fingerprints, papertowel_scrub for dry-run cleanup suggestions, papertowel_grade for overall AI fingerprint grading, papertowel_cleanup_assess to generate persisted cleanup reports, papertowel_cleanup_status to inspect deferred cleanup state, and papertowel_cleanup_apply to run policy-gated cleanup selection plus validation commands."
     })
 }
 
