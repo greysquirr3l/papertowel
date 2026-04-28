@@ -7,7 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.8] — 2026-04-18
+### Added
+
+- **`papertowel prompt install` command** — installs AI workflow files into any repository, editor-agnostic by default:
+  - `AGENTS.md` at the repo root — coding standards and the god-file approval gate; works with any AI coding assistant (Claude Code, Cursor, Windsurf, Gemini Code Assist, GitHub Copilot, etc.)
+  - `.papertowel/god-is-dead.md` — five-phase god-file decomposition workflow (discovery → scoring → strategy → plan → gated execution)
+  - `--vscode` flag adds `.vscode/god-is-dead.prompt.md` with VS Code agent-mode frontmatter for environments that support it
+  - `--force` overwrites existing files; default errors if a target already exists
+  - `papertowel prompt list` shows all available templates and which flags gate each one
+
+- **Scrub safety valve** (`--allow-unsafe-scrub`) — `papertowel scrub` now aborts before writing if the scrubbed content is more than 50% smaller than the original or the line count drops by more than 60%. Both thresholds are configurable via `[scrubber] min_size_percent` and `max_line_drop_percent` in `.papertowel.toml`. Destructive scrubs require `--allow-unsafe-scrub` to proceed.
+
+- **Post-scrub convergence check** (`--verify`) — after a scrub run, re-scans the output and compares a severity-weighted score, reporting whether the score improved, stayed the same, or regressed. In `--ci` mode, exits non-zero only if the score regresses (increases). Includes per-category delta breakdown in both text and JSON formats.
+
+- **Custom lexical rules via config** — `.papertowel.toml` now accepts a `[detectors.lexical]` table to extend or trim the built-in slop vocabulary at the repo level:
+
+  ```toml
+  [detectors.lexical]
+  extra_terms   = ["bespoke", "synergy"]   # add words
+  extra_phrases = ["circle back"]          # add phrases
+  exclude_terms = ["robust"]               # remove from defaults
+  case_sensitive = false
+  ```
+
+  Up to 256 custom entries combined. Extra entries are validated at startup (empty strings and duplicates rejected). Explainability output now tags which findings came from custom rules vs. built-in defaults.
+
+- **Dead-code verification workflow docs** — added [docs/dev/dead-code-verification.md](docs/dev/dead-code-verification.md) with local reproduction commands for `cargo machete` and `cargo +nightly udeps`, plus a manual verification checklist to reduce false-positive removals.
+
+ — 2026-04-18
+
+### Changed
+
+- **Legacy scrub detector alias deprecation path** — `papertowel scrub --detectors lexical` remains supported as a compatibility alias for `recipe`, but now emits an explicit deprecation warning in non-CI runs. Migrate to `--detectors recipe`; alias support is scheduled for removal in `v0.4.0 (2026-07-01)`.
+- **Incremental report module split** — internal helpers for category/severity labeling, GitHub Actions emission, and SARIF rendering were extracted from `src/cli/report.rs` into focused submodules. External CLI behavior and output formats remain unchanged.
+- **Incremental MCP tools module split** — MCP tool argument parsing and response formatting helpers were extracted from `papertowel-mcp/src/tools.rs` into dedicated submodules, reducing duplication while preserving tool behavior.
+- **Incremental wringer queue module split** — queue scheduling/time-window logic and queue-plan persistence were extracted from `src/wringer/queue.rs` into `schedule` and `storage` submodules with planner behavior preserved.
+- **CI dead-code advisory signals** — CI now includes advisory dead-code jobs for `cargo machete` and `cargo +nightly udeps` (`continue-on-error: true`) to surface cleanup opportunities without blocking merges.
 
 ### Fixed
 

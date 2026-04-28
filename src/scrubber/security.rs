@@ -65,7 +65,7 @@ static RULES: &[Rule] = &[
                      For shell commands use an argument list API (e.g. std::process::Command, subprocess.run([...])). \
                      Never interpolate untrusted data into a command string.",
         extensions: &["rs", "go", "ts", "tsx", "cs", "py"],
-        pattern: r#"(?i)(?:format!|fmt\.Sprintf|string\.Format|(?:f"|f'))\s*\(?\s*["']?\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|EXECUTE|CALL)\s[^"'\n]*(?:\{\d*\}|%[sdvf]|\{[a-z_]+\})[^"'\n]*["']?"#,
+        pattern: r#"(?:format!|fmt\.Sprintf|string\.Format|(?:f"|f'))\s*\(?\s*["']?\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|EXECUTE|CALL)\s[^"'\n]*(?:\{\d*\}|%[sdvf]|\{[a-z_]+\})[^"'\n]*["']?"#,
         ignore_case: true,
     },
     // ── SEC002 · eval / exec with dynamic data ───────────────────────────────
@@ -255,7 +255,7 @@ static RULES: &[Rule] = &[
                      If this is intentional, track it in the issue tracker and add a test that \
                      will fail until it is addressed.",
         extensions: &[],
-        pattern: r"(?i)//\s*(?:TODO|FIXME|HACK|XXX)[^\n]*(?:auth|permission|role|token|jwt|validate|verify|check|access|privilege)",
+        pattern: r"//\s*(?:TODO|FIXME|HACK|XXX)[^\n]*(?:auth(?:entication|orization)?|authori[sz]e|permission|rbac|acl|oauth|sso|role|token|jwt|session|credential|access\s+control|privilege)",
         ignore_case: true,
     },
 ];
@@ -552,5 +552,10 @@ mod tests {
             "ts",
             "SEC015",
         );
+    }
+
+    #[test]
+    fn sec015_no_false_positive_for_generic_todo() {
+        check_no_finding("// TODO: double-check the logic", "rs", "SEC015");
     }
 }

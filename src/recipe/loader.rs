@@ -5,6 +5,7 @@ use tracing::{debug, instrument, warn};
 
 use crate::domain::errors::PapertowelError;
 
+use super::RecipeMatcher;
 use super::types::{LoadedRecipe, Recipe, RecipeSource};
 
 /// Embedded built-in recipes.
@@ -243,6 +244,26 @@ pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSo
     recipes
 }
 
+/// Load and compile a [`RecipeMatcher`] for the project root that contains `path`.
+///
+pub fn load_recipe_matcher_for_path(path: &Path) -> Option<RecipeMatcher> {
+    let project_root = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()
+            .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
+    };
+
+    let loader = RecipeLoader::new(Some(project_root));
+    match loader.load_all() {
+        Ok(recipes) => RecipeMatcher::compile(recipes).ok(),
+        Err(e) => {
+            warn!(error = %e, "failed to load recipes");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "test assertions")]
 #[expect(clippy::indexing_slicing, reason = "test assertions")]
@@ -283,5 +304,22 @@ items = ["testword"]
                 .iter()
                 .all(|r| r.recipe.recipe.name != "slop-vocabulary")
         );
+    }
+
+    #[test]
+    fn load_recipe_matcher_for_directory_path_returns_some() {
+        let dir = TempDir::new().unwrap();
+        let matcher = load_recipe_matcher_for_path(dir.path());
+        assert!(matcher.is_some());
+    }
+
+    #[test]
+    fn load_recipe_matcher_for_file_path_returns_some() {
+        let dir = TempDir::new().unwrap();
+        let src = dir.path().join("main.rs");
+        fs::write(&src, "fn main() {}\n").unwrap();
+
+        let matcher = load_recipe_matcher_for_path(&src);
+        assert!(matcher.is_some());
     }
 }

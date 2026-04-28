@@ -54,10 +54,8 @@ jobs:
           key: ${{ runner.os }}-cargo-test-v5-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-test-v5-
 
-      # Skip doc-tests due to rustdoc line-offset bug with thiserror
-      # See: https://github.com/greysquirr3l/papertowel/issues/TBD
       - name: Run tests
-        run: cargo test --workspace --lib --bins --tests
+        run: cargo test --workspace --no-fail-fast
 
   clippy:
     name: Clippy
@@ -81,7 +79,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-clippy-v4-
 
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
@@ -182,9 +180,82 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-v4-
         # Note: target/ not cached due to rustdoc/thiserror interaction bug
 
-      # Skip doc-tests due to rustdoc line-offset bug with thiserror
       - name: Run tests
-        run: cargo test --workspace --lib --bins --tests --no-fail-fast -- --nocapture 2>&1
+        run: cargo test --workspace --no-fail-fast -- --nocapture 2>&1
+
+  deny:
+    name: Dependency Licenses and Bans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-deny-0.19.4
+          restore-keys: ${{ runner.os }}-cargo-deny-
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version "0.19.4" --force
+
+      - name: Run cargo deny
+        run: cargo deny check
+
+  dead-code-machete:
+    name: Dead-code signal (machete)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-machete-v1
+          restore-keys: ${{ runner.os }}-cargo-machete-
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+
+      - name: Run cargo machete (advisory)
+        run: cargo machete || true
+
+  dead-code-udeps:
+    name: Dead-code signal (udeps)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo tools
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-udeps-v1
+          restore-keys: ${{ runner.os }}-cargo-udeps-
+
+      - name: Install cargo-udeps
+        run: cargo +nightly install cargo-udeps --locked
+
+      - name: Run cargo udeps (advisory)
+        run: cargo +nightly udeps --workspace --all-targets || true
 
   scan:
     name: Scan for AI fingerprints

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,32 @@ pub enum Severity {
     Low,
     Medium,
     High,
+}
+
+impl Severity {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+impl FromStr for Severity {
+    type Err = PapertowelError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "low" => Ok(Self::Low),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            _ => Err(PapertowelError::Validation(format!(
+                "unknown severity '{value}'; expected low/medium/high"
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,6 +245,18 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn severity_from_str_accepts_all_known_values() {
+        assert!(matches!("low".parse::<Severity>(), Ok(Severity::Low)));
+        assert!(matches!("medium".parse::<Severity>(), Ok(Severity::Medium)));
+        assert!(matches!("high".parse::<Severity>(), Ok(Severity::High)));
+    }
+
+    #[test]
+    fn severity_from_str_rejects_unknown_values() {
+        assert!("critical".parse::<Severity>().is_err());
     }
 
     #[test]

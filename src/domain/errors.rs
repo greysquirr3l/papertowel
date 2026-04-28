@@ -10,6 +10,8 @@ pub enum PapertowelError {
     Validation(String),
     #[error("detection error: {0}")]
     Detection(String),
+    #[error("safety guard blocked {path}: {reason}")]
+    SafetyGuardBlocked { path: PathBuf, reason: String },
     #[error("git operation failed: {0}")]
     Git(#[from] git2::Error),
     #[error("i/o error at {path}: {source}")]
@@ -31,6 +33,13 @@ impl PapertowelError {
         Self::Io {
             path: path.into(),
             source,
+        }
+    }
+
+    pub fn safety_guard_blocked(path: impl Into<PathBuf>, reason: impl Into<String>) -> Self {
+        Self::SafetyGuardBlocked {
+            path: path.into(),
+            reason: reason.into(),
         }
     }
 }

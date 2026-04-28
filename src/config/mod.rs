@@ -40,7 +40,7 @@ pub enum MinimumSeverity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DetectorConfig {
-    pub lexical: bool,
+    pub lexical: LexicalDetectorConfig,
     pub comments: bool,
     pub structure: bool,
     pub readme: bool,
@@ -56,10 +56,66 @@ pub struct DetectorConfig {
     pub security: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LexicalRulesConfig {
+    pub enabled: bool,
+    pub extra_terms: Vec<String>,
+    pub extra_phrases: Vec<String>,
+    pub exclude_terms: Vec<String>,
+    pub case_sensitive: bool,
+}
+
+impl Default for LexicalRulesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            extra_terms: Vec::new(),
+            extra_phrases: Vec::new(),
+            exclude_terms: Vec::new(),
+            case_sensitive: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LexicalDetectorConfig {
+    Enabled(bool),
+    Rules(LexicalRulesConfig),
+}
+
+impl Default for LexicalDetectorConfig {
+    fn default() -> Self {
+        Self::Enabled(true)
+    }
+}
+
+impl LexicalDetectorConfig {
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        match self {
+            Self::Enabled(enabled) => *enabled,
+            Self::Rules(cfg) => cfg.enabled,
+        }
+    }
+
+    #[must_use]
+    pub fn rules(&self) -> LexicalRulesConfig {
+        match self {
+            Self::Enabled(enabled) => LexicalRulesConfig {
+                enabled: *enabled,
+                ..LexicalRulesConfig::default()
+            },
+            Self::Rules(cfg) => cfg.clone(),
+        }
+    }
+}
+
 impl Default for DetectorConfig {
     fn default() -> Self {
         Self {
-            lexical: true,
+            lexical: LexicalDetectorConfig::default(),
             comments: true,
             structure: true,
             readme: true,
@@ -95,12 +151,30 @@ impl Default for SeverityConfig {
 #[serde(default)]
 pub struct ScrubberConfig {
     pub aggression: ScrubberAggression,
+    /// Minimum ratio of output bytes to input bytes (0–100 percent).
+    /// Writes that reduce file size below this threshold are blocked.
+    /// Default: 50.
+    #[serde(default = "default_min_size_percent")]
+    pub min_size_percent: u8,
+    /// Maximum fraction of original lines that may be dropped (0–100 percent).
+    /// Writes that remove more lines than this are blocked.  Default: 60.
+    #[serde(default = "default_max_line_drop_percent")]
+    pub max_line_drop_percent: u8,
+}
+
+const fn default_min_size_percent() -> u8 {
+    50
+}
+const fn default_max_line_drop_percent() -> u8 {
+    60
 }
 
 impl Default for ScrubberConfig {
     fn default() -> Self {
         Self {
             aggression: ScrubberAggression::Moderate,
+            min_size_percent: default_min_size_percent(),
+            max_line_drop_percent: default_max_line_drop_percent(),
         }
     }
 }
@@ -192,7 +266,9 @@ fn load_config_from_file(path: &Path) -> Result<ProjectConfig, PapertowelError> 
     }
     let text =
         fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
-    toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)
+    let config = toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)?;
+    validate_scrubber_thresholds(&config)?;
+    Ok(config)
 }
 
 /// Discover the project root from `scan_path`, load the global and project
@@ -206,6 +282,7 @@ pub fn resolve_config(
     let global = load_global_config()?;
     let project = load_config(&project_root)?;
     let merged = merge_configs(global, project);
+    validate_scrubber_thresholds(&merged)?;
     let ignore = build_ignore_matcher(&project_root, &merged)?;
     Ok((project_root, merged, ignore))
 }
@@ -242,7 +319,28 @@ pub fn load_config(repo_root: impl AsRef<Path>) -> Result<ProjectConfig, Paperto
 
     let text =
         fs::read_to_string(&path).map_err(|error| PapertowelError::io_with_path(&path, error))?;
-    toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)
+    let config = toml::from_str(&text).map_err(PapertowelError::TomlDeserialize)?;
+    validate_scrubber_thresholds(&config)?;
+    Ok(config)
+}
+
+fn validate_scrubber_thresholds(config: &ProjectConfig) -> Result<(), PapertowelError> {
+    let min_size_percent = config.scrubber.min_size_percent;
+    let max_line_drop_percent = config.scrubber.max_line_drop_percent;
+
+    if min_size_percent > 100 {
+        return Err(PapertowelError::Validation(format!(
+            "scrubber.min_size_percent must be between 0 and 100, got {min_size_percent}"
+        )));
+    }
+
+    if max_line_drop_percent > 100 {
+        return Err(PapertowelError::Validation(format!(
+            "scrubber.max_line_drop_percent must be between 0 and 100, got {max_line_drop_percent}"
+        )));
+    }
+
+    Ok(())
 }
 
 pub fn save_config(
@@ -306,9 +404,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        CONFIG_FILE_NAME, DetectorConfig, GLOBAL_CONFIG_FILE_NAME, IGNORE_FILE_NAME, ProjectConfig,
-        ScrubberAggression, SeverityConfig, build_ignore_matcher, discover_project_root,
-        is_ignored, load_config, load_config_from_file, resolve_config, save_config,
+        CONFIG_FILE_NAME, DetectorConfig, GLOBAL_CONFIG_FILE_NAME, IGNORE_FILE_NAME,
+        LexicalDetectorConfig, ProjectConfig, ScrubberAggression, SeverityConfig,
+        build_ignore_matcher, discover_project_root, is_ignored, load_config,
+        load_config_from_file, resolve_config, save_config,
     };
 
     fn scratch() -> TempDir {
@@ -326,7 +425,7 @@ mod tests {
     fn config_roundtrips_toml() {
         let dir = scratch();
         let mut config = ProjectConfig::default();
-        config.detectors.lexical = false;
+        config.detectors.lexical = LexicalDetectorConfig::Enabled(false);
         config.scrubber.aggression = ScrubberAggression::Aggressive;
 
         save_config(dir.path(), &config).expect("save_config");
@@ -346,6 +445,64 @@ aggression = "gentle"
         assert_eq!(config.scrubber.aggression, ScrubberAggression::Gentle);
         assert_eq!(config.detectors, DetectorConfig::default());
         assert_eq!(config.severity, SeverityConfig::default());
+    }
+
+    #[test]
+    fn lexical_detector_accepts_nested_rules_table() {
+        let dir = scratch();
+        let partial = r#"
+[detectors.lexical]
+enabled = true
+extra_terms = ["slopword"]
+extra_phrases = ["it should be noted"]
+exclude_terms = ["robust"]
+case_sensitive = false
+"#;
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), partial).expect("write");
+
+        let config = load_config(dir.path()).expect("load_config");
+        assert!(matches!(
+            config.detectors.lexical,
+            LexicalDetectorConfig::Rules(_)
+        ));
+        if let LexicalDetectorConfig::Rules(rules) = config.detectors.lexical {
+            assert!(rules.enabled);
+            assert_eq!(rules.extra_terms, vec!["slopword".to_owned()]);
+            assert_eq!(rules.extra_phrases, vec!["it should be noted".to_owned()]);
+            assert_eq!(rules.exclude_terms, vec!["robust".to_owned()]);
+            assert!(!rules.case_sensitive);
+        }
+    }
+
+    #[test]
+    fn rejects_min_size_percent_above_100() {
+        let dir = scratch();
+        let config = r"
+[scrubber]
+min_size_percent = 101
+    ";
+
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), config).expect("write");
+        let error = load_config(dir.path()).expect_err("validation error");
+        let message = error.to_string();
+        assert!(message.contains("scrubber.min_size_percent"), "{message}");
+    }
+
+    #[test]
+    fn rejects_max_line_drop_percent_above_100() {
+        let dir = scratch();
+        let config = r"
+[scrubber]
+max_line_drop_percent = 101
+    ";
+
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), config).expect("write");
+        let error = load_config(dir.path()).expect_err("validation error");
+        let message = error.to_string();
+        assert!(
+            message.contains("scrubber.max_line_drop_percent"),
+            "{message}"
+        );
     }
 
     #[test]

@@ -3,7 +3,14 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 
-use crate::detection::finding::{Finding, FindingCategory, Severity};
+use crate::detection::finding::{Finding, Severity};
+use crate::scrubber::lexical::{LexicalRulesExplainability, LexicalTermSource};
+
+mod github_actions;
+mod helpers;
+mod sarif;
+
+use helpers::{category_label, severity_label};
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
@@ -38,11 +45,17 @@ pub struct ExplainabilityEvidence {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ExplainabilityReport {
     pub mixed_mode: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lexical_rules: Option<LexicalRulesExplainability>,
     pub category_contributions: Vec<ExplainabilityContribution>,
     pub evidence: Vec<ExplainabilityEvidence>,
 }
 
-pub fn build_explainability(findings: &[Finding], mixed_mode: bool) -> ExplainabilityReport {
+pub fn build_explainability(
+    findings: &[Finding],
+    mixed_mode: bool,
+    lexical_rules: Option<&LexicalRulesExplainability>,
+) -> ExplainabilityReport {
     let mut by_category: HashMap<String, (usize, f32)> = HashMap::new();
     let mut evidence = Vec::with_capacity(findings.len());
 
@@ -98,6 +111,7 @@ pub fn build_explainability(findings: &[Finding], mixed_mode: bool) -> Explainab
 
     ExplainabilityReport {
         mixed_mode,
+        lexical_rules: lexical_rules.cloned(),
         category_contributions,
         evidence,
     }
@@ -251,6 +265,31 @@ fn write_text_explainability(
     writeln!(out, "{}", a.bold("Explainability"))?;
     if explainability.mixed_mode {
         writeln!(out, " {} mixed-content aggregation enabled", a.dim("•"))?;
+    }
+    if let Some(rules) = &explainability.lexical_rules {
+        writeln!(out, " {} lexical rules:", a.dim("•"))?;
+        writeln!(
+            out,
+            "   - case_sensitive={} effective_terms={} custom_terms={} custom_phrases={} excludes={}",
+            rules.case_sensitive,
+            rules.effective_terms.len(),
+            rules.extra_terms.len(),
+            rules.extra_phrases.len(),
+            rules.exclude_terms.len(),
+        )?;
+        let custom_sources = rules
+            .effective_entries
+            .iter()
+            .filter_map(|entry| match entry.source {
+                LexicalTermSource::CustomTerm => Some(format!("{} (custom_term)", entry.term)),
+                LexicalTermSource::CustomPhrase => Some(format!("{} (custom_phrase)", entry.term)),
+                LexicalTermSource::Default => None,
+            })
+            .take(5)
+            .collect::<Vec<_>>();
+        if !custom_sources.is_empty() {
+            writeln!(out, "   - custom_sources: {}", custom_sources.join(", "))?;
+        }
     }
     writeln!(out, " {} category contributions:", a.dim("•"))?;
     for c in &explainability.category_contributions {
@@ -409,41 +448,7 @@ pub fn write_github_actions_report(
     findings: &[Finding],
     summary: &ScanSummary,
 ) -> io::Result<()> {
-    for f in findings {
-        let path = f.file_path.to_string_lossy();
-        let title = format!("papertowel[{}]: {}", category_label(f.category), f.id);
-        // Escape the message: `::` in the text would prematurely close the
-        // command; newlines and percent signs also need escaping.
-        let message = escape_gha_data(&f.description);
-
-        if let Some(range) = f.line_range {
-            writeln!(
-                out,
-                "::error file={path},line={line},title={title}::{message}",
-                line = range.start,
-            )?;
-        } else {
-            writeln!(out, "::error file={path},title={title}::{message}")?;
-        }
-    }
-
-    // Emit a summary notice after all annotations.
-    let ai_pct = summary.ai_probability * 100.0;
-    writeln!(
-        out,
-        "::notice title=papertowel summary::{total} finding(s) \u{2014} AI probability {ai_pct:.0}%",
-        total = summary.total_findings,
-    )?;
-
-    Ok(())
-}
-
-/// command (`::command key=value::data`).
-fn escape_gha_data(s: &str) -> String {
-    // GitHub Actions command data escaping: percent, carriage-return, newline.
-    s.replace('%', "%25")
-        .replace('\r', "%0D")
-        .replace('\n', "%0A")
+    github_actions::write_github_actions_report(out, findings, summary)
 }
 
 // ─── SARIF 2.1.0 ─────────────────────────────────────────────────────────────
@@ -455,169 +460,10 @@ pub fn write_sarif_report(
     findings: &[Finding],
     summary: &ScanSummary,
 ) -> io::Result<()> {
-    let rules = build_sarif_rules(findings);
-    let results = build_sarif_results(findings, &rules);
-
-    let tool = serde_json::json!({
-        "driver": {
-            "name": "papertowel",
-            "version": env!("CARGO_PKG_VERSION"),
-            "informationUri": "https://github.com/greysquirr3l/papertowel",
-            "rules": rules.iter().map(|(_, rule)| rule.clone()).collect::<Vec<_>>(),
-        }
-    });
-
-    let run = serde_json::json!({
-        "tool": tool,
-        "results": results,
-        "properties": {
-            "papertowel": {
-                "totalFindings": summary.total_findings,
-                "aiProbability": summary.ai_probability,
-                "bySeverity": summary.by_severity,
-                "byCategory": summary.by_category,
-            }
-        }
-    });
-
-    let sarif = serde_json::json!({
-        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
-        "version": "2.1.0",
-        "runs": [run],
-    });
-
-    let json = serde_json::to_string_pretty(&sarif).map_err(io::Error::other)?;
-    writeln!(out, "{json}")
-}
-
-/// Build a deduplicated rule table keyed by `(category, id)`.
-fn build_sarif_rules(findings: &[Finding]) -> Vec<(String, serde_json::Value)> {
-    let mut seen = std::collections::HashSet::new();
-    let mut rules = Vec::new();
-
-    for f in findings {
-        let rule_id = sarif_rule_id(f);
-        if seen.insert(rule_id.clone()) {
-            let mut rule = serde_json::json!({
-                "id": rule_id,
-                "shortDescription": { "text": format!("{} detector", category_label(f.category)) },
-            });
-            if let Some(ref suggestion) = f.suggestion {
-                rule.as_object_mut().and_then(|m| {
-                    m.insert("helpUri".to_owned(), serde_json::Value::Null);
-                    m.insert("help".to_owned(), serde_json::json!({ "text": suggestion }))
-                });
-            }
-            rules.push((rule_id, rule));
-        }
-    }
-    rules
-}
-
-fn build_sarif_results(
-    findings: &[Finding],
-    rules: &[(String, serde_json::Value)],
-) -> Vec<serde_json::Value> {
-    findings
-        .iter()
-        .map(|f| {
-            let rule_id = sarif_rule_id(f);
-            let rule_index = rules.iter().position(|(id, _)| *id == rule_id).unwrap_or(0);
-
-            let mut location = serde_json::json!({
-                "physicalLocation": {
-                    "artifactLocation": {
-                        "uri": f.file_path.to_string_lossy(),
-                        "uriBaseId": "%SRCROOT%",
-                    }
-                }
-            });
-
-            if let Some(range) = f.line_range {
-                location
-                    .as_object_mut()
-                    .and_then(|m| m.get_mut("physicalLocation"))
-                    .and_then(|pl| pl.as_object_mut())
-                    .and_then(|pl| {
-                        pl.insert(
-                            "region".to_owned(),
-                            serde_json::json!({
-                                "startLine": range.start,
-                                "endLine": range.end,
-                            }),
-                        )
-                    });
-            }
-
-            let mut result = serde_json::json!({
-                "ruleId": rule_id,
-                "ruleIndex": rule_index,
-                "level": sarif_level(f.severity),
-                "message": { "text": f.description },
-                "locations": [location],
-                "properties": {
-                    "confidenceScore": f.confidence_score,
-                    "autoFixable": f.auto_fixable,
-                }
-            });
-
-            if let Some(ref suggestion) = f.suggestion {
-                result.as_object_mut().and_then(|m| {
-                    m.insert(
-                        "fixes".to_owned(),
-                        serde_json::json!([{
-                            "description": { "text": suggestion },
-                        }]),
-                    )
-                });
-            }
-
-            result
-        })
-        .collect()
-}
-
-fn sarif_rule_id(f: &Finding) -> String {
-    format!("papertowel/{}/{}", category_label(f.category), f.id)
-}
-
-const fn sarif_level(s: Severity) -> &'static str {
-    match s {
-        Severity::High => "error",
-        Severity::Medium => "warning",
-        Severity::Low => "note",
-    }
+    sarif::write_sarif_report(out, findings, summary)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-fn severity_label(s: Severity) -> String {
-    match s {
-        Severity::High => "HIGH".to_owned(),
-        Severity::Medium => "MED".to_owned(),
-        Severity::Low => "LOW".to_owned(),
-    }
-}
-
-fn category_label(c: FindingCategory) -> String {
-    match c {
-        FindingCategory::Lexical => "lexical".to_owned(),
-        FindingCategory::Comment => "comment".to_owned(),
-        FindingCategory::Structure => "structure".to_owned(),
-        FindingCategory::Readme => "readme".to_owned(),
-        FindingCategory::Metadata => "metadata".to_owned(),
-        FindingCategory::Workflow => "workflow".to_owned(),
-        FindingCategory::Maintenance => "maintenance".to_owned(),
-        FindingCategory::Promotion => "promotion".to_owned(),
-        FindingCategory::NameCredibility => "name_credibility".to_owned(),
-        FindingCategory::IdiomMismatch => "idiom_mismatch".to_owned(),
-        FindingCategory::TestPattern => "test_pattern".to_owned(),
-        FindingCategory::PromptLeakage => "prompt_leakage".to_owned(),
-        FindingCategory::CommitPattern => "commit_pattern".to_owned(),
-        FindingCategory::Architecture => "architecture".to_owned(),
-        FindingCategory::Security => "security".to_owned(),
-    }
-}
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -627,10 +473,13 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        Ansi, build_summary, category_label, severity_label, write_github_actions_report,
-        write_json_report, write_sarif_report, write_text_report,
+        Ansi, ExplainabilityReport, build_summary, category_label, severity_label,
+        write_github_actions_report, write_json_report, write_sarif_report, write_text_report,
     };
     use crate::detection::finding::{Finding, FindingCategory, Severity};
+    use crate::scrubber::lexical::{
+        LexicalEffectiveTermExplainability, LexicalRulesExplainability, LexicalTermSource,
+    };
 
     fn make_finding(sev: Severity, path: &str) -> Finding {
         Finding::new(
@@ -837,6 +686,42 @@ mod tests {
         let text = String::from_utf8(out).expect("utf8");
         assert!(text.contains("at src/main.rs:10"), "should show file:line");
         assert!(text.contains("remove this"), "should show suggestion");
+    }
+
+    #[test]
+    fn explainability_text_includes_custom_lexical_source_markers() {
+        let findings = vec![make_finding(Severity::Low, "src/lib.rs")];
+        let summary = build_summary(&findings);
+        let explainability = ExplainabilityReport {
+            mixed_mode: false,
+            lexical_rules: Some(LexicalRulesExplainability {
+                case_sensitive: false,
+                extra_terms: vec!["slopword".to_owned()],
+                extra_phrases: vec!["it should be noted".to_owned()],
+                exclude_terms: vec![],
+                effective_terms: vec!["slopword".to_owned(), "it should be noted".to_owned()],
+                effective_entries: vec![
+                    LexicalEffectiveTermExplainability {
+                        term: "slopword".to_owned(),
+                        source: LexicalTermSource::CustomTerm,
+                    },
+                    LexicalEffectiveTermExplainability {
+                        term: "it should be noted".to_owned(),
+                        source: LexicalTermSource::CustomPhrase,
+                    },
+                ],
+            }),
+            category_contributions: Vec::new(),
+            evidence: Vec::new(),
+        };
+
+        let mut out = Vec::new();
+        write_text_report(&mut out, &findings, &summary, false, Some(&explainability))
+            .expect("write");
+        let text = String::from_utf8(out).expect("utf8");
+        assert!(text.contains("custom_sources:"));
+        assert!(text.contains("slopword (custom_term)"));
+        assert!(text.contains("it should be noted (custom_phrase)"));
     }
 
     #[test]

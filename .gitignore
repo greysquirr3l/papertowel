@@ -31,7 +31,7 @@ tasks/
 IMPLEMENTATION_PLAN.md
 PROGRESS.md
 features.json
-AGENTS.md
+/AGENTS.md
 plan.toml
 CLAUDE.md
 
@@ -77,3 +77,4 @@ flamegraph.svg
 perf.data
 perf.data.old
 .vscode/
+Cleanup-Workflow.prompt.md

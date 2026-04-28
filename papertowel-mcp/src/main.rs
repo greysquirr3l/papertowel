@@ -1,3 +1,8 @@
+#![expect(
+    clippy::multiple_crate_versions,
+    reason = "transitive dependency graph currently includes duplicate versions"
+)]
+
 //! `papertowel-mcp` — MCP server that exposes papertowel scan and scrub
 //! capabilities as tools consumable by LLM clients (e.g. Claude Desktop,
 //! Cursor, Continue.dev).
@@ -7,105 +12,34 @@
 //! Implements the MCP stdio transport (spec `2025-11-25`). Each message is a
 //! single UTF-8 JSON object followed by a newline (`\n`). Embedded newlines
 //! are not permitted inside a message.
-//!
-//! ```text
-//! {"jsonrpc":"2.0","id":1,"method":"initialize", ...}\n
-//! {"jsonrpc":"2.0","id":1,"result":{...}}\n
-//! ```
-//!
-//! # Tools
-//!
-//! | Tool | Description |
-//! |------|-------------|
-//! | `papertowel_scan` | Scan a path for AI-fingerprint findings |
-//! | `papertowel_scrub` | Dry-run scrub: show what would be changed |
-//! | `papertowel_grade` | Score a path A+–F for AI fingerprint presence |
 
-use std::fmt::Write as _;
-use std::io::{self, BufRead, Write};
-use std::path::PathBuf;
+use std::io::{self, Write};
 
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use anyhow::Result;
+use serde_json::Value;
 use tracing::{debug, error, info, instrument, warn};
 
-// ─── JSON-RPC 2.0 types ───────────────────────────────────────────────────────
+mod path_guard;
+mod protocol;
+mod tools;
+mod transport;
 
-/// An incoming JSON-RPC 2.0 request or notification.
-#[derive(Debug, Deserialize)]
-struct IncomingMessage {
-    jsonrpc: String,
-    /// Absent for notifications.
-    id: Option<Value>,
-    method: String,
-    params: Option<Value>,
-}
+use protocol::{
+    ERR_INVALID_REQ, ERR_PARSE, IncomingMessage, Response, handle_initialize, method_result_code,
+};
+use tools::{handle_tools_call, handle_tools_list};
+use transport::{read_message, write_response};
 
-/// An outgoing JSON-RPC 2.0 response.
-#[derive(Debug, Serialize)]
-struct Response {
-    jsonrpc: &'static str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<RpcError>,
-}
-
-/// A JSON-RPC 2.0 error object.
-#[derive(Debug, Serialize)]
-struct RpcError {
-    code: i32,
-    message: String,
-}
-
-// JSON-RPC error codes
-const ERR_PARSE: i32 = -32700;
-const ERR_INVALID_REQ: i32 = -32600;
-const ERR_METHOD_NOT_FOUND: i32 = -32601;
-const ERR_INVALID_PARAMS: i32 = -32602;
-const ERR_INTERNAL: i32 = -32603;
-
-impl Response {
-    #[expect(
-        clippy::missing_const_for_fn,
-        reason = "serde_json::Value is not const-constructible"
-    )]
-    fn ok(id: Value, result: Value) -> Self {
-        Self {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        }
-    }
-
-    fn err(id: Value, code: i32, message: impl Into<String>) -> Self {
-        Self {
-            jsonrpc: "2.0",
-            id,
-            result: None,
-            error: Some(RpcError {
-                code,
-                message: message.into(),
-            }),
-        }
+fn write_response_observed(
+    writer: &mut impl Write,
+    resp: &Response,
+    phase: &str,
+    method: Option<&str>,
+) {
+    if let Err(e) = write_response(resp, writer) {
+        error!(error = %e, phase, method, "failed to write response");
     }
 }
-
-// ─── MCP protocol constants ───────────────────────────────────────────────────
-
-const PROTOCOL_VERSION: &str = "2025-11-25";
-const SERVER_NAME: &str = "papertowel";
-const SERVER_VERSION: &str = concat!(
-    env!("CARGO_PKG_VERSION"),
-    " (",
-    env!("PAPERTOWEL_GIT_SHA"),
-    ")"
-);
-
-// ─── Entry point ─────────────────────────────────────────────────────────────
 
 fn main() {
     tracing_subscriber::fmt()
@@ -135,49 +69,12 @@ fn main() {
             }
             Err(e) => {
                 error!(error = %e, "failed to read message");
-                // Write a parse error response with null id.
                 let resp = Response::err(Value::Null, ERR_PARSE, format!("read error: {e}"));
-                let _ = write_response(&resp, &mut writer);
+                write_response_observed(&mut writer, &resp, "read_error", None);
             }
         }
     }
 }
-
-// ─── I/O helpers ─────────────────────────────────────────────────────────────
-
-/// Read one newline-delimited JSON message from `reader`.
-///
-/// Blank lines are skipped. Returns `Ok(None)` on EOF, `Ok(Some(line))` on
-/// success. Per the MCP 2025-11-25 stdio transport spec, each message is a
-/// single JSON object on its own line with no embedded newlines.
-fn read_message(reader: &mut impl BufRead) -> Result<Option<String>> {
-    loop {
-        let mut line = String::new();
-        let n = reader
-            .read_line(&mut line)
-            .context("reading message line")?;
-        if n == 0 {
-            return Ok(None); // EOF
-        }
-        let trimmed = line.trim_end_matches(['\r', '\n']).to_owned();
-        if !trimmed.is_empty() {
-            return Ok(Some(trimmed));
-        }
-        // Skip blank lines between messages.
-    }
-}
-
-/// Serialise `resp` as a compact single-line JSON object followed by `\n`.
-///
-/// Per the MCP 2025-11-25 stdio transport spec, each message must be a single
-/// newline-terminated JSON object with no embedded newlines.
-fn write_response(resp: &Response, writer: &mut impl Write) -> Result<()> {
-    let body = serde_json::to_string(resp).context("serialising response")?;
-    writeln!(writer, "{body}").context("writing response")?;
-    writer.flush().context("flushing response")
-}
-
-// ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /// Parse raw JSON and dispatch to the appropriate handler.
 #[instrument(skip_all, fields(raw))]
@@ -186,7 +83,7 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
         Ok(m) => m,
         Err(e) => {
             let resp = Response::err(Value::Null, ERR_PARSE, format!("invalid JSON: {e}"));
-            let _ = write_response(&resp, writer);
+            write_response_observed(writer, &resp, "parse_error", None);
             return;
         }
     };
@@ -194,19 +91,20 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
     if msg.jsonrpc != "2.0" {
         if let Some(id) = msg.id {
             let resp = Response::err(id, ERR_INVALID_REQ, "jsonrpc must be \"2.0\"");
-            let _ = write_response(&resp, writer);
+            write_response_observed(writer, &resp, "invalid_jsonrpc", Some(msg.method.as_str()));
         }
         return;
     }
 
     // Notifications (no id) are processed but never get a response.
     let is_notification = msg.id.is_none();
+    let method_name = msg.method.clone();
 
     let result: Result<Value> = match msg.method.as_str() {
         "initialize" => Ok(handle_initialize(msg.params.as_ref())),
         "tools/list" => Ok(handle_tools_list()),
         "tools/call" => handle_tools_call(msg.params.as_ref()),
-        "ping" => Ok(json!({})),
+        "ping" => Ok(serde_json::json!({})),
         // Notifications
         "notifications/initialized" | "notifications/cancelled" => {
             debug!(method = %msg.method, "notification received");
@@ -229,619 +127,12 @@ fn handle_raw(raw: &str, writer: &mut impl Write) {
     let resp = match result {
         Ok(r) => Response::ok(id, r),
         Err(e) => {
-            let code = if e.to_string().starts_with("method not found") {
-                ERR_METHOD_NOT_FOUND
-            } else if e.to_string().starts_with("invalid params") {
-                ERR_INVALID_PARAMS
-            } else {
-                ERR_INTERNAL
-            };
+            let code = method_result_code(&e);
             Response::err(id, code, e.to_string())
         }
     };
 
-    if let Err(e) = write_response(&resp, writer) {
-        error!(error = %e, "failed to write response");
-    }
-}
-
-// ─── Method handlers ──────────────────────────────────────────────────────────
-
-fn handle_initialize(params: Option<&Value>) -> Value {
-    // Negotiate protocol version: echo the client's version if we support it,
-    // otherwise respond with the latest version we support.
-    const SUPPORTED_VERSIONS: &[&str] = &["2025-11-25", "2025-03-26", "2024-11-05"];
-    let requested = params
-        .and_then(|p| p.get("protocolVersion"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let negotiated = if SUPPORTED_VERSIONS.contains(&requested) {
-        requested
-    } else {
-        PROTOCOL_VERSION
-    };
-
-    json!({
-        "protocolVersion": negotiated,
-        "capabilities": {
-            "tools": {
-                "listChanged": false
-            }
-        },
-        "serverInfo": {
-            "name": SERVER_NAME,
-            "title": "papertowel MCP Server",
-            "version": SERVER_VERSION,
-            "description": "Scan and dry-run scrub code for AI-generated fingerprint patterns."
-        },
-        "instructions": "Use papertowel_scan to detect AI-generated code fingerprints in a file or directory. Use papertowel_scrub for a dry-run view of suggested changes without modifying any files. Use papertowel_grade to get a letter grade (A+ through F) summarising overall AI fingerprint presence across a project."
-    })
-}
-
-fn handle_tools_list() -> Value {
-    json!({
-        "tools": [
-            {
-                "name": "papertowel_scan",
-                "title": "AI Fingerprint Scanner",
-                "description": "Scan a file or directory for AI-generated code fingerprints. Returns a list of findings with severity, category, and suggested fixes.",
-                "annotations": {
-                    "readOnlyHint": true,
-                    "destructiveHint": false,
-                    "idempotentHint": true,
-                    "openWorldHint": false
-                },
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Absolute or relative path to the file or directory to scan."
-                        },
-                        "min_severity": {
-                            "type": "string",
-                            "enum": ["low", "medium", "high"],
-                            "description": "Minimum severity threshold for reported findings. Defaults to 'low'."
-                        }
-                    },
-                    "required": ["path"]
-                }
-            },
-            {
-                "name": "papertowel_scrub",
-                "title": "AI Fingerprint Dry-Run Scrubber",
-                "description": "Dry-run scrub of a file: show what lexical, comment-density, structural, and recipe-based changes would be applied to reduce AI fingerprints, without modifying any files.",
-                "annotations": {
-                    "readOnlyHint": true,
-                    "destructiveHint": false,
-                    "idempotentHint": true,
-                    "openWorldHint": false
-                },
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Absolute or relative path to the source file to analyse."
-                        }
-                    },
-                    "required": ["path"]
-                }
-            },
-            {
-                "name": "papertowel_grade",
-                "title": "AI Fingerprint Grade",
-                "description": "Score a file or directory A+ through F for overall AI fingerprint presence. Returns the overall grade, per-category breakdown, and total finding count. Optionally include per-category contribution details with explain=true.",
-                "annotations": {
-                    "readOnlyHint": true,
-                    "destructiveHint": false,
-                    "idempotentHint": true,
-                    "openWorldHint": false
-                },
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Absolute or relative path to the file or directory to grade."
-                        },
-                        "explain": {
-                            "type": "boolean",
-                            "description": "Include per-category score and finding count in the output. Defaults to false."
-                        }
-                    },
-                    "required": ["path"]
-                }
-            }
-        ]
-    })
-}
-
-fn handle_tools_call(params: Option<&Value>) -> Result<Value> {
-    let params = params.ok_or_else(|| anyhow::anyhow!("invalid params: missing params object"))?;
-
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("invalid params: missing tool name"))?;
-
-    let args = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-
-    match name {
-        "papertowel_scan" => Ok(call_scan(&args)),
-        "papertowel_scrub" => Ok(call_scrub(&args)),
-        "papertowel_grade" => Ok(call_grade(&args)),
-        unknown => Err(anyhow::anyhow!(
-            "method not found: unknown tool '{unknown}'"
-        )),
-    }
-}
-
-// ─── Tool implementations ─────────────────────────────────────────────────────
-
-/// Files larger than this are skipped by the recipe scanner to avoid I/O waste.
-const MAX_RECIPE_SCAN_BYTES: u64 = 2 * 1024 * 1024;
-
-/// Load a `RecipeMatcher` for the project root that contains `path`.
-///
-/// Returns `None` if recipes cannot be loaded or compiled (errors are logged at
-/// `debug` level so the scan still proceeds with structural findings).
-fn load_recipe_matcher(path: &std::path::Path) -> Option<papertowel::recipe::RecipeMatcher> {
-    let project_root = if path.is_dir() {
-        path.to_path_buf()
-    } else {
-        path.parent()
-            .map_or_else(|| path.to_path_buf(), PathBuf::from)
-    };
-    let loader = papertowel::recipe::RecipeLoader::new(Some(project_root));
-    match loader.load_all() {
-        Ok(recipes) => papertowel::recipe::RecipeMatcher::compile(recipes).ok(),
-        Err(e) => {
-            debug!(error = %e, "failed to load recipes (skipped)");
-            None
-        }
-    }
-}
-
-/// Run the papertowel scan pipeline against a path and return findings as text.
-fn call_scan(args: &Value) -> Value {
-    let Some(raw_path) = args.get("path").and_then(Value::as_str) else {
-        return tool_error("invalid arguments: 'path' is required");
-    };
-
-    let min_severity_str = args
-        .get("min_severity")
-        .and_then(Value::as_str)
-        .unwrap_or("low");
-
-    let min_severity = match parse_severity(min_severity_str) {
-        Ok(severity) => severity,
-        Err(message) => return tool_error(message),
-    };
-
-    let path = match validate_mcp_path(raw_path) {
-        Ok(p) => p,
-        Err(msg) => return tool_error(msg),
-    };
-    if !path.exists() {
-        return tool_error(format!("path does not exist: {raw_path}"));
-    }
-
-    // Collect files to scan.
-    let files = collect_files(&path);
-    if files.is_empty() {
-        return tool_text("No analysable source files found.");
-    }
-
-    // Load recipe matcher from the path's project root (best-effort).
-    let recipe_matcher = load_recipe_matcher(&path);
-
-    let mut all_findings = Vec::new();
-    for file in &files {
-        scan_file_into(&mut all_findings, file, recipe_matcher.as_ref());
-    }
-
-    // Run repository-level detectors when scanning a directory that is a git repo.
-    if path.is_dir() && path.join(".git").exists() {
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::commit_pattern::detect_repo(&path),
-        );
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::architecture::detect_repo(&path),
-        );
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::workflow::detect_repo(&path),
-        );
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::promotion::detect_repo(&path),
-        );
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::metadata::detect_repo(&path),
-        );
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::maintenance::detect_repo(&path),
-        );
-        run_detector_into(
-            &mut all_findings,
-            papertowel::scrubber::name_credibility::detect_repo(&path),
-        );
-    }
-
-    // Filter by severity.
-    all_findings.retain(|f: &papertowel::detection::finding::Finding| {
-        severity_value(f.severity) >= severity_value(min_severity)
-    });
-
-    if all_findings.is_empty() {
-        return tool_text(format!(
-            "No findings at or above '{min_severity_str}' severity."
-        ));
-    }
-
-    // Render as text.
-    let mut out = String::new();
-    for f in &all_findings {
-        let _ = writeln!(
-            out,
-            "[{:?}] {} \u{2014} {} ({:?})\n  {}",
-            f.severity,
-            f.id,
-            f.file_path.display(),
-            f.category,
-            f.description
-        );
-        if let Some(suggestion) = &f.suggestion {
-            let _ = writeln!(out, "  Suggestion: {suggestion}");
-        }
-        out.push('\n');
-    }
-    let _ = writeln!(out, "{} finding(s) total.", all_findings.len());
-
-    tool_text(out)
-}
-
-/// Dry-run scrub: report what lexical transforms would change.
-fn call_scrub(args: &Value) -> Value {
-    let Some(raw_path) = args.get("path").and_then(Value::as_str) else {
-        return tool_error("invalid arguments: 'path' is required");
-    };
-
-    let path = match validate_mcp_path(raw_path) {
-        Ok(p) => p,
-        Err(msg) => return tool_error(msg),
-    };
-    if !path.exists() {
-        return tool_error(format!("path does not exist: {raw_path}"));
-    }
-    if !path.is_file() {
-        return tool_error("scrub requires a single file path, not a directory");
-    }
-
-    // Run lexical, comment, and structural detectors to see what would change.
-    let mut findings = Vec::new();
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or_default();
-    let lang = papertowel::detection::language::LanguageKind::from_extension(ext);
-
-    run_detector_into(
-        &mut findings,
-        papertowel::scrubber::lexical::detect_file(&path),
-    );
-    run_detector_into(
-        &mut findings,
-        papertowel::scrubber::comments::detect_file(&path),
-    );
-    if lang.is_analysable() {
-        run_detector_into(
-            &mut findings,
-            papertowel::scrubber::structure::detect_file_for_language(&path, lang),
-        );
-    }
-
-    // Recipe-based detection on the single file.
-    let recipe_matcher = load_recipe_matcher(&path);
-    if let Some(ref matcher) = recipe_matcher
-        && path
-            .metadata()
-            .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
-        && let Ok(content) = std::fs::read_to_string(&path)
-    {
-        match matcher.scan_file(&path, &content) {
-            Ok(mut recipe_findings) => findings.append(&mut recipe_findings),
-            Err(e) => debug!(error = %e, "recipe scan error (skipped)"),
-        }
-    }
-
-    if findings.is_empty() {
-        return tool_text(format!(
-            "No AI fingerprints detected in {}.",
-            path.display()
-        ));
-    }
-
-    let mut out = format!(
-        "Dry-run scrub for {} — {} potential change(s):\n\n",
-        path.display(),
-        findings.len()
-    );
-    for f in &findings {
-        let _ = writeln!(
-            out,
-            "\u{2022} [{:?}] {}: {}",
-            f.severity, f.id, f.description
-        );
-        if let Some(s) = &f.suggestion {
-            let _ = writeln!(out, "  \u{2192} {s}");
-        }
-    }
-
-    tool_text(out)
-}
-
-/// Grade a path for overall AI fingerprint presence and return a letter score.
-fn call_grade(args: &Value) -> Value {
-    let Some(raw_path) = args.get("path").and_then(Value::as_str) else {
-        return tool_error("invalid arguments: 'path' is required");
-    };
-
-    let explain = args
-        .get("explain")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-
-    let path = match validate_mcp_path(raw_path) {
-        Ok(p) => p,
-        Err(msg) => return tool_error(msg),
-    };
-    if !path.exists() {
-        return tool_error(format!("path does not exist: {raw_path}"));
-    }
-
-    let start = std::time::Instant::now();
-    let collection = match papertowel::cli::scan::collect_findings_for_root(&path, false) {
-        Ok(c) => c,
-        Err(e) => return tool_error(format!("scan failed: {e}")),
-    };
-    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
-
-    let report = papertowel::detection::grading::GradeReport::from_findings(
-        &collection.findings,
-        collection.files_scanned,
-        duration_ms,
-    );
-
-    let mut out = format!(
-        "Grade: {} (score {:.1})\nFiles: {}  Findings: {}\n",
-        report.overall_grade, report.overall_score, report.files_scanned, report.total_findings,
-    );
-
-    if explain {
-        out.push('\n');
-        for cat in &report.categories {
-            if cat.finding_count > 0 {
-                let _ = writeln!(
-                    out,
-                    "  {}: {} ({} finding(s))",
-                    cat.category, cat.grade, cat.finding_count
-                );
-            }
-        }
-    }
-
-    tool_text(out)
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Run all detectors for a single file and append findings to `out`.
-fn scan_file_into(
-    out: &mut Vec<papertowel::detection::finding::Finding>,
-    file: &std::path::Path,
-    recipe_matcher: Option<&papertowel::recipe::RecipeMatcher>,
-) {
-    let ext = file
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or_default();
-    let lang = papertowel::detection::language::LanguageKind::from_extension(ext);
-
-    if lang.is_analysable() {
-        run_detector_into(out, papertowel::scrubber::lexical::detect_file(file));
-        run_detector_into(out, papertowel::scrubber::comments::detect_file(file));
-        run_detector_into(
-            out,
-            papertowel::scrubber::structure::detect_file_for_language(file, lang),
-        );
-        run_detector_into(
-            out,
-            papertowel::scrubber::tests::detect_file_for_language(file, lang),
-        );
-        if lang == papertowel::detection::language::LanguageKind::Rust {
-            run_detector_into(out, papertowel::scrubber::idiom_mismatch::detect_file(file));
-        }
-    }
-
-    if papertowel::scrubber::security::is_supported_source_extension(ext) {
-        run_detector_into(out, papertowel::scrubber::security::detect_file(file));
-    }
-
-    if matches!(
-        ext,
-        "rs" | "py"
-            | "go"
-            | "ts"
-            | "tsx"
-            | "cs"
-            | "zig"
-            | "cpp"
-            | "cc"
-            | "cxx"
-            | "hpp"
-            | "hxx"
-            | "md"
-            | "toml"
-            | "yaml"
-            | "yml"
-            | "txt"
-    ) {
-        run_detector_into(out, papertowel::scrubber::prompt::detect_file(file));
-    }
-
-    if ext == "md" {
-        run_detector_into(out, papertowel::scrubber::readme::detect_file(file));
-    }
-
-    // Recipe-based detection: runs on any text file under 2 MiB.
-    if let Some(matcher) = recipe_matcher
-        && file
-            .metadata()
-            .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
-        && let Ok(content) = std::fs::read_to_string(file)
-    {
-        match matcher.scan_file(file, &content) {
-            Ok(mut recipe_findings) => out.append(&mut recipe_findings),
-            Err(e) => debug!(error = %e, file = %file.display(), "recipe scan error (skipped)"),
-        }
-    }
-}
-
-/// Collect all source files under `path` (recurses into directories).
-fn collect_files(path: &std::path::Path) -> Vec<PathBuf> {
-    if path.is_file() {
-        return vec![path.to_path_buf()];
-    }
-    walkdir::WalkDir::new(path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e: walkdir::Result<walkdir::DirEntry>| e.ok())
-        .filter(|e| e.path().is_file())
-        .map(|e| e.path().to_path_buf())
-        .collect()
-}
-
-/// Append any successfully produced findings; log and discard errors.
-fn run_detector_into(
-    findings: &mut Vec<papertowel::detection::finding::Finding>,
-    result: Result<
-        Vec<papertowel::detection::finding::Finding>,
-        papertowel::domain::errors::PapertowelError,
-    >,
-) {
-    match result {
-        Ok(mut f) => findings.append(&mut f),
-        Err(e) => debug!(error = %e, "detector error (skipped)"),
-    }
-}
-
-/// Parse a severity string into a `Severity` value.
-fn parse_severity(
-    s: &str,
-) -> std::result::Result<papertowel::detection::finding::Severity, String> {
-    match s {
-        "low" => Ok(papertowel::detection::finding::Severity::Low),
-        "medium" => Ok(papertowel::detection::finding::Severity::Medium),
-        "high" => Ok(papertowel::detection::finding::Severity::High),
-        other => Err(format!(
-            "invalid arguments: unknown severity '{other}'; expected low/medium/high"
-        )),
-    }
-}
-
-/// Comparable integer for a severity level.
-const fn severity_value(s: papertowel::detection::finding::Severity) -> u8 {
-    match s {
-        papertowel::detection::finding::Severity::Low => 0,
-        papertowel::detection::finding::Severity::Medium => 1,
-        papertowel::detection::finding::Severity::High => 2,
-    }
-}
-
-/// Build a successful MCP tool-call result containing a single text block.
-fn tool_text(text: impl Into<String>) -> Value {
-    json!({
-        "content": [{ "type": "text", "text": text.into() }]
-    })
-}
-
-/// Build a successful MCP tool-call result that signals a tool-level error.
-fn tool_error(message: impl Into<String>) -> Value {
-    json!({
-        "content": [{ "type": "text", "text": message.into() }],
-        "isError": true
-    })
-}
-
-/// Validate that `raw_path` is safe for the MCP server to operate on.
-///
-/// Rejects:
-/// - Paths containing null bytes (potential injection).
-/// - Paths that canonicalize to well-known sensitive system directories
-///   (`/etc`, `/proc`, `/sys`, `/dev`) or common secret-bearing home
-///   sub-directories (`.ssh`, `.gnupg`, `.aws`, `.config/gcloud`).
-///
-/// Returns the canonicalized [`PathBuf`] on success.
-fn validate_mcp_path(raw_path: &str) -> Result<PathBuf, String> {
-    const DENIED_PREFIXES: &[&str] = &[
-        "/etc",
-        "/private/etc", // macOS: /etc is a symlink to /private/etc
-        "/proc",
-        "/sys",
-        "/dev",
-        "/private/tmp/../etc", // paranoia
-    ];
-    const DENIED_SEGMENTS: &[&str] = &[
-        ".ssh",
-        ".gnupg",
-        ".pgp",
-        ".aws",
-        ".azure",
-        ".config/gcloud",
-        ".kube",
-        "Library/Keychains",
-        "Library/Credentials",
-    ];
-
-    // Null-byte check.
-    if raw_path.contains('\0') {
-        return Err("path contains a null byte".to_owned());
-    }
-
-    let path = PathBuf::from(raw_path);
-
-    // Canonicalize to resolve `..` and symlinks before the sensitive-prefix check.
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| format!("path is invalid or does not exist: {e}"))?;
-
-    for denied in DENIED_PREFIXES {
-        if canonical.starts_with(denied) {
-            return Err(format!(
-                "scanning '{denied}' is not permitted by the MCP server"
-            ));
-        }
-    }
-
-    let canonical_str = canonical.to_string_lossy();
-    for segment in DENIED_SEGMENTS {
-        if canonical_str.contains(segment) {
-            return Err(format!(
-                "path contains sensitive segment '{segment}'; scanning is not permitted"
-            ));
-        }
-    }
-
-    Ok(canonical)
+    write_response_observed(writer, &resp, "method_result", Some(method_name.as_str()));
 }
 
 #[cfg(test)]
@@ -852,7 +143,9 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::{handle_initialize, handle_tools_list, validate_mcp_path};
+    use crate::path_guard::validate_mcp_path;
+    use crate::protocol::handle_initialize;
+    use crate::tools::handle_tools_list;
 
     #[test]
     fn protocol_surface_for_initialize_and_tools_list_is_stable() {
@@ -874,7 +167,7 @@ mod tests {
             init.get("serverInfo")
                 .and_then(|info| info.get("description")),
             Some(&json!(
-                "Scan and dry-run scrub code for AI-generated fingerprint patterns."
+                "Scan, scrub, grade, and run cleanup workflows for AI-generated fingerprint patterns."
             )),
             "initialize should include serverInfo.description"
         );
@@ -885,7 +178,14 @@ mod tests {
             .and_then(serde_json::Value::as_array)
             .expect("tools/list should return a tools array");
 
-        for expected_name in ["papertowel_scan", "papertowel_scrub", "papertowel_grade"] {
+        for (expected_name, read_only, destructive, idempotent, open_world) in [
+            ("papertowel_scan", true, false, true, false),
+            ("papertowel_scrub", true, false, true, false),
+            ("papertowel_grade", true, false, true, false),
+            ("papertowel_cleanup_assess", false, false, true, false),
+            ("papertowel_cleanup_status", true, false, true, false),
+            ("papertowel_cleanup_apply", false, true, false, true),
+        ] {
             let tool = tools
                 .iter()
                 .find(|tool| tool.get("name") == Some(&json!(expected_name)))
@@ -894,22 +194,22 @@ mod tests {
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("readOnlyHint")),
-                Some(&json!(true))
+                Some(&json!(read_only))
             );
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("destructiveHint")),
-                Some(&json!(false))
+                Some(&json!(destructive))
             );
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("idempotentHint")),
-                Some(&json!(true))
+                Some(&json!(idempotent))
             );
             assert_eq!(
                 tool.get("annotations")
                     .and_then(|ann| ann.get("openWorldHint")),
-                Some(&json!(false))
+                Some(&json!(open_world))
             );
         }
     }
@@ -934,7 +234,6 @@ mod tests {
         let result = validate_mcp_path("/etc/hosts");
         assert!(result.is_err());
         let msg = result.expect_err("err");
-        // Could be "not permitted" (prefix matched) or "does not exist" on unusual systems.
         assert!(
             msg.contains("not permitted") || msg.contains("does not exist"),
             "unexpected msg: {msg}"
@@ -945,7 +244,6 @@ mod tests {
     fn ssh_segment_is_rejected() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
         let ssh_path = format!("{home}/.ssh");
-        // Only test if the directory actually exists so canonicalize succeeds.
         if std::path::Path::new(&ssh_path).exists() {
             let result = validate_mcp_path(&ssh_path);
             assert!(result.is_err());
