@@ -45,7 +45,7 @@ pub struct AssessArgs {
     #[arg(long)]
     pub out: Option<String>,
 
-    /// Override cleanup state directory (default: <path>/.papertowel/cleanup).
+    /// Override cleanup state directory (default: project path/.papertowel/cleanup).
     #[arg(long)]
     pub state_dir: Option<String>,
 
@@ -66,7 +66,7 @@ pub struct StatusArgs {
     #[arg(long, value_enum, default_value = "text")]
     pub format: OutputFormat,
 
-    /// Override cleanup state directory (default: <path>/.papertowel/cleanup).
+    /// Override cleanup state directory (default: project path/.papertowel/cleanup).
     #[arg(long)]
     pub state_dir: Option<String>,
 }
@@ -94,7 +94,7 @@ pub struct ApplyArgs {
     #[arg(long, default_value_t = false)]
     pub ci: bool,
 
-    /// Override cleanup state directory (default: <report.path>/.papertowel/cleanup).
+    /// Override cleanup state directory (default: report path/.papertowel/cleanup).
     #[arg(long)]
     pub state_dir: Option<String>,
 }

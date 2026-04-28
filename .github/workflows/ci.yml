@@ -200,7 +200,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-deny-
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked --version "0.19.4"
+        run: cargo install cargo-deny --locked --version "0.19.4" --force
 
       - name: Run cargo deny
         run: cargo deny check
@@ -229,7 +229,7 @@ jobs:
         run: cargo install cargo-machete --locked
 
       - name: Run cargo machete (advisory)
-        run: cargo machete
+        run: cargo machete || true
 
   dead-code-udeps:
     name: Dead-code signal (udeps)
@@ -255,7 +255,7 @@ jobs:
         run: cargo +nightly install cargo-udeps --locked
 
       - name: Run cargo udeps (advisory)
-        run: cargo +nightly udeps --workspace --all-targets
+        run: cargo +nightly udeps --workspace --all-targets || true
 
   scan:
     name: Scan for AI fingerprints
