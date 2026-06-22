@@ -35,9 +35,10 @@ jobs:
         include:
           - language: rust
             build-mode: none
-          # JavaScript for the book assets under book/ and any embedded scripts.
-          - language: javascript-typescript
-            build-mode: none
+        # papertowel has no meaningful JavaScript or TypeScript source
+        # (book/ is mdBook, not JS) so the javascript-typescript language
+        # is intentionally omitted; adding it produces a configuration
+        # error on every run.
 
     steps:
       - name: Checkout repository

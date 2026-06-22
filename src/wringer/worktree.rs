@@ -106,8 +106,12 @@ fn ensure_branch_exists<'repo>(
 
 fn worktree_exists(repository: &Repository, name: &str) -> Result<bool, PapertowelError> {
     let names = repository.worktrees().map_err(PapertowelError::Git)?;
+    // git2 0.21 returns a `StringArray` that iterates as
+    // `Result<Option<&str>, Error>`; skip invalid entries and unwrap the
+    // inner `Option` to recover the same `&str` shape we had in 0.20.
     Ok(names
         .iter()
+        .filter_map(Result::ok)
         .flatten()
         .any(|candidate| candidate.eq_ignore_ascii_case(name)))
 }
