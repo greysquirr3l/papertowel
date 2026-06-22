@@ -9,27 +9,93 @@ use std::str::FromStr;
 use tracing::debug;
 
 use crate::path_guard::validate_mcp_path;
+use crate::protocol::{DEFAULT_PAGE_SIZE, DEFAULT_RESULT_TTL_MS, JSON_SCHEMA_DIALECT, RESULT_TYPE_COMPLETE};
 
 mod args;
 mod output;
 
 use args::{bool_arg, optional_str_arg, required_str_arg};
-use output::{tool_error, tool_text};
+use output::{tool_error, tool_structured, tool_text};
 
 /// Files larger than this are skipped by the recipe scanner to avoid I/O waste.
 const MAX_RECIPE_SCAN_BYTES: u64 = 2 * 1024 * 1024;
 
 pub fn handle_tools_list() -> Value {
     json!({
+        "resultType": RESULT_TYPE_COMPLETE,
+        "ttlMs": DEFAULT_RESULT_TTL_MS,
+        "cacheScope": "public",
         "tools": [
-            tool_scan_definition(),
-            tool_scrub_definition(),
-            tool_grade_definition(),
+            tool_cleanup_apply_definition(),
             tool_cleanup_assess_definition(),
             tool_cleanup_status_definition(),
-            tool_cleanup_apply_definition(),
-        ]
+            tool_grade_definition(),
+            tool_scan_definition(),
+            tool_scrub_definition(),
+        ],
+        "_meta": {
+            "dev.greysquirr3l.papertowel/page-size": DEFAULT_PAGE_SIZE,
+        }
     })
+}
+
+/// Return one page of tool definitions with cursor pagination.
+pub fn tools_list_page(cursor: Option<&str>) -> Value {
+    // Tools are returned alphabetically sorted (by name) for deterministic
+    // client-side caching, as recommended by the `2026-07-28` spec changelog.
+    let tools = handle_tools_list();
+    let page = tools
+        .get("tools")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let start = decode_cursor(cursor);
+    let end = (start + DEFAULT_PAGE_SIZE).min(page.len());
+
+    let page_slice: Vec<Value> = page.iter().skip(start).take(end - start).cloned().collect();
+
+    let mut result = json!({
+        "resultType": RESULT_TYPE_COMPLETE,
+        "ttlMs": DEFAULT_RESULT_TTL_MS,
+        "cacheScope": "public",
+        "tools": page_slice,
+        "_meta": {
+            "dev.greysquirr3l.papertowel/page-size": DEFAULT_PAGE_SIZE,
+        }
+    });
+    if end < page.len()
+        && let Some(obj) = result.as_object_mut()
+    {
+        obj.insert("nextCursor".to_owned(), Value::String(encode_cursor(end)));
+    }
+    result
+}
+
+fn encode_cursor(index: usize) -> String {
+    use base64::Engine as _;
+    let bytes = index.to_le_bytes();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn decode_cursor(cursor: Option<&str>) -> usize {
+    use base64::Engine as _;
+    let Some(cursor) = cursor else {
+        return 0;
+    };
+    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(cursor) else {
+        return 0;
+    };
+    if bytes.len() != std::mem::size_of::<usize>() {
+        return 0;
+    }
+    let Ok(arr) = <[u8; std::mem::size_of::<usize>()]>::try_from(bytes.as_slice()) else {
+        return 0;
+    };
+    usize::from_le_bytes(arr)
+}
+
+const fn schema_dialect() -> &'static str {
+    JSON_SCHEMA_DIALECT
 }
 
 fn tool_scan_definition() -> Value {
@@ -44,6 +110,7 @@ fn tool_scan_definition() -> Value {
             "openWorldHint": false
         },
         "inputSchema": {
+            "$schema": schema_dialect(),
             "type": "object",
             "properties": {
                 "path": {
@@ -56,7 +123,8 @@ fn tool_scan_definition() -> Value {
                     "description": "Minimum severity threshold for reported findings. Defaults to 'low'."
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": false
         }
     })
 }
@@ -73,6 +141,7 @@ fn tool_scrub_definition() -> Value {
             "openWorldHint": false
         },
         "inputSchema": {
+            "$schema": schema_dialect(),
             "type": "object",
             "properties": {
                 "path": {
@@ -80,7 +149,8 @@ fn tool_scrub_definition() -> Value {
                     "description": "Absolute or relative path to the source file to analyse."
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": false
         }
     })
 }
@@ -97,6 +167,7 @@ fn tool_grade_definition() -> Value {
             "openWorldHint": false
         },
         "inputSchema": {
+            "$schema": schema_dialect(),
             "type": "object",
             "properties": {
                 "path": {
@@ -108,7 +179,8 @@ fn tool_grade_definition() -> Value {
                     "description": "Include per-category score and finding count in the output. Defaults to false."
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": false
         }
     })
 }
@@ -125,6 +197,7 @@ fn tool_cleanup_assess_definition() -> Value {
             "openWorldHint": false
         },
         "inputSchema": {
+            "$schema": schema_dialect(),
             "type": "object",
             "properties": {
                 "path": {
@@ -151,6 +224,51 @@ fn tool_cleanup_assess_definition() -> Value {
                     "type": "string",
                     "description": "Optional cleanup state directory override."
                 }
+            },
+            "additionalProperties": false
+        },
+        "outputSchema": {
+            "$schema": schema_dialect(),
+            "type": "object",
+            "description": "CleanupReport shape — see papertowel::cleanup::CleanupReport.",
+            "required": ["version", "path", "tracks", "summary", "findings", "deferred", "validation_plan"],
+            "properties": {
+                "version": { "type": "string" },
+                "path": { "type": "string" },
+                "tracks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "deduplication",
+                            "type_consolidation",
+                            "dead_code",
+                            "circular_dependencies",
+                            "type_strengthening",
+                            "error_handling",
+                            "deprecated_and_ai_artifacts"
+                        ]
+                    }
+                },
+                "summary": {
+                    "type": "object",
+                    "required": ["finding_count", "apply_count", "review_count", "defer_count"],
+                    "properties": {
+                        "finding_count": { "type": "integer", "minimum": 0 },
+                        "apply_count": { "type": "integer", "minimum": 0 },
+                        "review_count": { "type": "integer", "minimum": 0 },
+                        "defer_count": { "type": "integer", "minimum": 0 }
+                    }
+                },
+                "findings": { "type": "array" },
+                "deferred": { "type": "array" },
+                "validation_plan": {
+                    "type": "object",
+                    "required": ["commands"],
+                    "properties": {
+                        "commands": { "type": "array", "items": { "type": "string" } }
+                    }
+                }
             }
         }
     })
@@ -168,6 +286,7 @@ fn tool_cleanup_status_definition() -> Value {
             "openWorldHint": false
         },
         "inputSchema": {
+            "$schema": schema_dialect(),
             "type": "object",
             "properties": {
                 "path": {
@@ -177,6 +296,29 @@ fn tool_cleanup_status_definition() -> Value {
                 "state_dir": {
                     "type": "string",
                     "description": "Optional cleanup state directory override."
+                }
+            },
+            "additionalProperties": false
+        },
+        "outputSchema": {
+            "$schema": schema_dialect(),
+            "type": "object",
+            "description": "CleanupStatusReport shape — see papertowel::cleanup::CleanupStatusReport.",
+            "required": ["version", "state_dir", "deferred_count", "evidence_gap_count", "deferred"],
+            "properties": {
+                "version": { "type": "string" },
+                "state_dir": { "type": "string" },
+                "deferred_count": { "type": "integer", "minimum": 0 },
+                "evidence_gap_count": { "type": "integer", "minimum": 0 },
+                "deferred": { "type": "array" },
+                "trend": {
+                    "type": ["object", "null"],
+                    "properties": {
+                        "finding_delta": { "type": "integer" },
+                        "apply_delta": { "type": "integer" },
+                        "review_delta": { "type": "integer" },
+                        "defer_delta": { "type": "integer" }
+                    }
                 }
             }
         }
@@ -194,7 +336,11 @@ fn tool_cleanup_apply_definition() -> Value {
             "idempotentHint": false,
             "openWorldHint": true
         },
+        "execution": {
+            "taskSupport": "optional"
+        },
         "inputSchema": {
+            "$schema": schema_dialect(),
             "type": "object",
             "properties": {
                 "report": {
@@ -240,7 +386,46 @@ fn tool_cleanup_apply_definition() -> Value {
                     "description": "Optional cleanup state directory override."
                 }
             },
-            "required": ["report"]
+            "required": ["report"],
+            "additionalProperties": false
+        },
+        "outputSchema": {
+            "$schema": schema_dialect(),
+            "type": "object",
+            "description": "CleanupApplyResult shape — see papertowel-mcp::CleanupApplyResult.",
+            "required": ["report_path", "dry_run", "approved_count", "blocked_count", "blocked", "validation"],
+            "properties": {
+                "report_path": { "type": "string" },
+                "dry_run": { "type": "boolean" },
+                "approved_count": { "type": "integer", "minimum": 0 },
+                "blocked_count": { "type": "integer", "minimum": 0 },
+                "blocked": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["id", "track", "reason"],
+                        "properties": {
+                            "id": { "type": "string" },
+                            "track": { "type": "string" },
+                            "reason": { "type": "string" }
+                        }
+                    }
+                },
+                "validation": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["command", "success", "exit_code"],
+                        "properties": {
+                            "command": { "type": "string" },
+                            "success": { "type": "boolean" },
+                            "exit_code": {
+                                "type": ["integer", "null"]
+                            }
+                        }
+                    }
+                }
+            }
         }
     })
 }
@@ -598,7 +783,7 @@ fn call_cleanup_assess(args: &Value) -> Value {
         return tool_error(format!("failed to persist cleanup artifacts: {error}"));
     }
 
-    serialize_json_text(&report)
+    serialize_structured_json(&report)
 }
 
 fn call_cleanup_status(args: &Value) -> Value {
@@ -615,7 +800,7 @@ fn call_cleanup_status(args: &Value) -> Value {
     );
 
     match papertowel::cleanup::read_status_report(&state_dir) {
-        Ok(status) => serialize_json_text(&status),
+        Ok(status) => serialize_structured_json(&status),
         Err(error) => tool_error(format!("failed to read cleanup status: {error}")),
     }
 }
@@ -715,14 +900,23 @@ fn call_cleanup_apply(args: &Value) -> Value {
         return tool_error("cleanup apply validation failed");
     }
 
-    serialize_json_text(&result)
+    serialize_structured_json(&result)
 }
 
-fn serialize_json_text<T: Serialize>(value: &T) -> Value {
-    match serde_json::to_string_pretty(value) {
-        Ok(text) => tool_text(text),
-        Err(error) => tool_error(format!("failed to serialize JSON output: {error}")),
-    }
+/// Serialise `value` as both human-readable JSON text and structured content.
+///
+/// `2026-07-28` adds `structuredContent` to the tool-call response so clients
+/// can validate and use the value directly without parsing the text block.
+fn serialize_structured_json<T: Serialize>(value: &T) -> Value {
+    let structured = match serde_json::to_value(value) {
+        Ok(v) => v,
+        Err(error) => return tool_error(format!("failed to serialize JSON output: {error}")),
+    };
+    let text = match serde_json::to_string_pretty(&structured) {
+        Ok(t) => t,
+        Err(error) => return tool_error(format!("failed to serialize JSON output: {error}")),
+    };
+    tool_structured(text, &structured)
 }
 
 fn optional_string_array_arg(args: &Value, name: &str) -> std::result::Result<Vec<String>, String> {
