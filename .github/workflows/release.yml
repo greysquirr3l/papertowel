@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
+      tag: ${{ steps.tag.outputs.tag }}
       release_ref: ${{ steps.tag.outputs.release_ref }}
       release_sha: ${{ steps.tag.outputs.release_sha }}
       version: ${{ steps.tag.outputs.version }}
@@ -55,33 +56,44 @@ jobs:
           git fetch --tags --force origin
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="${{ inputs.tag }}"
+            # Manual dispatch: the user types the tag, e.g. "v1.2.3".
+            # We require the "v" prefix for consistency with auto-tag and
+            # the workflow_run branch.
+            INPUT_TAG="${{ inputs.tag }}"
+            if [[ ! "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "Tag must look like v1.2.3 (optionally with pre-release suffix); got: $INPUT_TAG"
+              exit 1
+            fi
+            TAG="$INPUT_TAG"
             SHA=$(git rev-list -n 1 "$TAG" 2>/dev/null || true)
             if [[ -z "$SHA" ]]; then
               echo "Tag $TAG not found"
               exit 1
             fi
-            REF="refs/tags/$TAG"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             REF="${{ github.ref }}"
             SHA="${{ github.sha }}"
+            # push: github.ref is refs/tags/<tag>
+            TAG="${REF#refs/tags/}"
           elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
             SHA="${{ github.event.workflow_run.head_sha }}"
             TAG=$(git tag --points-at "$SHA" \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
               | sort -V | tail -n 1 || true)
             if [[ -z "$TAG" ]]; then
               echo "No semver tag found for workflow_run SHA $SHA — skipping release"
               echo "should_release=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            REF="refs/tags/$TAG"
           fi
-          VERSION="${REF#refs/tags/v}"
+          REF="refs/tags/$TAG"
+          # strip the leading "v" — VERSION is the bare semver
+          VERSION="${TAG#v}"
           echo "should_release=true" >> "$GITHUB_OUTPUT"
-          echo "release_ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION"  >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"            >> "$GITHUB_OUTPUT"
+          echo "release_ref=$REF"   >> "$GITHUB_OUTPUT"
+          echo "release_sha=$SHA"   >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
 
   validate:
     name: Validate tag vs Cargo versions
@@ -268,7 +280,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
-          tag_name: ${{ needs.resolve.outputs.release_ref }}
+          # softprops expects the bare tag (e.g. v1.2.3), not a ref.
+          tag_name: ${{ needs.resolve.outputs.tag }}
           target_commitish: ${{ needs.resolve.outputs.release_sha }}
           body: ${{ steps.changelog.outputs.notes }}
           draft: false

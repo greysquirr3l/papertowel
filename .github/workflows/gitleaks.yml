@@ -6,9 +6,8 @@ on:
   pull_request:
     branches: ["**"]
 
-# Top-level permissions default to read-all; gitleaks uploads its
-# SARIF report using the default GITHUB_TOKEN, so it needs no extra
-# scope.
+# Top-level permissions default to read-all; gitleaks runs in-process
+# against the checkout and does not need any elevated scope.
 permissions: read-all
 
 jobs:
