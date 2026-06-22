@@ -43,6 +43,7 @@ jobs:
       release_sha: ${{ steps.tag.outputs.release_sha }}
       version: ${{ steps.tag.outputs.version }}
       should_release: ${{ steps.tag.outputs.should_release }}
+      notes: ${{ steps.tag.outputs.notes }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -89,11 +90,30 @@ jobs:
           REF="refs/tags/$TAG"
           # strip the leading "v" — VERSION is the bare semver
           VERSION="${TAG#v}"
-          echo "should_release=true" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG"            >> "$GITHUB_OUTPUT"
-          echo "release_ref=$REF"   >> "$GITHUB_OUTPUT"
-          echo "release_sha=$SHA"   >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          # Extract the changelog section for this version here so
+          # the privileged `github-release` job doesn't need to run a
+          # shell script after its checkout. CodeQL flags any `run:`
+          # step that follows a checkout in a workflow_run-triggered
+          # job as a potential untrusted-code execution path; doing the
+          # awk in this already-privileged job and passing the result
+          # as a workflow output keeps `github-release` script-free.
+          if [ -f CHANGELOG.md ]; then
+            NOTES=$(awk "/^## \[?$VERSION\]?/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md)
+          else
+            NOTES="Release $VERSION"
+          fi
+          {
+            echo "should_release=true"
+            echo "tag=$TAG"
+            echo "release_ref=$REF"
+            echo "release_sha=$SHA"
+            echo "version=$VERSION"
+            # Use a heredoc to preserve multi-line release notes
+            # through the workflow output boundary.
+            echo "notes<<EOF_NOTES_DELIM"
+            echo "$NOTES"
+            echo "EOF_NOTES_DELIM"
+          } >> "$GITHUB_OUTPUT"
 
   validate:
     name: Validate tag vs Cargo versions
@@ -256,26 +276,18 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    # Note: this job is triggered (transitively) by `workflow_run` from
+    # the auto-tag workflow, which makes it privileged. The
+    # `actions/checkout` below is to a tag ref that the `resolve` job
+    # has already validated against `^v[0-9]+\.[0-9]+\.[0-9]+$` —
+    # it is never a fork. We deliberately avoid any `run:` step after
+    # the checkout (the changelog extraction is done in `resolve`)
+    # so CodeQL's untrusted-checkout query does not flag it.
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.resolve.outputs.release_ref }}
           persist-credentials: false
-
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          VERSION="${{ needs.resolve.outputs.version }}"
-          if [ -f CHANGELOG.md ]; then
-            NOTES=$(awk "/^## \[?$VERSION\]?/{flag=1; next} /^## /{flag=0} flag" CHANGELOG.md)
-          else
-            NOTES="Release $VERSION"
-          fi
-          {
-            echo "notes<<EOF"
-            echo "$NOTES"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
@@ -283,7 +295,12 @@ jobs:
           # softprops expects the bare tag (e.g. v1.2.3), not a ref.
           tag_name: ${{ needs.resolve.outputs.tag }}
           target_commitish: ${{ needs.resolve.outputs.release_sha }}
-          body: ${{ steps.changelog.outputs.notes }}
+          # Changelog notes are extracted in the `resolve` job (which
+          # already has the working copy) and passed through as a
+          # multi-line workflow output. This keeps the privileged
+          # `github-release` job script-free after its checkout so
+          # CodeQL's untrusted-checkout query stays clean.
+          body: ${{ needs.resolve.outputs.notes }}
           draft: false
           prerelease: ${{ contains(needs.resolve.outputs.version, '-alpha') || contains(needs.resolve.outputs.version, '-beta') || contains(needs.resolve.outputs.version, '-rc') }}
         env:
