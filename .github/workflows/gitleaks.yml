@@ -6,15 +6,20 @@ on:
   pull_request:
     branches: ["**"]
 
+# Top-level permissions default to read-all; gitleaks runs in-process
+# against the checkout and does not need any elevated scope.
+permissions: read-all
+
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Scan for secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@f65dee2ef48e96e7a5a2b775b131c3d81b2e73ea # v2.0.8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

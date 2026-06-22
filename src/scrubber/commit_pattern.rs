@@ -219,7 +219,7 @@ fn collect_commits(repo: &Repository) -> Result<Vec<CommitSample>, PapertowelErr
         let oid = oid_result.map_err(PapertowelError::Git)?;
         let commit = repo.find_commit(oid).map_err(PapertowelError::Git)?;
 
-        let message = commit.summary().unwrap_or("").to_owned();
+        let message = commit.summary()?.unwrap_or("").to_owned();
         let timestamp = commit.time().seconds();
 
         samples.push(CommitSample { timestamp, message });
