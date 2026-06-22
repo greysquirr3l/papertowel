@@ -250,7 +250,10 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-machete-
 
       - name: Install cargo-machete
-        run: cargo install cargo-machete --locked
+        # --force: the cache key includes the version pin, but cargo's
+        # installer refuses to overwrite a pre-existing binary without
+        # it. With --locked and a pinned upstream, force is safe.
+        run: cargo install cargo-machete --locked --force
 
       - name: Run cargo machete (advisory)
         run: cargo machete || true
@@ -280,7 +283,8 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-udeps-
 
       - name: Install cargo-udeps
-        run: cargo +nightly install cargo-udeps --locked
+        # --force: see cargo-machete install above.
+        run: cargo +nightly install cargo-udeps --locked --force
 
       - name: Run cargo udeps (advisory)
         run: cargo +nightly udeps --workspace --all-targets || true
