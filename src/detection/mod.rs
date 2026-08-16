@@ -1,3 +1,4 @@
+pub mod binary;
 pub mod coraline;
 pub mod finding;
 pub mod grading;

@@ -26,6 +26,7 @@ use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use unicode_general_category::{GeneralCategory, get_general_category};
 
+use crate::detection::binary::looks_binary;
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
 
@@ -366,9 +367,11 @@ pub fn detect_repo(
             continue;
         }
         // Most invisibles tooling doesn't need to scan binary blobs.
-        let Ok(content) = fs::read_to_string(path) else {
+        let Ok(bytes) = fs::read(path) else { continue; };
+        if looks_binary(&bytes) {
             continue;
-        };
+        }
+        let Ok(content) = String::from_utf8(bytes) else { continue; };
         let local = detect_in_text(path, &content, config)?;
         findings.extend(local);
     }
