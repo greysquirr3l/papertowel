@@ -44,7 +44,7 @@ pub fn handle(args: &GradeArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let _ = resolve_config(&root)?;
 
-    let collection = collect_findings_for_root(&root, args.mixed)?;
+    let collection = collect_findings_for_root(&root, args.mixed, false)?;
 
     // Saturate at u64::MAX (584 million years) — effectively unbounded
     let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);

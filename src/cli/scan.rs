@@ -48,6 +48,10 @@ pub struct ScanArgs {
     /// hybrid files.
     #[arg(long, default_value_t = false)]
     pub mixed: bool,
+    /// Enable NFKC normalization + homoglyph detection.
+    /// Currently detection-only; rewriting is opt-in via `scrub --normalize`.
+    #[arg(long, default_value_t = false)]
+    pub normalize: bool,
 }
 
 pub struct ScanCollection {
@@ -79,7 +83,7 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let (effective_fail_on, effective_format) = effective_ci_settings(args);
 
-    let mut collection = collect_findings_for_root(&root, args.mixed)?;
+    let mut collection = collect_findings_for_root(&root, args.mixed, args.normalize)?;
 
     let min_severity = args.severity.map(SeverityArg::as_severity);
 
@@ -131,7 +135,11 @@ pub fn handle(args: &ScanArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollection> {
+pub fn collect_findings_for_root(
+    root: &Path,
+    mixed: bool,
+    normalize: bool,
+) -> Result<ScanCollection> {
     let (project_root, config, ignore) = resolve_config(root)?;
 
     // Load personalised style baseline if one exists.
@@ -153,6 +161,7 @@ pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollect
         None
     };
     let lexical_explainability = lexical_matcher.as_ref().map(|m| m.explainability().clone());
+    let normalize_cfg = crate::scrubber::normalize::NormalizeConfig::default();
 
     let mut findings: Vec<Finding> = Vec::new();
 
@@ -195,6 +204,8 @@ pub fn collect_findings_for_root(root: &Path, mixed: bool) -> Result<ScanCollect
             recipe_matcher.as_deref(),
             lexical_matcher.as_ref(),
             config.detectors.security,
+            normalize,
+            &normalize_cfg,
         );
 
         if !directives.suppressed_lines.is_empty() {
@@ -260,6 +271,10 @@ fn aggregate_mixed_content_findings(findings: Vec<Finding>) -> Vec<Finding> {
     out
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "CLI dispatch is intentionally flat to keep detector wiring localised"
+)]
 fn run_file_detectors(
     path: &Path,
     findings: &mut Vec<Finding>,
@@ -267,12 +282,26 @@ fn run_file_detectors(
     recipe_matcher: Option<&RecipeMatcher>,
     lexical_matcher: Option<&LexicalMatcher>,
     security_enabled: bool,
+    normalize_enabled: bool,
+    normalize_cfg: &crate::scrubber::normalize::NormalizeConfig,
 ) {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or_default();
     let lang = LanguageKind::from_extension(ext);
+
+    // Homoglyph detection runs on text files regardless of language.
+    // (NFKC rewriting itself is left to `scrub --normalize`; here we
+    // only surface the byte-level homoglyph findings.)
+    if normalize_enabled
+        && let Ok(content) = std::fs::read_to_string(path)
+    {
+        match crate::scrubber::normalize::detect_in_text(path, &content, normalize_cfg) {
+            Ok(mut nf) => findings.append(&mut nf),
+            Err(e) => tracing::warn!("normalize error for {}: {e}", path.display()),
+        }
+    }
 
     if lang.is_analysable() {
         if let Some(matcher) = lexical_matcher {
@@ -378,6 +407,7 @@ mod tests {
             ci,
             explain: false,
             mixed: false,
+            normalize: false,
         }
     }
 
@@ -433,6 +463,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args)
     }
@@ -456,6 +487,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args)
     }
@@ -477,6 +509,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args)
     }
@@ -495,6 +528,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args)
     }
@@ -516,6 +550,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args)
     }
@@ -535,6 +570,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args)
     }
@@ -554,6 +590,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         // Empty dir produces zero findings → the `any` check is false → no exit
         handle(&args)
@@ -575,6 +612,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args_low)?;
         // Medium filter
@@ -586,6 +624,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&args_med)
     }
@@ -615,6 +654,7 @@ mod tests {
             ci: false,
             explain: false,
             mixed: false,
+            normalize: false,
         };
         handle(&scan_args)
     }

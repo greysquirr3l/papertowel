@@ -258,6 +258,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 ci: false,
                 explain: false,
                 mixed: false,
+                normalize: false,
             };
             scan::handle(&scan_args)
         }

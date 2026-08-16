@@ -66,7 +66,7 @@ pub struct VerificationResult {
 }
 
 fn run_verification(root: &Path, pre: Option<VerificationMetrics>) -> Result<VerificationResult> {
-    let after_scan = collect_findings_for_root(root, false)?;
+    let after_scan = collect_findings_for_root(root, false, false)?;
     let after_metrics = verification_metrics(&after_scan.findings);
     Ok(compare_verification(
         pre.unwrap_or_else(|| VerificationMetrics {
@@ -246,7 +246,7 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
 
     // Pre-scrub scan snapshot (only collected when --verify is requested).
     let pre_scrub_metrics: Option<VerificationMetrics> = if args.verify {
-        let pre_scan = collect_findings_for_root(&root, false)?;
+        let pre_scan = collect_findings_for_root(&root, false, false)?;
         Some(verification_metrics(&pre_scan.findings))
     } else {
         None
