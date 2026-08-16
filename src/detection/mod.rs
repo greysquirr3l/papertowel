@@ -1,4 +1,5 @@
 pub mod binary;
+pub mod confidence;
 pub mod coraline;
 pub mod finding;
 pub mod grading;

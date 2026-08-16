@@ -131,6 +131,7 @@ pub enum GradeCategory {
     Testing,
     Workflow,
     History,
+    Stylometry,
 }
 
 impl GradeCategory {
@@ -138,6 +139,7 @@ impl GradeCategory {
     pub const fn weight(&self) -> f32 {
         match self {
             Self::Lexical | Self::Architecture | Self::Security => 0.20,
+            Self::Stylometry => 0.15,
             Self::Comments | Self::Structure => 0.10,
             Self::Metadata | Self::Testing | Self::History => 0.08,
             Self::Workflow => 0.04,
@@ -157,6 +159,7 @@ impl GradeCategory {
             Self::Testing => "Testing",
             Self::Workflow => "Workflow",
             Self::History => "History",
+            Self::Stylometry => "Stylometry (statistical cadence)",
         }
     }
 }
@@ -186,6 +189,12 @@ impl From<FindingCategory> for GradeCategory {
             FindingCategory::Workflow | FindingCategory::Maintenance => Self::Workflow,
             FindingCategory::CommitPattern => Self::History,
         }
+    }
+}
+
+impl From<crate::scrubber::stylometry::ConfidenceTier> for GradeCategory {
+    fn from(_tier: crate::scrubber::stylometry::ConfidenceTier) -> Self {
+        Self::Stylometry
     }
 }
 
@@ -228,11 +237,16 @@ impl GradeReport {
             GradeCategory::Testing,
             GradeCategory::Workflow,
             GradeCategory::History,
+            GradeCategory::Stylometry,
         ] {
             let cat_findings = category_findings.get(&grade_cat);
             let finding_count = cat_findings.map_or(0, Vec::len);
 
-            // Calculate raw score based on severity-weighted finding count
+            // Calculate raw score based on severity-weighted finding count,
+            // modulated by the per-finding confidence tier. This replaces
+            // the raw `severity * confidence_score` weight with the tier's
+            // grade_multiplier so e.g. a Clean finding (>=0.95 confidence)
+            // contributes 0.0× and is effectively suppressed from grading.
             let raw_score = cat_findings.map_or(0.0, |fs| {
                 fs.iter()
                     .map(|f| {
@@ -241,7 +255,16 @@ impl GradeReport {
                             Severity::Medium => 1.5,
                             Severity::Low => 0.5,
                         };
-                        severity_weight * f.confidence_score
+                        let tier_multiplier =
+                            crate::detection::confidence::ConfidenceTier::classify(
+                                f.confidence_score,
+                                f.severity,
+                            )
+                            .grade_multiplier();
+                        // Avoid double-counting for Low-confidence findings:
+                        // if tier_multiplier is 0.0, the row contributes
+                        // nothing regardless of severity.
+                        severity_weight * f.confidence_score * tier_multiplier
                     })
                     .sum::<f32>()
             });

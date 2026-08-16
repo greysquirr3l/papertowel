@@ -145,6 +145,15 @@ impl Finding {
     pub fn is_high_confidence(&self) -> bool {
         self.confidence_score >= 0.75
     }
+
+    /// Classify this finding into a `ConfidenceTier`.
+    ///
+    /// Convenience wrapper around
+    /// [`crate::detection::confidence::ConfidenceTier::classify`] that
+    /// uses this finding's stored `confidence_score` and `severity`.
+    pub const fn confidence_tier(&self) -> crate::detection::confidence::ConfidenceTier {
+        crate::detection::confidence::ConfidenceTier::classify(self.confidence_score, self.severity)
+    }
 }
 
 #[cfg(test)]

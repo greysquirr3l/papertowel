@@ -7,7 +7,7 @@
 //!    counts across sentences; LLMs produce uniform lengths < 0.35;
 //!    humans vary > 0.55).
 //! 2. Lexical diversity (MATTR-50; moving-average type-token ratio over
-//!    50-word sliding windows; LLMs cluster 0.68-0.76).
+//!    50-word sliding windows; LLMs cluster 0.68 to 0.76).
 //! 3. Weighted AI phrase n-gram density (counts occurrences of 24
 //!    weighted formulaic phrases, scaled per 100 words).
 //!
@@ -56,16 +56,27 @@ const DAMPENER_MIN: f32 = 0.4;
 const DAMPENER_MAX: f32 = 1.0;
 
 /// Confidence tier derived from the composite score.
+///
+/// Re-export of `crate::detection::confidence::ConfidenceTier` for the
+/// stylometry-specific `from_score` threshold set (0.30 / 0.55 / 0.75)
+/// used by the composite scorer. The generic tier classifier on
+/// `Finding::confidence_tier()` uses the per-confidence-score thresholds
+/// (0.65 / 0.80 / 0.95) — the two coexist because they answer different
+/// questions (how confident is the *composite*? vs how confident is
+/// the *individual finding*?).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfidenceTier {
-    Clean, // < 0.30
-    Low,   // 0.30..=0.55
+    Clean,  // < 0.30 composite
+    Low,    // 0.30..=0.55
     Medium, // 0.55..=0.75
-    High,  // >= 0.75
+    High,   // >= 0.75
 }
 
 impl ConfidenceTier {
+    /// Stylometry-composite-specific mapping. Use this for `score_text`
+    /// output; for per-finding mapping use
+    /// `crate::detection::confidence::ConfidenceTier::classify`.
     #[must_use]
     pub const fn from_score(score: f32) -> Self {
         if score >= 0.75 {
@@ -89,7 +100,7 @@ impl ConfidenceTier {
         }
     }
 
-    /// Grade-impact multiplier (used by Phase 6 grading).
+    /// Same multiplier as `detection::confidence::ConfidenceTier::grade_multiplier()`.
     #[must_use]
     pub const fn grade_multiplier(self) -> f32 {
         match self {
@@ -353,7 +364,11 @@ fn bytes_to_pattern(spec: &PatternSpec<'_>) -> CompiledWeightedPattern {
 }
 
 static WEIGHTED_PATTERNS: LazyLock<Vec<CompiledWeightedPattern>> = LazyLock::new(|| {
-    PATTERN_SPECS.iter().map(bytes_to_pattern).collect()
+    let mut out: Vec<CompiledWeightedPattern> = Vec::with_capacity(PATTERN_SPECS.len());
+    for spec in PATTERN_SPECS {
+        out.push(bytes_to_pattern(spec));
+    }
+    out
 });
 
 // ── Tokenization ───────────────────────────────────────────────────────
