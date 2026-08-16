@@ -14,5 +14,6 @@ pub mod readme;
 pub mod safety;
 pub mod security;
 pub mod structure;
+pub mod stylometry;
 pub mod tests;
 pub mod workflow;
