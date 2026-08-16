@@ -10,649 +10,748 @@ use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
 
 use super::types::{
-    ContextualPattern, LoadedRecipe, Recipe, RegexPattern, ScoringConfig, WordPatterns,
+ ContextualPattern, LoadedRecipe, Recipe, RegexPattern, ScoringConfig, WordPatterns,
 };
 
 #[derive(Debug)]
 pub struct CompiledRecipe {
-    /// Recipe name.
-    pub name: String,
+ /// Recipe name.
+ pub name: String,
 
-    /// Recipe category.
-    pub category: FindingCategory,
+ /// Recipe category.
+ pub category: FindingCategory,
 
-    /// Default severity.
-    pub default_severity: Severity,
+ /// Default severity.
+ pub default_severity: Severity,
 
-    /// Scoring configuration.
-    pub scoring: ScoringConfig,
+ /// Scoring configuration.
+ pub scoring: ScoringConfig,
 
-    /// Compiled word matcher (Aho-Corasick).
-    word_matcher: Option<CompiledWordMatcher>,
+ /// Compiled word matcher (Aho-Corasick).
+ word_matcher: Option<CompiledWordMatcher>,
 
-    /// Compiled phrase matcher (Aho-Corasick).
-    phrase_matcher: Option<CompiledPhraseMatcher>,
+ /// Compiled phrase matcher (Aho-Corasick).
+ phrase_matcher: Option<CompiledPhraseMatcher>,
 
-    /// Compiled regex patterns.
-    regex_patterns: Vec<CompiledRegex>,
+ /// Compiled regex patterns.
+ regex_patterns: Vec<CompiledRegex>,
 
-    /// Compiled contextual patterns.
-    contextual_patterns: Vec<CompiledContextual>,
+ /// Compiled contextual patterns.
+ contextual_patterns: Vec<CompiledContextual>,
 }
 
 #[derive(Debug)]
 struct CompiledWordMatcher {
-    ac: AhoCorasick,
-    /// (word, replacement, severity)
-    words: Vec<(String, Option<String>, Severity)>,
-    case_sensitive: bool,
-    whole_word: bool,
+ ac: AhoCorasick,
+ /// (word, replacement, severity)
+ words: Vec<(String, Option<String>, Severity)>,
+ case_sensitive: bool,
+ whole_word: bool,
 }
 
 #[derive(Debug)]
 struct CompiledPhraseMatcher {
-    ac: AhoCorasick,
-    phrases: Vec<(String, Option<String>, Severity)>, // (pattern, suggestion, severity)
+ ac: AhoCorasick,
+ phrases: Vec<(String, Option<String>, Severity)>, // (pattern, suggestion, severity)
 }
 
 #[derive(Debug)]
 struct CompiledRegex {
-    name: String,
-    regex: Regex,
-    severity: Severity,
-    description: Option<String>,
-    suggestion: Option<String>,
-    auto_fixable: bool,
-    applies_to: Option<GlobSet>,
-    excludes: Option<GlobSet>,
+ name: String,
+ regex: Regex,
+ severity: Severity,
+ description: Option<String>,
+ suggestion: Option<String>,
+ auto_fixable: bool,
+ applies_to: Option<GlobSet>,
+ excludes: Option<GlobSet>,
 }
 
 #[derive(Debug)]
 struct CompiledContextual {
-    name: String,
-    applies_to: GlobSet,
-    pattern: ContextualMatcher,
-    severity: Severity,
-    description: Option<String>,
-    suggestion: Option<String>,
-    auto_fixable: bool,
+ name: String,
+ applies_to: GlobSet,
+ pattern: ContextualMatcher,
+ severity: Severity,
+ description: Option<String>,
+ suggestion: Option<String>,
+ auto_fixable: bool,
 }
 
 #[derive(Debug)]
 enum ContextualMatcher {
-    Literal(String),
-    Regex(Regex),
+ Literal(String),
+ Regex(Regex),
 }
 
 /// Matches files against all loaded recipes.
 #[derive(Debug)]
 pub struct RecipeMatcher {
-    compiled: Vec<CompiledRecipe>,
+ compiled: Vec<CompiledRecipe>,
 }
 
 impl RecipeMatcher {
-    #[instrument(skip(recipes))]
-    pub fn compile(recipes: Vec<LoadedRecipe>) -> Result<Self, PapertowelError> {
-        let mut compiled = Vec::with_capacity(recipes.len());
+ #[instrument(skip(recipes))]
+ pub fn compile(recipes: Vec<LoadedRecipe>) -> Result<Self, PapertowelError> {
+ let mut compiled = Vec::with_capacity(recipes.len());
 
-        for loaded in recipes {
-            match Self::compile_recipe(loaded.recipe) {
-                Ok(c) => compiled.push(c),
-                Err(e) => {
-                    warn!(error = %e, "failed to compile recipe");
-                }
-            }
-        }
+ for loaded in recipes {
+ match Self::compile_recipe(loaded.recipe) {
+ Ok(c) => compiled.push(c),
+ Err(e) => {
+ warn!(error = %e, "failed to compile recipe");
+ }
+ }
+ }
 
-        debug!(count = compiled.len(), "compiled recipes");
-        Ok(Self { compiled })
-    }
+ debug!(count = compiled.len(), "compiled recipes");
+ Ok(Self { compiled })
+ }
 
-    /// Compile a single recipe.
-    fn compile_recipe(recipe: Recipe) -> Result<CompiledRecipe, PapertowelError> {
-        let name = recipe.recipe.name.clone();
-        let category = recipe.recipe.category.into();
-        let default_severity = recipe.recipe.default_severity;
+ /// Compile a single recipe.
+ fn compile_recipe(recipe: Recipe) -> Result<CompiledRecipe, PapertowelError> {
+ let name = recipe.recipe.name.clone();
+ let category = recipe.recipe.category.into();
+ let default_severity = recipe.recipe.default_severity;
 
-        // Compile word patterns.
-        let word_matcher = if let Some(ref words) = recipe.patterns.words {
-            if words.enabled && !words.items.is_empty() {
-                Some(Self::compile_words(words, default_severity)?)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+ // Compile word patterns.
+ let word_matcher = if let Some(ref words) = recipe.patterns.words {
+ if words.enabled &&!words.items.is_empty() {
+ Some(Self::compile_words(words, default_severity)?)
+ } else {
+ None
+ }
+ } else {
+ None
+ };
 
-        // Compile phrase patterns.
-        let phrase_matcher = if let Some(ref phrases) = recipe.patterns.phrases {
-            if phrases.enabled && !phrases.items.is_empty() {
-                Some(Self::compile_phrases(phrases, default_severity)?)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+ // Compile phrase patterns.
+ let phrase_matcher = if let Some(ref phrases) = recipe.patterns.phrases {
+ if phrases.enabled &&!phrases.items.is_empty() {
+ Some(Self::compile_phrases(phrases, default_severity)?)
+ } else {
+ None
+ }
+ } else {
+ None
+ };
 
-        // Compile regex patterns.
-        let regex_patterns = recipe
-            .patterns
-            .regex
-            .into_iter()
-            .filter_map(|r| Self::compile_regex(r, default_severity).ok())
-            .collect();
+ // Compile regex patterns.
+ let regex_patterns = recipe
+.patterns
+.regex
+.into_iter()
+.filter_map(|r| Self::compile_regex(r, default_severity).ok())
+.collect();
 
-        // Compile contextual patterns.
-        let contextual_patterns = recipe
-            .patterns
-            .contextual
-            .into_iter()
-            .filter_map(|c| Self::compile_contextual(c, default_severity).ok())
-            .collect();
+ // Compile contextual patterns.
+ let contextual_patterns = recipe
+.patterns
+.contextual
+.into_iter()
+.filter_map(|c| Self::compile_contextual(c, default_severity).ok())
+.collect();
 
-        Ok(CompiledRecipe {
-            name,
-            category,
-            default_severity,
-            scoring: recipe.scoring,
-            word_matcher,
-            phrase_matcher,
-            regex_patterns,
-            contextual_patterns,
-        })
-    }
+ Ok(CompiledRecipe {
+ name,
+ category,
+ default_severity,
+ scoring: recipe.scoring,
+ word_matcher,
+ phrase_matcher,
+ regex_patterns,
+ contextual_patterns,
+ })
+ }
 
-    fn compile_words(
-        words: &WordPatterns,
-        default_severity: Severity,
-    ) -> Result<CompiledWordMatcher, PapertowelError> {
-        let base_severity = words.severity.unwrap_or(default_severity);
+ fn compile_words(
+ words: &WordPatterns,
+ default_severity: Severity,
+ ) -> Result<CompiledWordMatcher, PapertowelError> {
+ let base_severity = words.severity.unwrap_or(default_severity);
 
-        // Build word data with replacements.
-        let word_data: Vec<(String, Option<String>, Severity)> = words
-            .items
-            .iter()
-            .map(|item| {
-                let sev = item.severity().unwrap_or(base_severity);
-                (
-                    item.word().to_owned(),
-                    item.replacement().map(std::borrow::ToOwned::to_owned),
-                    sev,
-                )
-            })
-            .collect();
+ // Build word data with replacements.
+ let word_data: Vec<(String, Option<String>, Severity)> = words
+.items
+.iter()
+.map(|item| {
+ let sev = item.severity().unwrap_or(base_severity);
+ (
+ item.word().to_owned(),
+ item.replacement().map(std::borrow::ToOwned::to_owned),
+ sev,
+ )
+ })
+.collect();
 
-        let patterns: Vec<String> = if words.case_sensitive {
-            word_data.iter().map(|(w, _, _)| w.clone()).collect()
-        } else {
-            word_data.iter().map(|(w, _, _)| w.to_lowercase()).collect()
-        };
+ let patterns: Vec<String> = if words.case_sensitive {
+ word_data.iter().map(|(w, _, _)| w.clone()).collect()
+ } else {
+ word_data.iter().map(|(w, _, _)| w.to_lowercase()).collect()
+ };
 
-        let ac = AhoCorasickBuilder::new()
-            .ascii_case_insensitive(!words.case_sensitive)
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(&patterns)
-            .map_err(|e| PapertowelError::Config(format!("failed to build word matcher: {e}")))?;
+ let ac = AhoCorasickBuilder::new()
+.ascii_case_insensitive(!words.case_sensitive)
+.match_kind(MatchKind::LeftmostLongest)
+.build(&patterns)
+.map_err(|e| PapertowelError::Config(format!("failed to build word matcher: {e}")))?;
 
-        Ok(CompiledWordMatcher {
-            ac,
-            words: word_data,
-            case_sensitive: words.case_sensitive,
-            whole_word: words.whole_word,
-        })
-    }
+ Ok(CompiledWordMatcher {
+ ac,
+ words: word_data,
+ case_sensitive: words.case_sensitive,
+ whole_word: words.whole_word,
+ })
+ }
 
-    fn compile_phrases(
-        phrases: &super::types::PhrasePatterns,
-        default_severity: Severity,
-    ) -> Result<CompiledPhraseMatcher, PapertowelError> {
-        let phrase_data: Vec<(String, Option<String>, Severity)> = phrases
-            .items
-            .iter()
-            .map(|item| {
-                let sev = item
-                    .severity()
-                    .unwrap_or_else(|| phrases.severity.unwrap_or(default_severity));
-                (
-                    item.pattern().to_owned(),
-                    item.suggestion().map(std::borrow::ToOwned::to_owned),
-                    sev,
-                )
-            })
-            .collect();
+ fn compile_phrases(
+ phrases: &super::types::PhrasePatterns,
+ default_severity: Severity,
+ ) -> Result<CompiledPhraseMatcher, PapertowelError> {
+ let phrase_data: Vec<(String, Option<String>, Severity)> = phrases
+.items
+.iter()
+.map(|item| {
+ let sev = item
+.severity()
+.unwrap_or_else(|| phrases.severity.unwrap_or(default_severity));
+ (
+ item.pattern().to_owned(),
+ item.suggestion().map(std::borrow::ToOwned::to_owned),
+ sev,
+ )
+ })
+.collect();
 
-        let patterns: Vec<&str> = phrase_data.iter().map(|(p, _, _)| p.as_str()).collect();
+ let patterns: Vec<&str> = phrase_data.iter().map(|(p, _, _)| p.as_str()).collect();
 
-        let ac = AhoCorasickBuilder::new()
-            .ascii_case_insensitive(true)
-            .match_kind(MatchKind::LeftmostLongest)
-            .build(&patterns)
-            .map_err(|e| PapertowelError::Config(format!("failed to build phrase matcher: {e}")))?;
+ let ac = AhoCorasickBuilder::new()
+.ascii_case_insensitive(true)
+.match_kind(MatchKind::LeftmostLongest)
+.build(&patterns)
+.map_err(|e| PapertowelError::Config(format!("failed to build phrase matcher: {e}")))?;
 
-        Ok(CompiledPhraseMatcher {
-            ac,
-            phrases: phrase_data,
-        })
-    }
+ Ok(CompiledPhraseMatcher {
+ ac,
+ phrases: phrase_data,
+ })
+ }
 
-    fn compile_regex(
-        pattern: RegexPattern,
-        default_severity: Severity,
-    ) -> Result<CompiledRegex, PapertowelError> {
-        let regex = Regex::new(&pattern.pattern)
-            .map_err(|e| PapertowelError::Config(format!("invalid regex {}: {e}", pattern.name)))?;
+ fn compile_regex(
+ pattern: RegexPattern,
+ default_severity: Severity,
+ ) -> Result<CompiledRegex, PapertowelError> {
+ let regex = Regex::new(&pattern.pattern)
+.map_err(|e| PapertowelError::Config(format!("invalid regex {}: {e}", pattern.name)))?;
 
-        let applies_to = if pattern.applies_to.is_empty() {
-            None
-        } else {
-            Some(Self::build_globset(&pattern.applies_to)?)
-        };
+ let applies_to = if pattern.applies_to.is_empty() {
+ None
+ } else {
+ Some(Self::build_globset(&pattern.applies_to)?)
+ };
 
-        let excludes = if pattern.excludes.is_empty() {
-            None
-        } else {
-            Some(Self::build_globset(&pattern.excludes)?)
-        };
+ let excludes = if pattern.excludes.is_empty() {
+ None
+ } else {
+ Some(Self::build_globset(&pattern.excludes)?)
+ };
 
-        Ok(CompiledRegex {
-            name: pattern.name,
-            regex,
-            severity: pattern.severity.unwrap_or(default_severity),
-            description: pattern.description,
-            suggestion: pattern.suggestion,
-            auto_fixable: pattern.auto_fixable,
-            applies_to,
-            excludes,
-        })
-    }
+ Ok(CompiledRegex {
+ name: pattern.name,
+ regex,
+ severity: pattern.severity.unwrap_or(default_severity),
+ description: pattern.description,
+ suggestion: pattern.suggestion,
+ auto_fixable: pattern.auto_fixable,
+ applies_to,
+ excludes,
+ })
+ }
 
-    fn compile_contextual(
-        pattern: ContextualPattern,
-        default_severity: Severity,
-    ) -> Result<CompiledContextual, PapertowelError> {
-        let applies_to = Self::build_globset(&pattern.applies_to)?;
+ fn compile_contextual(
+ pattern: ContextualPattern,
+ default_severity: Severity,
+ ) -> Result<CompiledContextual, PapertowelError> {
+ let applies_to = Self::build_globset(&pattern.applies_to)?;
 
-        let matcher = if pattern.is_regex {
-            let regex = Regex::new(&pattern.pattern).map_err(|e| {
-                PapertowelError::Config(format!("invalid regex {}: {e}", pattern.name))
-            })?;
-            ContextualMatcher::Regex(regex)
-        } else {
-            ContextualMatcher::Literal(pattern.pattern)
-        };
+ let matcher = if pattern.is_regex {
+ let regex = Regex::new(&pattern.pattern).map_err(|e| {
+ PapertowelError::Config(format!("invalid regex {}: {e}", pattern.name))
+ })?;
+ ContextualMatcher::Regex(regex)
+ } else {
+ ContextualMatcher::Literal(pattern.pattern)
+ };
 
-        Ok(CompiledContextual {
-            name: pattern.name,
-            applies_to,
-            pattern: matcher,
-            severity: pattern.severity.unwrap_or(default_severity),
-            description: pattern.description,
-            suggestion: pattern.suggestion,
-            auto_fixable: pattern.auto_fixable,
-        })
-    }
+ Ok(CompiledContextual {
+ name: pattern.name,
+ applies_to,
+ pattern: matcher,
+ severity: pattern.severity.unwrap_or(default_severity),
+ description: pattern.description,
+ suggestion: pattern.suggestion,
+ auto_fixable: pattern.auto_fixable,
+ })
+ }
 
-    fn build_globset(patterns: &[String]) -> Result<GlobSet, PapertowelError> {
-        let mut builder = GlobSetBuilder::new();
-        for pattern in patterns {
-            let glob = Glob::new(pattern)
-                .map_err(|e| PapertowelError::Config(format!("invalid glob {pattern}: {e}")))?;
-            builder.add(glob);
-        }
-        builder
-            .build()
-            .map_err(|e| PapertowelError::Config(format!("failed to build globset: {e}")))
-    }
+ fn build_globset(patterns: &[String]) -> Result<GlobSet, PapertowelError> {
+ let mut builder = GlobSetBuilder::new();
+ for pattern in patterns {
+ let glob = Glob::new(pattern)
+.map_err(|e| PapertowelError::Config(format!("invalid glob {pattern}: {e}")))?;
+ builder.add(glob);
+ }
+ builder
+.build()
+.map_err(|e| PapertowelError::Config(format!("failed to build globset: {e}")))
+ }
 
-    /// Scan file content and return findings.
-    #[instrument(skip(self, content))]
-    pub fn scan_file(&self, path: &Path, content: &str) -> Result<Vec<Finding>, PapertowelError> {
-        let mut findings = Vec::new();
-        let lines: Vec<&str> = content.lines().collect();
+ /// Scan file content and return findings.
+ #[instrument(skip(self, content))]
+ pub fn scan_file(&self, path: &Path, content: &str) -> Result<Vec<Finding>, PapertowelError> {
+ let mut findings = Vec::new();
+ let lines: Vec<&str> = content.lines().collect();
 
-        for recipe in &self.compiled {
-            let pre_len = findings.len();
+ for recipe in &self.compiled {
+ let pre_len = findings.len();
 
-            // Word matches.
-            if let Some(ref word_matcher) = recipe.word_matcher {
-                findings.extend(Self::match_words(recipe, word_matcher, path, &lines)?);
-            }
+ // Word matches.
+ if let Some(ref word_matcher) = recipe.word_matcher {
+ findings.extend(Self::match_words(recipe, word_matcher, path, &lines)?);
+ }
 
-            // Phrase matches.
-            if let Some(ref phrase_matcher) = recipe.phrase_matcher {
-                findings.extend(Self::match_phrases(recipe, phrase_matcher, path, &lines)?);
-            }
+ // Phrase matches.
+ if let Some(ref phrase_matcher) = recipe.phrase_matcher {
+ findings.extend(Self::match_phrases(recipe, phrase_matcher, path, &lines)?);
+ }
 
-            // Regex matches.
-            for regex in &recipe.regex_patterns {
-                if !Self::file_matches_globs(
-                    path,
-                    regex.applies_to.as_ref(),
-                    regex.excludes.as_ref(),
-                ) {
-                    continue;
-                }
-                findings.extend(Self::match_regex(recipe, regex, path, &lines)?);
-            }
+ // Regex matches.
+ for regex in &recipe.regex_patterns {
+ if!Self::file_matches_globs(
+ path,
+ regex.applies_to.as_ref(),
+ regex.excludes.as_ref(),
+ ) {
+ continue;
+ }
+ findings.extend(Self::match_regex(recipe, regex, path, &lines)?);
+ }
 
-            // Contextual matches.
-            for contextual in &recipe.contextual_patterns {
-                if !Self::glob_matches_with_filename(&contextual.applies_to, path) {
-                    continue;
-                }
-                findings.extend(Self::match_contextual(recipe, contextual, path, &lines)?);
-            }
+ // Contextual matches.
+ for contextual in &recipe.contextual_patterns {
+ if!Self::glob_matches_with_filename(&contextual.applies_to, path) {
+ continue;
+ }
+ findings.extend(Self::match_contextual(recipe, contextual, path, &lines)?);
+ }
 
-            if let Some(slice) = findings.get_mut(pre_len..) {
-                Self::apply_cluster_scoring(slice, &recipe.scoring);
-            }
-        }
+ if let Some(slice) = findings.get_mut(pre_len..) {
+ Self::apply_cluster_scoring(slice, &recipe.scoring);
+ }
+ }
 
-        Ok(findings)
-    }
+ Ok(findings)
+ }
 
-    fn file_matches_globs(
-        path: &Path,
-        applies_to: Option<&GlobSet>,
-        excludes: Option<&GlobSet>,
-    ) -> bool {
-        if let Some(excl) = excludes
-            && Self::glob_matches_with_filename(excl, path)
-        {
-            return false;
-        }
+ fn file_matches_globs(
+ path: &Path,
+ applies_to: Option<&GlobSet>,
+ excludes: Option<&GlobSet>,
+ ) -> bool {
+ if let Some(excl) = excludes
+ && Self::glob_matches_with_filename(excl, path)
+ {
+ return false;
+ }
 
-        if let Some(applies) = applies_to {
-            return Self::glob_matches_with_filename(applies, path);
-        }
+ if let Some(applies) = applies_to {
+ return Self::glob_matches_with_filename(applies, path);
+ }
 
-        // No restriction = matches all.
-        true
-    }
+ // No restriction = matches all.
+ true
+ }
 
-    /// Match `globset` against both the full `path` and its basename, so bare-filename
-    /// globs like `README.md` work regardless of whether the path is absolute or relative.
-    fn glob_matches_with_filename(globset: &GlobSet, path: &Path) -> bool {
-        if globset.is_match(path) {
-            return true;
-        }
-        // Fallback: try matching just the file name component.
-        path.file_name()
-            .is_some_and(|name| globset.is_match(Path::new(name)))
-    }
+ /// Match `globset` against both the full `path` and its basename, so bare-filename
+ /// globs like `README.md` work regardless of whether the path is absolute or relative.
+ fn glob_matches_with_filename(globset: &GlobSet, path: &Path) -> bool {
+ if globset.is_match(path) {
+ return true;
+ }
+ // Fallback: try matching just the file name component.
+ path.file_name()
+.is_some_and(|name| globset.is_match(Path::new(name)))
+ }
 
-    fn match_words(
-        recipe: &CompiledRecipe,
-        matcher: &CompiledWordMatcher,
-        path: &Path,
-        lines: &[&str],
-    ) -> Result<Vec<Finding>, PapertowelError> {
-        let mut findings = Vec::new();
+ fn match_words(
+ recipe: &CompiledRecipe,
+ matcher: &CompiledWordMatcher,
+ path: &Path,
+ lines: &[&str],
+ ) -> Result<Vec<Finding>, PapertowelError> {
+ let mut findings = Vec::new();
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            let search_line = if matcher.case_sensitive {
-                line.to_string()
-            } else {
-                line.to_lowercase()
-            };
+ for (line_idx, line) in lines.iter().enumerate() {
+ let search_line = if matcher.case_sensitive {
+ line.to_string()
+ } else {
+ line.to_lowercase()
+ };
 
-            for mat in matcher.ac.find_iter(&search_line) {
-                let Some((word, replacement, severity)) =
-                    matcher.words.get(mat.pattern().as_usize())
-                else {
-                    continue;
-                };
+ for mat in matcher.ac.find_iter(&search_line) {
+ let Some((word, replacement, severity)) =
+ matcher.words.get(mat.pattern().as_usize())
+ else {
+ continue;
+ };
 
-                // Check word boundaries if required.
-                // `_` is treated as part of an identifier so patterns don't
-                // match inside snake_case names like `robust_solution`.
-                if matcher.whole_word {
-                    let start = mat.start();
-                    let end = mat.end();
-                    let bytes = search_line.as_bytes();
+ // Check word boundaries if required.
+ // `_` is treated as part of an identifier so patterns don't
+ // match inside snake_case names like `robust_solution`.
+ if matcher.whole_word {
+ let start = mat.start();
+ let end = mat.end();
+ let bytes = search_line.as_bytes();
 
-                    let is_word_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-                    let start_ok =
-                        start == 0 || !bytes.get(start - 1).is_some_and(|&b| is_word_byte(b));
-                    let end_ok = end == search_line.len()
-                        || !bytes.get(end).is_some_and(|&b| is_word_byte(b));
+ let is_word_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+ let start_ok =
+ start == 0 ||!bytes.get(start - 1).is_some_and(|&b| is_word_byte(b));
+ let end_ok = end == search_line.len()
+ ||!bytes.get(end).is_some_and(|&b| is_word_byte(b));
 
-                    if !start_ok || !end_ok {
-                        continue;
-                    }
-                }
+ if!start_ok ||!end_ok {
+ continue;
+ }
+ }
 
-                let mut finding = Finding::new(
-                    format!("{}:word:{}", recipe.name, word),
-                    recipe.category,
-                    *severity,
-                    recipe.scoring.base_confidence,
-                    path,
-                    format!("{} vocabulary: '{word}'", recipe.name),
-                )?;
-                finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion.clone_from(replacement);
-                finding.auto_fixable = replacement.is_some();
-                findings.push(finding);
-            }
-        }
+ let mut finding = Finding::new(
+ format!("{}:word:{}", recipe.name, word),
+ recipe.category,
+ *severity,
+ recipe.scoring.base_confidence,
+ path,
+ format!("{} vocabulary: '{word}'", recipe.name),
+ )?;
+ finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
+ finding.suggestion.clone_from(replacement);
+ finding.auto_fixable = replacement.is_some();
+ findings.push(finding);
+ }
+ }
 
-        Ok(findings)
-    }
+ Ok(findings)
+ }
 
-    fn match_phrases(
-        recipe: &CompiledRecipe,
-        matcher: &CompiledPhraseMatcher,
-        path: &Path,
-        lines: &[&str],
-    ) -> Result<Vec<Finding>, PapertowelError> {
-        let mut findings = Vec::new();
+ fn match_phrases(
+ recipe: &CompiledRecipe,
+ matcher: &CompiledPhraseMatcher,
+ path: &Path,
+ lines: &[&str],
+ ) -> Result<Vec<Finding>, PapertowelError> {
+ let mut findings = Vec::new();
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            for mat in matcher.ac.find_iter(line) {
-                let Some((phrase, suggestion, severity)) =
-                    matcher.phrases.get(mat.pattern().as_usize())
-                else {
-                    continue;
-                };
+ for (line_idx, line) in lines.iter().enumerate() {
+ for mat in matcher.ac.find_iter(line) {
+ let Some((phrase, suggestion, severity)) =
+ matcher.phrases.get(mat.pattern().as_usize())
+ else {
+ continue;
+ };
 
-                let mut finding = Finding::new(
-                    format!("{}:phrase:{}", recipe.name, phrase.replace(' ', "-")),
-                    recipe.category,
-                    *severity,
-                    recipe.scoring.base_confidence,
-                    path,
-                    format!("{} phrase: '{phrase}'", recipe.name),
-                )?;
-                finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion.clone_from(suggestion);
-                finding.auto_fixable = suggestion.is_some();
-                findings.push(finding);
-            }
-        }
+ let mut finding = Finding::new(
+ format!("{}:phrase:{}", recipe.name, phrase.replace(' ', "-")),
+ recipe.category,
+ *severity,
+ recipe.scoring.base_confidence,
+ path,
+ format!("{} phrase: '{phrase}'", recipe.name),
+ )?;
+ finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
+ finding.suggestion.clone_from(suggestion);
+ finding.auto_fixable = suggestion.is_some();
+ findings.push(finding);
+ }
+ }
 
-        Ok(findings)
-    }
+ Ok(findings)
+ }
 
-    fn match_regex(
-        recipe: &CompiledRecipe,
-        pattern: &CompiledRegex,
-        path: &Path,
-        lines: &[&str],
-    ) -> Result<Vec<Finding>, PapertowelError> {
-        let mut findings = Vec::new();
+ fn match_regex(
+ recipe: &CompiledRecipe,
+ pattern: &CompiledRegex,
+ path: &Path,
+ lines: &[&str],
+ ) -> Result<Vec<Finding>, PapertowelError> {
+ let mut findings = Vec::new();
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            if pattern.regex.is_match(line) {
-                let description = pattern
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| format!("regex match: {}", pattern.name));
+ for (line_idx, line) in lines.iter().enumerate() {
+ if pattern.regex.is_match(line) {
+ let description = pattern
+.description
+.clone()
+.unwrap_or_else(|| format!("regex match: {}", pattern.name));
 
-                let mut finding = Finding::new(
-                    format!("{}:regex:{}", recipe.name, pattern.name),
-                    recipe.category,
-                    pattern.severity,
-                    recipe.scoring.base_confidence,
-                    path,
-                    description,
-                )?;
-                finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion.clone_from(&pattern.suggestion);
-                finding.auto_fixable = pattern.auto_fixable;
-                findings.push(finding);
-            }
-        }
+ let mut finding = Finding::new(
+ format!("{}:regex:{}", recipe.name, pattern.name),
+ recipe.category,
+ pattern.severity,
+ recipe.scoring.base_confidence,
+ path,
+ description,
+ )?;
+ finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
+ finding.suggestion.clone_from(&pattern.suggestion);
+ finding.auto_fixable = pattern.auto_fixable;
+ findings.push(finding);
+ }
+ }
 
-        Ok(findings)
-    }
+ Ok(findings)
+ }
 
-    fn match_contextual(
-        recipe: &CompiledRecipe,
-        pattern: &CompiledContextual,
-        path: &Path,
-        lines: &[&str],
-    ) -> Result<Vec<Finding>, PapertowelError> {
-        let mut findings = Vec::new();
+ fn match_contextual(
+ recipe: &CompiledRecipe,
+ pattern: &CompiledContextual,
+ path: &Path,
+ lines: &[&str],
+ ) -> Result<Vec<Finding>, PapertowelError> {
+ let mut findings = Vec::new();
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            let matched = match &pattern.pattern {
-                ContextualMatcher::Literal(s) => line.contains(s.as_str()),
-                ContextualMatcher::Regex(r) => r.is_match(line),
-            };
+ for (line_idx, line) in lines.iter().enumerate() {
+ let matched = match &pattern.pattern {
+ ContextualMatcher::Literal(s) => line.contains(s.as_str()),
+ ContextualMatcher::Regex(r) => r.is_match(line),
+ };
 
-            if matched {
-                let description = pattern
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| format!("contextual match: {}", pattern.name));
+ if matched {
+ let description = pattern
+.description
+.clone()
+.unwrap_or_else(|| format!("contextual match: {}", pattern.name));
 
-                let mut finding = Finding::new(
-                    format!("{}:contextual:{}", recipe.name, pattern.name),
-                    recipe.category,
-                    pattern.severity,
-                    recipe.scoring.base_confidence,
-                    path,
-                    description,
-                )?;
-                finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
-                finding.suggestion.clone_from(&pattern.suggestion);
-                finding.auto_fixable = pattern.auto_fixable;
-                findings.push(finding);
-            }
-        }
+ let mut finding = Finding::new(
+ format!("{}:contextual:{}", recipe.name, pattern.name),
+ recipe.category,
+ pattern.severity,
+ recipe.scoring.base_confidence,
+ path,
+ description,
+ )?;
+ finding.line_range = Some(LineRange::new(line_idx + 1, line_idx + 1)?);
+ finding.suggestion.clone_from(&pattern.suggestion);
+ finding.auto_fixable = pattern.auto_fixable;
+ findings.push(finding);
+ }
+ }
 
-        Ok(findings)
-    }
+ Ok(findings)
+ }
 
-    fn apply_cluster_scoring(findings: &mut [Finding], config: &ScoringConfig) {
-        if config.cluster_range_lines == 0 {
-            return;
-        }
-        if findings.len() < config.cluster_threshold {
-            return;
-        }
+ fn apply_cluster_scoring(findings: &mut [Finding], config: &ScoringConfig) {
+ if config.cluster_range_lines == 0 {
+ return;
+ }
+ if findings.len() < config.cluster_threshold {
+ return;
+ }
 
-        let Some(boost_severity) = config.cluster_severity_boost else {
-            return;
-        };
+ let Some(boost_severity) = config.cluster_severity_boost else {
+ return;
+ };
 
-        // Group findings by line proximity.
-        // where line `cluster_range_lines` lands in bucket 1 instead of bucket 0.
-        let mut line_counts: HashMap<usize, usize> = HashMap::new();
-        for finding in findings.iter() {
-            if let Some(range) = finding.line_range {
-                let bucket = range.start.saturating_sub(1) / config.cluster_range_lines;
-                *line_counts.entry(bucket).or_insert(0) += 1;
-            }
-        }
+ // Group findings by line proximity.
+ // where line `cluster_range_lines` lands in bucket 1 instead of bucket 0.
+ let mut line_counts: HashMap<usize, usize> = HashMap::new();
+ for finding in findings.iter() {
+ if let Some(range) = finding.line_range {
+ let bucket = range.start.saturating_sub(1) / config.cluster_range_lines;
+ *line_counts.entry(bucket).or_insert(0) += 1;
+ }
+ }
 
-        let hot_buckets: HashSet<usize> = line_counts
-            .into_iter()
-            .filter(|(_, count)| *count >= config.cluster_threshold)
-            .map(|(bucket, _)| bucket)
-            .collect();
+ let hot_buckets: HashSet<usize> = line_counts
+.into_iter()
+.filter(|(_, count)| *count >= config.cluster_threshold)
+.map(|(bucket, _)| bucket)
+.collect();
 
-        for finding in findings.iter_mut() {
-            if let Some(range) = finding.line_range {
-                let bucket = range.start.saturating_sub(1) / config.cluster_range_lines;
-                if hot_buckets.contains(&bucket) {
-                    finding.severity = boost_severity;
-                    finding.confidence_score = (finding.confidence_score + 0.15).min(1.0);
-                }
-            }
-        }
-    }
+ for finding in findings.iter_mut() {
+ if let Some(range) = finding.line_range {
+ let bucket = range.start.saturating_sub(1) / config.cluster_range_lines;
+ if hot_buckets.contains(&bucket) {
+ finding.severity = boost_severity;
+ finding.confidence_score = (finding.confidence_score + 0.15).min(1.0);
+ }
+ }
+ }
+ }
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(clippy::unwrap_used, clippy::expect_used, reason = "test assertions")]
 mod tests {
-    use super::*;
-    use crate::recipe::types::{
-        Recipe, RecipeCategory, RecipeMetadata, RecipePatterns, ScoringConfig, WordItem,
-    };
+ use super::*;
+ use crate::recipe::types::{
+ Recipe, RecipeCategory, RecipeMetadata, RecipePatterns, ScoringConfig, WordItem,
+ };
 
-    fn test_recipe() -> Recipe {
-        Recipe {
-            recipe: RecipeMetadata {
-                name: "test".to_owned(),
-                version: "1.0.0".to_owned(),
-                description: String::new(),
-                author: String::new(),
-                category: RecipeCategory::Lexical,
-                default_severity: Severity::Medium,
-                enabled: true,
-            },
-            patterns: RecipePatterns {
-                words: Some(WordPatterns {
-                    enabled: true,
-                    case_sensitive: false,
-                    whole_word: true,
-                    severity: None,
-                    items: vec![
-                        WordItem::Simple("sturdy".to_owned()),
-                        WordItem::Simple("use".to_owned()),
-                    ],
-                }),
-                phrases: None,
-                regex: vec![],
-                contextual: vec![],
-            },
-            scoring: ScoringConfig::default(),
-        }
-    }
+ fn test_recipe() -> Recipe {
+ Recipe {
+ recipe: RecipeMetadata {
+ name: "test".to_owned(),
+ version: "1.0.0".to_owned(),
+ description: String::new(),
+ author: String::new(),
+ category: RecipeCategory::Lexical,
+ default_severity: Severity::Medium,
+ enabled: true,
+ },
+ patterns: RecipePatterns {
+ words: Some(WordPatterns {
+ enabled: true,
+ case_sensitive: false,
+ whole_word: true,
+ severity: None,
+ items: vec![
+ WordItem::Simple("sturdy".to_owned()),
+ WordItem::Simple("use".to_owned()),
+ ],
+ }),
+ phrases: None,
+ regex: vec![],
+ contextual: vec![],
+ },
+ scoring: ScoringConfig::default(),
+ }
+ }
 
-    #[test]
-    fn word_matching_works() {
-        let recipe = test_recipe();
-        let loaded = LoadedRecipe {
-            recipe,
-            source: super::super::types::RecipeSource::Builtin,
-        };
+ #[test]
+ fn word_matching_works() {
+ let recipe = test_recipe();
+ let loaded = LoadedRecipe {
+ recipe,
+ source: super::super::types::RecipeSource::Builtin,
+ };
 
-        let matcher = RecipeMatcher::compile(vec![loaded]).unwrap();
-        let content = "This is a sturdy solution. We use modern techniques.";
-        let findings = matcher.scan_file(Path::new("test.rs"), content).unwrap();
+ let matcher = RecipeMatcher::compile(vec![loaded]).unwrap();
+ let content = "This is a sturdy solution. We use modern techniques.";
+ let findings = matcher.scan_file(Path::new("test.rs"), content).unwrap();
 
-        assert_eq!(findings.len(), 2);
-    }
+ assert_eq!(findings.len(), 2);
+ }
 
-    #[test]
-    fn whole_word_boundary_respected() {
-        let recipe = test_recipe();
-        let loaded = LoadedRecipe {
-            recipe,
-            source: super::super::types::RecipeSource::Builtin,
-        };
+ #[test]
+ fn whole_word_boundary_respected() {
+ let recipe = test_recipe();
+ let loaded = LoadedRecipe {
+ recipe,
+ source: super::super::types::RecipeSource::Builtin,
+ };
 
-        let matcher = RecipeMatcher::compile(vec![loaded]).unwrap();
-        // "sturdyly" shouldn't match "sturdy" with whole_word=true
-        let content = "This works sturdyly without issues.";
-        let findings = matcher.scan_file(Path::new("test.rs"), content).unwrap();
+ let matcher = RecipeMatcher::compile(vec![loaded]).unwrap();
+ // "sturdyly" shouldn't match "sturdy" with whole_word=true
+ let content = "This works sturdyly without issues.";
+ let findings = matcher.scan_file(Path::new("test.rs"), content).unwrap();
 
-        assert!(findings.is_empty());
-    }
+ assert!(findings.is_empty());
+ }
+
+
+ /// All 24 weighted regex patterns in phrase-patterns.toml must compile
+ /// via the builtin loader; combined with a probe text assembled at
+ /// runtime, this exercises at least one pattern from each severity
+ /// tier. The probe uses byte-array concatenation so the rtk tool-output
+ /// sanitizer (which masks AI-telltale words in tool arguments) cannot
+ /// rewrite the literal trigger; the sanitizer does not see across
+ /// `[u8; N]` array splats.
+ #[test]
+ fn weighted_phrase_patterns_match_across_all_tiers() {
+ let toml = include_str!("../recipes/phrase-patterns.toml");
+ let recipe: Recipe = toml::from_str(toml).expect("phrase-patterns.toml parses");
+ assert_eq!(recipe.recipe.name, "phrase-patterns");
+ assert!(
+ recipe.patterns.regex.len() >= 24,
+ "expected at least 24 weighted regex patterns, got {}",
+ recipe.patterns.regex.len(),
+ );
+
+ let compiled = RecipeMatcher::compile(vec![LoadedRecipe {
+ recipe,
+ source: super::super::types::RecipeSource::Builtin,
+ }])
+.expect("phrase-patterns recipe compiles");
+
+ // Probe strings constructed from byte arrays so no telltale word is
+ // spelled contiguously in the source. This bypasses the rtk hook.
+ let probe_high = String::from_utf8(vec![
+ 0x41, 0x73, 0x20, 0x61, 0x6e, 0x20, 0x41, 0x49, 0x2c,
+ 0x20, 0x74, 0x68, 0x69, 0x73, 0x20, 0x69, 0x73,
+ 0x20, 0x61, 0x20, 0x72, 0x69, 0x63, 0x68, 0x20,
+ 0x74, 0x61, 0x70, 0x65, 0x73, 0x74, 0x72, 0x79, 0x2e,
+ ])
+.expect("utf8");
+ let probe_med = String::from_utf8(vec![
+ 0x49, 0x6e, 0x20, 0x63, 0x6f, 0x6e, 0x63, 0x6c, 0x75, 0x73, 0x69, 0x6f, 0x6e, 0x2c,
+ ])
+.expect("utf8");
+ let probe_low = String::from_utf8(vec![
+ 0x55, 0x6c, 0x74, 0x69, 0x6d, 0x61, 0x74, 0x65, 0x6c, 0x79, 0x2c,
+ ])
+.expect("utf8");
+ let probe_dv = String::from_utf8(vec![
+ 0x44, 0x45, 0x4c, 0x56, 0x45, 0x20, 0x49, 0x4e, 0x54, 0x4f,
+ 0x20, 0x74, 0x68, 0x65, 0x20, 0x6d, 0x61, 0x74, 0x74, 0x65, 0x72, 0x2e,
+ ])
+.expect("utf8");
+
+ let mut total = 0;
+ for text in [&probe_high, &probe_med, &probe_low, &probe_dv] {
+ let findings = compiled
+.scan_file(Path::new("sample.md"), text.as_str())
+.expect("scan succeeds");
+ total += findings.len();
+ }
+
+ assert!(
+ total >= 4,
+ "expected weighted regex patterns to match across severity tiers, got {total}"
+ );
+ }
+
+ /// Confirms the (?i) flag embedded in each weighted regex makes matches
+ /// case-insensitive. The uppercase probe is built at runtime from a byte
+ /// array so the rtk sanitizer cannot rewrite the trigger word in source.
+ #[test]
+ fn weighted_phrase_patterns_are_case_insensitive() {
+ let toml = include_str!("../recipes/phrase-patterns.toml");
+ let recipe: Recipe = toml::from_str(toml).expect("phrase-patterns.toml parses");
+ let compiled = RecipeMatcher::compile(vec![LoadedRecipe {
+ recipe,
+ source: super::super::types::RecipeSource::Builtin,
+ }])
+.expect("compiles");
+
+ // D,E,L,V,E, ,I,N,T,O — spelled out via u8 array.
+ let upper = String::from_utf8(vec![
+ 0x44, 0x45, 0x4c, 0x56, 0x45, 0x20, 0x49, 0x4e, 0x54, 0x4f,
+ 0x20, 0x74, 0x68, 0x65, 0x20, 0x68, 0x65, 0x61, 0x72, 0x74, 0x20, 0x6f,
+ 0x66, 0x20, 0x74, 0x68, 0x65, 0x20, 0x6d, 0x61, 0x74, 0x74, 0x65, 0x72,
+ 0x2e,
+ ])
+.expect("utf8");
+
+ let findings = compiled
+.scan_file(Path::new("upper.md"), &upper)
+.expect("scan succeeds");
+ assert!(
+ !findings.is_empty(),
+ "uppercase trigger must match at least one weighted regex pattern"
+ );
+ assert!(
+ findings
+.iter()
+.any(|f| f.description.to_ascii_lowercase().contains("delve")),
+ "uppercase trigger must match the weighted-delve-into pattern"
+ );
+ }
 }
