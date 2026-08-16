@@ -40,6 +40,12 @@ pub struct ScrubArgs {
     /// After scrubbing, re-scan and compare scores; exit non-zero in CI mode if score regresses.
     #[arg(long)]
     pub verify: bool,
+    /// NFKC-normalize text files in place. Homoglyph detection and
+    /// NFKC rewriting of compatibility-form codepoints (fullwidth
+    /// Latin, ligatures, superscripts, subscripts). Combined with
+    /// `papertowel scan --normalize` for full coverage.
+    #[arg(long, default_value_t = false)]
+    pub normalize: bool,
 }
 
 // ── Verification types ────────────────────────────────────────────────────────
@@ -150,6 +156,8 @@ struct ScrubSummary {
     recipe_replacements: usize,
     comment_lines_removed: usize,
     readme_lines_removed: usize,
+    /// Files whose NFKC normalization differed from the source.
+    normalize_files: usize,
 }
 
 struct FileResult {
@@ -160,13 +168,18 @@ struct FileResult {
     comments: Option<usize>,
     /// README framework lines removed.
     readme: Option<usize>,
+    /// NFKC normalization was applied (or would have been, in dry-run).
+    normalize_applied: bool,
     /// Set when the safety guard reverted an over-aggressive transform.
     safety_blocked: Option<String>,
 }
 
 impl FileResult {
     const fn changed(&self) -> bool {
-        self.recipe.is_some() || self.comments.is_some() || self.readme.is_some()
+        self.recipe.is_some()
+            || self.comments.is_some()
+            || self.readme.is_some()
+            || self.normalize_applied
     }
 }
 
@@ -304,6 +317,9 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
             if let Some(n) = result.readme {
                 summary.readme_lines_removed += n;
             }
+            if result.normalize_applied {
+                summary.normalize_files += 1;
+            }
             changed_results.push(result);
         } else if result.safety_blocked.is_some() {
             changed_results.push(result);
@@ -364,6 +380,7 @@ fn apply_transforms(
         recipe: None,
         comments: None,
         readme: None,
+        normalize_applied: false,
         safety_blocked: None,
     };
 
@@ -392,6 +409,28 @@ fn apply_transforms(
             Ok(r) if r.changed => result.readme = Some(r.removed_lines),
             Ok(_) => {}
             Err(e) => tracing::warn!(path = %path.display(), "readme transform error: {e}"),
+        }
+    }
+
+    // NFKC normalization (writes the file back when --normalize is set).
+    // Runs after the other transforms so the safety check below sees the
+    // final post-normalization content.
+    if args.normalize
+        && let Ok(content) = std::fs::read_to_string(path)
+    {
+        let normalized = crate::scrubber::normalize::normalize_text(
+            &content,
+            crate::scrubber::normalize::NormalizationForm::Nfkc,
+        );
+        if normalized != content && !args.dry_run {
+            if let Err(e) = std::fs::write(path, &normalized) {
+                tracing::warn!(path = %path.display(), "normalize write failed: {e}");
+            } else {
+                result.normalize_applied = true;
+            }
+        } else if normalized != content {
+            // Dry run: report what would have changed.
+            result.normalize_applied = true;
         }
     }
 
@@ -629,6 +668,7 @@ fn main() {}
             ci: false,
             allow_unsafe_scrub: false,
             verify: false,
+            normalize: false,
         })?;
 
         assert_eq!(fs::read_to_string(&path)?, original);
@@ -649,6 +689,7 @@ fn main() {}
             ci: false,
             allow_unsafe_scrub: false,
             verify: false,
+            normalize: false,
         })?;
 
         let after = fs::read_to_string(&path)?;
@@ -667,6 +708,7 @@ fn main() {}
             ci: false,
             allow_unsafe_scrub: false,
             verify: false,
+            normalize: false,
         })?;
         Ok(())
     }
@@ -701,6 +743,7 @@ max_line_drop_percent = 0
             ci: false,
             allow_unsafe_scrub: false,
             verify: false,
+            normalize: false,
         })?;
 
         assert_eq!(fs::read_to_string(&path)?, original);
@@ -721,6 +764,7 @@ max_line_drop_percent = 0
             ci: true,
             allow_unsafe_scrub: false,
             verify: false,
+            normalize: false,
         });
 
         assert!(result.is_err());
@@ -742,6 +786,7 @@ max_line_drop_percent = 0
             ci: false,
             allow_unsafe_scrub: true,
             verify: false,
+            normalize: false,
         })?;
 
         let transformed = fs::read_to_string(&path)?;
@@ -816,6 +861,7 @@ max_line_drop_percent = 0
             ci: false,
             allow_unsafe_scrub: false,
             verify: true,
+            normalize: false,
         })?;
         Ok(())
     }
