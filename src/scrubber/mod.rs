@@ -8,6 +8,7 @@ pub mod lexical;
 pub mod maintenance;
 pub mod metadata;
 pub mod name_credibility;
+pub mod normalize;
 pub mod promotion;
 pub mod prompt;
 pub mod readme;
