@@ -174,7 +174,8 @@ impl From<FindingCategory> for GradeCategory {
             FindingCategory::Comment => Self::Comments,
             FindingCategory::Structure
             | FindingCategory::IdiomMismatch
-            | FindingCategory::PromptLeakage => Self::Structure,
+            | FindingCategory::PromptLeakage
+            | FindingCategory::InvisibleUnicode => Self::Structure,
             FindingCategory::Architecture => Self::Architecture,
             FindingCategory::Security => Self::Security,
             FindingCategory::Readme

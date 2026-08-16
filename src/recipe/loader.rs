@@ -13,6 +13,7 @@ mod builtin {
     pub const SLOP_VOCABULARY: &str = include_str!("../recipes/slop-vocabulary.toml");
     pub const COMMENT_PATTERNS: &str = include_str!("../recipes/comment-patterns.toml");
     pub const PHRASE_PATTERNS: &str = include_str!("../recipes/phrase-patterns.toml");
+    pub const INVISIBLE_UNICODE: &str = include_str!("../recipes/invisible-unicode.toml");
 }
 
 /// Discovers and loads recipes from all sources.
@@ -107,6 +108,7 @@ impl RecipeLoader {
             ("slop-vocabulary", builtin::SLOP_VOCABULARY),
             ("comment-patterns", builtin::COMMENT_PATTERNS),
             ("phrase-patterns", builtin::PHRASE_PATTERNS),
+            ("invisible-unicode", builtin::INVISIBLE_UNICODE),
         ] {
             match toml::from_str::<Recipe>(content) {
                 Ok(recipe) => {
@@ -198,12 +200,13 @@ impl RecipeLoader {
 /// List available recipes without loading them fully.
 #[instrument]
 pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSource)> {
-    let mut recipes = Vec::new();
-
     // Built-ins.
-    recipes.push(("slop-vocabulary".to_owned(), RecipeSource::Builtin));
-    recipes.push(("comment-patterns".to_owned(), RecipeSource::Builtin));
-    recipes.push(("phrase-patterns".to_owned(), RecipeSource::Builtin));
+    let mut recipes = vec![
+        ("slop-vocabulary".to_owned(), RecipeSource::Builtin),
+        ("comment-patterns".to_owned(), RecipeSource::Builtin),
+        ("phrase-patterns".to_owned(), RecipeSource::Builtin),
+        ("invisible-unicode".to_owned(), RecipeSource::Builtin),
+    ];
 
     // User global.
     if let Some(config_dir) = dirs::config_dir() {

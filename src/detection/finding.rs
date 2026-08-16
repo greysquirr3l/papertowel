@@ -22,6 +22,7 @@ pub enum FindingCategory {
     CommitPattern,
     Architecture,
     Security,
+    InvisibleUnicode,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
