@@ -20,6 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::detection::finding::Severity;
+use crate::domain::errors::PapertowelError;
 
 /// Coarse confidence tier derived from a `Finding`'s `confidence_score`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -90,7 +91,7 @@ impl std::fmt::Display for ConfidenceTier {
 }
 
 impl std::str::FromStr for ConfidenceTier {
-    type Err = String;
+    type Err = PapertowelError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_lowercase().as_str() {
@@ -98,7 +99,9 @@ impl std::str::FromStr for ConfidenceTier {
             "low" => Ok(Self::Low),
             "medium" => Ok(Self::Medium),
             "high" => Ok(Self::High),
-            other => Err(format!("unknown confidence tier '{other}'")),
+            other => Err(PapertowelError::Validation(format!(
+                "unknown confidence tier '{other}'"
+            ))),
         }
     }
 }
@@ -135,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn from_str_roundtrip() -> Result<(), String> {
+    fn from_str_roundtrip() -> Result<(), crate::domain::errors::PapertowelError> {
         for tier in [
             ConfidenceTier::Clean,
             ConfidenceTier::Low,

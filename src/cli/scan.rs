@@ -291,13 +291,25 @@ fn run_file_detectors(
         .unwrap_or_default();
     let lang = LanguageKind::from_extension(ext);
 
+    // Read the file once if either normalize or recipe-scan needs it.
+    let cache_content: Option<String> = if normalize_enabled
+        || (recipe_matcher.is_some()
+            && path
+                .metadata()
+                .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES))
+    {
+        std::fs::read_to_string(path).ok()
+    } else {
+        None
+    };
+
     // Homoglyph detection runs on text files regardless of language.
     // (NFKC rewriting itself is left to `scrub --normalize`; here we
     // only surface the byte-level homoglyph findings.)
     if normalize_enabled
-        && let Ok(content) = std::fs::read_to_string(path)
+        && let Some(content) = cache_content.as_ref()
     {
-        match crate::scrubber::normalize::detect_in_text(path, &content, normalize_cfg) {
+        match crate::scrubber::normalize::detect_in_text(path, content, normalize_cfg) {
             Ok(mut nf) => findings.append(&mut nf),
             Err(e) => tracing::warn!("normalize error for {}: {e}", path.display()),
         }
@@ -331,9 +343,9 @@ fn run_file_detectors(
         && path
             .metadata()
             .map_or(true, |m| m.len() <= MAX_RECIPE_SCAN_BYTES)
-        && let Ok(content) = std::fs::read_to_string(path)
+        && let Some(content) = cache_content.as_ref()
     {
-        match matcher.scan_file(path, &content) {
+        match matcher.scan_file(path, content) {
             Ok(mut recipe_findings) => findings.append(&mut recipe_findings),
             Err(e) => tracing::warn!("recipe scan error for {}: {e}", path.display()),
         }

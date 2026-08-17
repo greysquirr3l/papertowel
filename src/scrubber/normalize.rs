@@ -142,6 +142,11 @@ pub fn canonical_of(c: char) -> Option<char> {
 
 /// Walk `text` and find all homoglyph clusters, grouped by canonical
 /// Latin codepoint and contiguous run.
+///
+/// Cluster boundaries are *characters*, not lines: a homoglyph run
+/// ends at the first non-homoglyph char (including `\n`, which is not
+/// in the homoglyph table). The `line` field tracks the line where
+/// each cluster starts; multi-line clusters are not produced.
 #[must_use]
 pub fn find_homoglyph_clusters(text: &str) -> Vec<HomoglyphCluster> {
     let mut clusters: Vec<HomoglyphCluster> = Vec::new();
@@ -157,11 +162,7 @@ pub fn find_homoglyph_clusters(text: &str) -> Vec<HomoglyphCluster> {
         let mut sources: BTreeSet<u32> = BTreeSet::new();
         sources.insert(c as u32);
         let start_line = line;
-        let mut next_line = line;
         while let Some(&nxt) = chars.peek() {
-            if nxt == '\n' {
-                next_line += 1;
-            }
             if canonical_of(nxt).is_some() {
                 sources.insert(nxt as u32);
                 chars.next();
@@ -173,8 +174,15 @@ pub fn find_homoglyph_clusters(text: &str) -> Vec<HomoglyphCluster> {
             canonical: canonical as u32,
             sources,
             start_line,
-            end_line: next_line,
+            end_line: start_line,
         });
+        if line != start_line {
+            // We never merged across newlines (by construction), but if
+            // this changes in the future, end_line needs to track.
+            // This branch is intentionally unreachable today; keeping
+            // the field avoids a `#[dead_code]` if the cluster span
+            // ever loosens.
+        }
     }
     clusters
 }

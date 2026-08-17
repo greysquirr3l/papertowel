@@ -26,7 +26,7 @@ use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-use crate::detection::binary::looks_binary;
+use crate::detection::binary::{BINARY_SNIFF_BYTES, looks_binary_file};
 use crate::detection::finding::{Finding, FindingCategory, LineRange, Severity};
 use crate::domain::errors::PapertowelError;
 
@@ -157,11 +157,11 @@ pub const fn classify_codepoint(codepoint: u32) -> Option<InvisibleKind> {
 #[must_use]
 pub const fn is_emoji_base(c: char) -> bool {
     let cp = c as u32;
-    matches!(cp,
+    matches!(
+        cp,
         0x1F000..=0x1FAFF
             | 0x2600..=0x27BF
-            | 0xFE0F    // emoji presentation VS-16
-            | 0x200D    // ZWJ itself (sequential)
+            | 0xFE0F // emoji presentation VS-16
     )
 }
 
@@ -339,8 +339,10 @@ pub fn detect_file(
 /// Walk a repository and run the detector on each text file.
 ///
 /// Skips build / vendored directories (`target/`, `node_modules/`,
-/// `.git/`, `vendor/`, `dist/`, `build/`) and binary-looking files
-/// (non-UTF8 bytes are filtered out by the read+decode fallback).
+/// `.git/`, `vendor/`, `dist/`, `build/`) and binary-looking files.
+///
+/// Only the first `BINARY_SNIFF_BYTES` are read for the binary sniff
+/// to avoid pulling multi-MiB assets into memory just to skip them.
 pub fn detect_repo(
     repo_root: impl AsRef<Path>,
     config: &InvisibleUnicodeConfig,
@@ -366,12 +368,15 @@ pub fn detect_repo(
         }) {
             continue;
         }
-        // Most invisibles tooling doesn't need to scan binary blobs.
-        let Ok(bytes) = fs::read(path) else { continue; };
-        if looks_binary(&bytes) {
+        // Binary sniff on the head only.
+        let Ok(head) = looks_binary_file(path, BINARY_SNIFF_BYTES) else {
+            continue;
+        };
+        if head {
             continue;
         }
-        let Ok(content) = String::from_utf8(bytes) else { continue; };
+        // Full read only after the sniff decides "text".
+        let Ok(content) = fs::read_to_string(path) else { continue; };
         let local = detect_in_text(path, &content, config)?;
         findings.extend(local);
     }

@@ -192,12 +192,6 @@ impl From<FindingCategory> for GradeCategory {
     }
 }
 
-impl From<crate::scrubber::stylometry::ConfidenceTier> for GradeCategory {
-    fn from(_tier: crate::scrubber::stylometry::ConfidenceTier) -> Self {
-        Self::Stylometry
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GradeReport {
     pub overall_score: f32,
@@ -210,6 +204,13 @@ pub struct GradeReport {
 
 impl GradeReport {
     /// Build a grade report from scan findings.
+    ///
+    /// Note: the overall score is a weighted average over categories
+    /// that have at least one finding. Categories with zero findings
+    /// contribute no weight to the denominator, so a project scoring
+    /// 100% on Stylometry alone scores the same as one scoring 100%
+    /// on Security alone. This is intentional - it lets individual
+    /// categories dominate the score when they're the only signal.
     #[must_use]
     pub fn from_findings(
         findings: &[Finding],

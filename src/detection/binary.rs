@@ -65,6 +65,11 @@ const MAGIC_PREFIXES: &[&[u8]] = &[
 /// Window size for the control-byte density check.
 const CONTROL_RATIO_WINDOW: usize = 8 * 1024;
 
+/// Reusable byte-sniff budget. Detectors that want to avoid reading
+/// multi-MiB files just to skip them can pass this to
+/// [`looks_binary_file`] for a head-only check.
+pub const BINARY_SNIFF_BYTES: usize = CONTROL_RATIO_WINDOW;
+
 /// Threshold above which the buffer is treated as binary.
 const CONTROL_RATIO_THRESHOLD: f32 = 0.30;
 
