@@ -13,6 +13,8 @@ Author's note: This is the table of contents for the papertowel book.
 - [[Architecture Detection]](scrubber/architecture.md)
 - [[Security Vulnerabilities]](scrubber/security.md)
 - [[Recipes]](scrubber/recipes.md)
+- [[Invisible Unicode Detection]](scrubber/invisible-unicode.md)
+- [[Statistical Stylometry]](scrubber/stylometry.md)
 
 ## The Wringer
 

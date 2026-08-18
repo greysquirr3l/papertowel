@@ -502,7 +502,7 @@ fn call_grade(args: &Value) -> Value {
     }
 
     let start = std::time::Instant::now();
-    let collection = match papertowel::cli::scan::collect_findings_for_root(&path, false) {
+    let collection = match papertowel::cli::scan::collect_findings_for_root(&path, false, false) {
         Ok(c) => c,
         Err(e) => return tool_error(format!("scan failed: {e}")),
     };

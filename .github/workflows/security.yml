@@ -3,28 +3,41 @@ name: Security Audit
 on:
   push:
     branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/security.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/security.yml"
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 env:
   CARGO_AUDIT_VERSION: "0.22.1"
   CARGO_DENY_VERSION: "0.19.4"
+
+# Top-level permissions default to read-all; individual jobs
+# request elevated scopes only where required.
+permissions: read-all
 
 jobs:
   cargo-audit:
     name: Audit dependencies for CVEs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Cache cargo tools
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             ~/.cargo/bin
@@ -34,7 +47,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-tools-audit-
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --force --version "${CARGO_AUDIT_VERSION}"
@@ -46,10 +59,12 @@ jobs:
     name: Check licenses and bans
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Cache cargo tools
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             ~/.cargo/bin

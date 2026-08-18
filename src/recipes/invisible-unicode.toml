@@ -1,0 +1,37 @@
+# Invisible Unicode Detection
+#
+# Detects visually-ambiguous or invisible Unicode codepoints commonly introduced
+# by AI-edit watermarking or as supply-chain homograph vectors. The classify table
+# lives in `src/scrubber/invisible_unicode.rs` (range-based + emoji-glue / script
+# carve-outs); this recipe exposes the detector to `papertowel recipe list`,
+# scope/exclusion filtering, and the user-config-dir layering.
+#
+# Inspect kinds:
+#   - zwj_family         : ZWSP, ZWNJ, ZWJ, WJ, BOM
+#   - bidi               : LRE/RLE/PDF/LRO/RLO/LRI/RLI/FSI/PDI
+#   - tag_char           : U+E0001 - U+E007F
+#   - variation_selector : VS1 - VS256 (BMP + SMP)
+#   - private_use        : BMP, PUA-A (U+F0000..=U+FFFFD), PUA-B (U+100000..=U+10FFFD)
+#   - exotic_space       : NBSP, en/em/figure/thin/hair, IDSP, LSEP, PSEP, NNBSP, MMSP
+#
+# Load-bearing invisibles (preserved by default):
+#   - emoji ZWJ/VS sequences between emoji bases
+#   - flag-emoji tag sequences (regional-indicator × tag)
+#   - script-internal Cf marks (Arabic, Syriac, Hebrew blocks)
+#
+# To override ranges or carve-outs, modify `classify_codepoint` /
+# `is_load_bearing` in `src/scrubber/invisible_unicode.rs` — not this file.
+
+[recipe]
+name = "invisible-unicode"
+version = "1.0.0"
+description = "Detects invisible/visually-ambiguous Unicode (ZWJ family, bidi, tag chars, variation selectors, private use, exotic spaces) with load-bearing carve-outs for emoji glue and script-internal Cf marks."
+author = "papertowel"
+category = "InvisibleUnicode"
+default_severity = "High"
+
+[scoring]
+cluster_threshold = 1
+cluster_range_lines = 1
+cluster_severity_boost = "High"
+base_confidence = 0.92

@@ -50,7 +50,7 @@ struct CalibrationRecommendations {
 
 pub fn handle(args: &CalibrateArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
-    let collection = collect_findings_for_root(&root, args.mixed)?;
+    let collection = collect_findings_for_root(&root, args.mixed, false)?;
     let summary = build_summary(&collection.findings);
     let baseline = StyleBaseline::load(&root).ok().flatten();
 

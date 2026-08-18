@@ -54,7 +54,7 @@ pub fn handle(args: &EvalArgs) -> Result<()> {
     let mut fn_ = 0_usize;
 
     for dir in dirs {
-        let collection = collect_findings_for_root(&dir, args.mixed)?;
+        let collection = collect_findings_for_root(&dir, args.mixed, false)?;
         let predicted_ai = !collection.findings.is_empty();
         let name = dir
             .file_name()

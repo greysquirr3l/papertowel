@@ -71,6 +71,7 @@ pub enum RecipeCategory {
     PromptLeakage,
     CommitPattern,
     Custom,
+    InvisibleUnicode,
 }
 
 impl From<RecipeCategory> for FindingCategory {
@@ -88,6 +89,7 @@ impl From<RecipeCategory> for FindingCategory {
             RecipeCategory::TestPattern => Self::TestPattern,
             RecipeCategory::PromptLeakage => Self::PromptLeakage,
             RecipeCategory::CommitPattern => Self::CommitPattern,
+            RecipeCategory::InvisibleUnicode => Self::InvisibleUnicode,
             RecipeCategory::Lexical | RecipeCategory::Custom => Self::Lexical,
         }
     }

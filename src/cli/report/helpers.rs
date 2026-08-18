@@ -25,5 +25,6 @@ pub(super) fn category_label(c: FindingCategory) -> String {
         FindingCategory::CommitPattern => "commit_pattern".to_owned(),
         FindingCategory::Architecture => "architecture".to_owned(),
         FindingCategory::Security => "security".to_owned(),
+        FindingCategory::InvisibleUnicode => "invisible_unicode".to_owned(),
     }
 }

@@ -119,8 +119,9 @@ fn detect_current_branch(repo_path: &Path) -> Result<String> {
         .map_err(|e| anyhow::anyhow!("failed to read HEAD: {e}"))?;
     let name = head
         .shorthand()
-        .ok_or_else(|| anyhow::anyhow!("HEAD has no shorthand name"))?;
-    Ok(name.to_owned())
+        .map_err(|e| anyhow::anyhow!("HEAD has no shorthand name: {e}"))?
+        .to_owned();
+    Ok(name)
 }
 
 pub fn handle_drip(args: &DripArgs) -> Result<()> {

@@ -123,3 +123,163 @@ is_regex = true
 severity = "Low"
 description = "Multiple consecutive badges (common in AI-generated READMEs)"
 suggestion = "Consider fewer, more relevant badges"
+
+# Weighted regex patterns (high-signal formulaic phrases) — sourced from
+# watermarks-remover `service/scripts/score_stylometry.py` AI_PHRASE_PATTERNS
+# (Layer A + Layer B front-runners). `(?i)` enables ASCII case-insensitivity
+# so matches surface regardless of capitalization.
+#
+# Severity is mapped from the upstream weight:
+#   weight >= 1.0  -> High
+#   0.8 <= w < 1.0 -> Medium
+#   w < 0.8        -> Low
+#
+# Phase 5 (stylometry) will consume the composite n-gram density; until then
+# the per-pattern severity already gates grade impact.
+
+# High severity (weight >= 1.0)
+[[patterns.regex]]
+name = "weighted-as-an-ai"
+pattern = '(?i)\bas\s+an\s+ai\b'
+severity = "High"
+description = "AI self-reference ('as an AI')"
+
+[[patterns.regex]]
+name = "weighted-todays-fast-paced-world"
+pattern = "(?i)\\bin\\s+(?:today's|the)\\s+(?:(?:fast-paced|ever-evolving|digital|rapidly\\s+changing)\\s+)*(?:world|landscape|era|environment)\\b"
+severity = "High"
+description = "Cliché 'in today's fast-paced world' opening"
+
+[[patterns.regex]]
+name = "weighted-rich-tapestry"
+pattern = '(?i)\brich\s+tapestry(?:\s+of)?\b'
+severity = "High"
+description = "Formulaic 'rich tapestry (of)'"
+
+[[patterns.regex]]
+name = "weighted-delve-into"
+pattern = '(?i)\bdelve(?:s|d)?\s+into\b'
+severity = "High"
+description = "AI-tic 'delve into' verb"
+
+[[patterns.regex]]
+name = "weighted-i-hope-this-helps"
+pattern = '(?i)\bi\s+hope\s+this\s+helps\b'
+severity = "High"
+description = "Terminal pleasantry 'I hope this helps'"
+
+[[patterns.regex]]
+name = "weighted-testament-to"
+pattern = '(?i)\ba\s+testament\s+to\b'
+severity = "High"
+description = "Formulaic 'a testament to'"
+
+[[patterns.regex]]
+name = "weighted-serves-as-beacon"
+pattern = '(?i)\bserve(?:s|d)?\s+as\s+a\s+(?:beacon|reminder|catalyst|cornerstone)\b'
+severity = "High"
+description = "'Serves as a beacon/catalyst/cornerstone'"
+
+[[patterns.regex]]
+name = "weighted-plays-pivotal-role"
+pattern = '(?i)\bplays?\s+a\s+(?:pivotal|crucial|vital|key)\s+role\b'
+severity = "High"
+description = "'Plays a pivotal/crucial/vital/key role'"
+
+[[patterns.regex]]
+name = "weighted-seamlessly-integrates"
+pattern = '(?i)\bseamlessly\s+(?:integrates?|integrated|blends?|combine[sd]?)\b'
+severity = "High"
+description = "'Seamlessly integrates/blends/combines'"
+
+[[patterns.regex]]
+name = "weighted-navigating-complexities"
+pattern = '(?i)\bnavigat(?:e|ing|es|ed)\s+the\s+(?:complexities|intricacies|nuances)\b'
+severity = "High"
+description = "'Navigating the complexities/intricacies/nuances'"
+
+[[patterns.regex]]
+name = "weighted-multifaceted-nature"
+pattern = '(?i)\bmultifaceted\s+(?:nature|approach|landscape)\b'
+severity = "High"
+description = "'Multifaceted nature/approach/landscape'"
+
+[[patterns.regex]]
+name = "weighted-harnessing-power-of"
+pattern = '(?i)\bharness(?:ing|ed|es)?\s+the\s+power\s+of\b'
+severity = "High"
+description = "'Harnessing the power of'"
+
+# Medium severity (0.8 <= weight < 1.0)
+[[patterns.regex]]
+name = "weighted-it-is-important-to"
+pattern = '(?i)\bit\s+is\s+(?:important|essential|crucial|worth\s+noting)\s+to\s+(?:note|remember|consider|highlight)\b'
+severity = "Medium"
+description = "'It is important/essential/crucial to note/remember/consider/highlight'"
+
+[[patterns.regex]]
+name = "weighted-underscores-importance"
+pattern = '(?i)\bunderscore(?:s|d)?\s+the\s+(?:importance|need|significance)\b'
+severity = "Medium"
+description = "'Underscores the importance/need/significance'"
+
+[[patterns.regex]]
+name = "weighted-fosters-sense"
+pattern = '(?i)\bfoster(?:s|ing|ed)?\s+a\s+(?:sense|culture|deeper\s+understanding)\b'
+severity = "Medium"
+description = "'Fosters a sense/culture/deeper understanding'"
+
+[[patterns.regex]]
+name = "weighted-paradigm-shift"
+pattern = '(?i)\bparadigm\s+shift\b'
+severity = "Medium"
+description = "Cliché 'paradigm shift'"
+
+[[patterns.regex]]
+name = "weighted-holistic-approach"
+pattern = '(?i)\bholistic\s+(?:approach|view|perspective)\b'
+severity = "Medium"
+description = "'Holistic approach/view/perspective'"
+
+[[patterns.regex]]
+name = "weighted-not-only-but-also"
+pattern = '(?i)\bnot\s+only\b[\w\s,]+\bbut\s+(?:also\s+)?(?:serves\s+to|acts\s+as|highlights)\b'
+severity = "Medium"
+description = "'Not only … but also serves/acts as/highlights'"
+
+[[patterns.regex]]
+name = "weighted-myriad-of"
+pattern = '(?i)\ba\s+myriad\s+of\b'
+severity = "Medium"
+description = "Filler 'a myriad of'"
+
+[[patterns.regex]]
+name = "weighted-in-conclusion"
+pattern = '(?i)\bin\s+conclusion\b[,\s]'
+severity = "Medium"
+description = "Filler 'in conclusion,'"
+
+[[patterns.regex]]
+name = "weighted-to-summarize"
+pattern = '(?i)\bto\s+summarize\b[,\s]'
+severity = "Medium"
+description = "Filler 'to summarize,'"
+
+# Low severity (weight < 0.8)
+[[patterns.regex]]
+name = "weighted-ultimately"
+pattern = '(?i)\bultimately\b[,\s]'
+severity = "Low"
+description = "Discourse marker 'ultimately,'"
+
+[[patterns.regex]]
+name = "weighted-furthermore"
+pattern = '(?i)\bfurthermore\b[,\s]'
+severity = "Low"
+description = "Discourse marker 'furthermore,'"
+
+[[patterns.regex]]
+name = "weighted-moreover"
+pattern = '(?i)\bmoreover\b[,\s]'
+severity = "Low"
+description = "Discourse marker 'moreover,'"

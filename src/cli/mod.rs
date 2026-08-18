@@ -248,6 +248,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 ci: false,
                 allow_unsafe_scrub: false,
                 verify: false,
+                normalize: false,
             };
             scrub::handle(&scrub_args)?;
             let scan_args = scan::ScanArgs {
@@ -258,6 +259,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 ci: false,
                 explain: false,
                 mixed: false,
+                normalize: false,
             };
             scan::handle(&scan_args)
         }

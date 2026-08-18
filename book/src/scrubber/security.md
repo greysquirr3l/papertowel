@@ -318,3 +318,18 @@ Rules specify target languages; a rule will only match files of the appropriate 
 - Regexes are compiled once at startup and cached in `LazyLock`
 - IO errors are logged at `debug` level and gracefully handled
 - Non-source files (binaries, lock files, compiled assets) are skipped
+
+
+## Honesty Model
+
+Detectors fall into three honest categories, modeled on `watermarks-remover`'s `ethics.md`:
+
+1. **Verifiable** - the byte changed. `invisible_unicode` and `security` both surface deterministic findings (a Unicode codepoint, a SQL concatenation, a hardcoded secret). When `papertowel` reports one of these, you can verify it by reading the file.
+2. **Best-effort statistical** - the score is a score. `stylometry` returns a composite in 0..1 along with a confidence tier; the report never claims AI authorship, only statistical regularity that *correlates* with AI output across the published literature.
+3. **Out of scope** - things we deliberately do not do. C2PA / XMP / EXIF / OOXML metadata strip (papertowel is a code-focused tool, not a media sanitiser); Layer-B paraphrasing that would let the user "prove" something is human-written (papertowel does not pretend).
+
+This tri-state framing is enforced in the `Suggestion` field of every emitted `Finding`. The detector surfaces the byte or the score; the user interprets.
+
+> A removed mark does **not** mean the content was never AI-assisted. Use this toolkit honestly.
+
+The upstream ethics doc (cited above) is the source for this framing; papertowel's stance is the same.

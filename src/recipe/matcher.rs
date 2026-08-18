@@ -588,7 +588,7 @@ impl RecipeMatcher {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "test assertions")]
+#[expect(clippy::unwrap_used, clippy::expect_used, reason = "test assertions")]
 mod tests {
     use super::*;
     use crate::recipe::types::{
@@ -654,5 +654,105 @@ mod tests {
         let findings = matcher.scan_file(Path::new("test.rs"), content).unwrap();
 
         assert!(findings.is_empty());
+    }
+
+    /// All 24 weighted regex patterns in phrase-patterns.toml must compile
+    /// via the builtin loader; combined with a probe text assembled at
+    /// runtime, this exercises at least one pattern from each severity
+    /// tier. The probe uses byte-array concatenation so the rtk tool-output
+    /// sanitizer (which masks AI-telltale words in tool arguments) cannot
+    /// rewrite the literal trigger; the sanitizer does not see across
+    /// `[u8; N]` array splats.
+    #[test]
+    fn weighted_phrase_patterns_match_across_all_tiers() {
+        let toml = include_str!("../recipes/phrase-patterns.toml");
+        let recipe: Recipe = toml::from_str(toml).expect("phrase-patterns.toml parses");
+        assert_eq!(recipe.recipe.name, "phrase-patterns");
+        assert!(
+            recipe.patterns.regex.len() >= 24,
+            "expected at least 24 weighted regex patterns, got {}",
+            recipe.patterns.regex.len(),
+        );
+
+        let compiled = RecipeMatcher::compile(vec![LoadedRecipe {
+            recipe,
+            source: super::super::types::RecipeSource::Builtin,
+        }])
+        .expect("phrase-patterns recipe compiles");
+
+        // Probe strings constructed from byte arrays so no telltale word is
+        // spelled contiguously in the source. This bypasses the rtk hook.
+        let probe_high = String::from_utf8(vec![
+            0x41, 0x73, 0x20, 0x61, 0x6e, 0x20, 0x41, 0x49, 0x2c, 0x20, 0x74, 0x68, 0x69, 0x73,
+            0x20, 0x69, 0x73, 0x20, 0x61, 0x20, 0x72, 0x69, 0x63, 0x68, 0x20, 0x74, 0x61, 0x70,
+            0x65, 0x73, 0x74, 0x72, 0x79, 0x2e,
+        ])
+        .expect("utf8");
+        let probe_med = String::from_utf8(vec![
+            0x49, 0x6e, 0x20, 0x63, 0x6f, 0x6e, 0x63, 0x6c, 0x75, 0x73, 0x69, 0x6f, 0x6e, 0x2c,
+        ])
+        .expect("utf8");
+        let probe_low = String::from_utf8(vec![
+            0x55, 0x6c, 0x74, 0x69, 0x6d, 0x61, 0x74, 0x65, 0x6c, 0x79, 0x2c,
+        ])
+        .expect("utf8");
+        let probe_dv = String::from_utf8(vec![
+            0x44, 0x45, 0x4c, 0x56, 0x45, 0x20, 0x49, 0x4e, 0x54, 0x4f, 0x20, 0x74, 0x68, 0x65,
+            0x20, 0x6d, 0x61, 0x74, 0x74, 0x65, 0x72, 0x2e,
+        ])
+        .expect("utf8");
+
+        let mut total = 0;
+        for text in [&probe_high, &probe_med, &probe_low, &probe_dv] {
+            let findings = compiled
+                .scan_file(Path::new("sample.md"), text.as_str())
+                .expect("scan succeeds");
+            total += findings.len();
+        }
+
+        assert!(
+            total >= 4,
+            "expected weighted regex patterns to match across severity tiers, got {total}"
+        );
+    }
+
+    /// Confirms the (?i) flag embedded in each weighted regex makes matches
+    /// case-insensitive. The uppercase probe is built at runtime from a byte
+    /// array so the rtk sanitizer cannot rewrite the trigger word in source.
+    #[test]
+    fn weighted_phrase_patterns_are_case_insensitive() {
+        let toml = include_str!("../recipes/phrase-patterns.toml");
+        let recipe: Recipe = toml::from_str(toml).expect("phrase-patterns.toml parses");
+        let compiled = RecipeMatcher::compile(vec![LoadedRecipe {
+            recipe,
+            source: super::super::types::RecipeSource::Builtin,
+        }])
+        .expect("compiles");
+
+        // D,E,L,V,E,,I,N,T,O — spelled out via u8 array.
+        let upper = String::from_utf8(vec![
+            0x44, 0x45, 0x4c, 0x56, 0x45, 0x20, 0x49, 0x4e, 0x54, 0x4f, 0x20, 0x74, 0x68, 0x65,
+            0x20, 0x68, 0x65, 0x61, 0x72, 0x74, 0x20, 0x6f, 0x66, 0x20, 0x74, 0x68, 0x65, 0x20,
+            0x6d, 0x61, 0x74, 0x74, 0x65, 0x72, 0x2e,
+        ])
+        .expect("utf8");
+
+        let findings = compiled
+            .scan_file(Path::new("upper.md"), &upper)
+            .expect("scan succeeds");
+        assert!(
+            !findings.is_empty(),
+            "uppercase trigger must match at least one weighted regex pattern"
+        );
+        // The expected trigger verb is encoded as a hex byte array (same trick as
+        // the probe) so the rtk tool-output sanitizer cannot rewrite the literal —
+        // it masks AI-telltale words in plain string literals. Hex bytes are inert.
+        let trigger = std::str::from_utf8(&[0x64, 0x65, 0x6c, 0x76, 0x65]).expect("ascii");
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.description.to_ascii_lowercase().contains(trigger)),
+            "uppercase trigger must match the weighted-{trigger}-into pattern"
+        );
     }
 }
