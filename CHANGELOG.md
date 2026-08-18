@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-18
+
+### Highlights
+
+- **New detectors**: statistical stylometry (`score_text`), invisible-unicode (NFKC + homoglyph sniff), binary-container magic-byte sniff.
+- **Pluggable TOML recipe system** — ships with 24 weighted regex phrase patterns in `phrase-patterns.toml`; word/phrase/regex/contextual rule types share a common matcher. Templates added: `phrase-patterns.toml`, `invisible-unicode.toml`.
+- **Confidence-tier classifier** integrated into `papertowel grade`; stylometry weighted at 15% of the project score.
+- **Two new CLI flags**: `scan --normalize` (NFKC rewrite, homoglyph detection) and `scrub --normalize` (NFKC rewrite).
+
 ### Added
 
 - **`papertowel prompt install` command** — installs AI workflow files into any repository, editor-agnostic by default:
