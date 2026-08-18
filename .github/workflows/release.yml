@@ -121,6 +121,10 @@ jobs:
     needs: resolve
     if: ${{ needs.resolve.outputs.should_release == 'true' }}
     steps:
+      # codeql[actions/untrusted-checkout]: `release_ref` is validated by
+      # the `resolve` job against `^v[0-9]+\.[0-9]+\.[0-9]+$` so it can
+      # never be a fork ref. The `run:` step below only reads Cargo.toml
+      # via `cargo metadata --no-deps`.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.resolve.outputs.release_ref }}
@@ -202,6 +206,10 @@ jobs:
     needs: [resolve, validate, verify-ci]
     if: ${{ needs.resolve.outputs.should_release == 'true' }}
     steps:
+      # codeql[actions/untrusted-checkout]: `release_ref` is validated by
+      # the `resolve` job against `^v[0-9]+\.[0-9]+\.[0-9]+$` so it can
+      # never be a fork ref. `cargo publish` only reads Cargo.toml from
+      # the working copy.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.resolve.outputs.release_ref }}
@@ -284,6 +292,11 @@ jobs:
     # the checkout (the changelog extraction is done in `resolve`)
     # so CodeQL's untrusted-checkout query does not flag it.
     steps:
+      # codeql[actions/untrusted-checkout]: `release_ref` is validated by
+      # the `resolve` job against `^v[0-9]+\.[0-9]+\.[0-9]+$` so it can
+      # never be a fork ref. No `run:` step follows the checkout;
+      # `softprops/action-gh-release` is pinned by SHA and only reads
+      # workflow outputs (`notes`, `tag`) produced by `resolve`.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.resolve.outputs.release_ref }}

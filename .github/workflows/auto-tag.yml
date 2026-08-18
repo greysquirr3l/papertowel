@@ -19,6 +19,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # codeql[actions/untrusted-checkout]: the workflow is gated by
+      # `github.event.workflow_run.head_branch == 'main'`, so the
+      # checked-out commit is always from the canonical `main` branch
+      # of greysquirr3l/papertowel (never a fork PR). The gate step
+      # below only reads the commit subject; it does not execute
+      # build.rs or any checked-out code.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
