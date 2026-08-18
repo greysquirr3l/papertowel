@@ -324,3 +324,33 @@ jobs:
           ./target/release/papertowel scan "${scan_path}" --ci --fail-on high
         # Fails CI if any high-severity AI fingerprints are found.
         # Medium findings are reported but do not block merges.
+
+  ci-summary:
+    # Aggregator job. Succeeds only when every other CI job above has
+    # succeeded; produces the legacy `CI` check name required by branch
+    # protection on `main`.
+    name: CI
+    runs-on: ubuntu-latest
+    needs:
+      - check
+      - test
+      - clippy
+      - fmt
+      - recipes
+      - docs
+      - msrv
+      - cross-platform
+      - dead-code-machete
+      - dead-code-udeps
+      - scan
+    if: ${{ always() }}
+    steps:
+      - name: All CI checks passed
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        run: echo "All CI jobs completed successfully."
+      - name: Re-fail if any required job failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "One or more required CI jobs did not pass:"
+          echo "${{ toJSON(needs) }}"
+          exit 1
