@@ -204,7 +204,8 @@ fn is_load_bearing(
             }
             if config.preserve_script_joiners
                 && matches!(c, '\u{200C}' | '\u{200D}')
-                && (prev.is_some_and(is_script_internal_cf) || next.is_some_and(is_script_internal_cf))
+                && (prev.is_some_and(is_script_internal_cf)
+                    || next.is_some_and(is_script_internal_cf))
             {
                 return true;
             }
@@ -214,17 +215,24 @@ fn is_load_bearing(
             // VS1–VS16 attached to emoji presentation (or after regional indicator).
             config.preserve_emoji_glue
                 && prev.is_some_and(|p| {
-                    is_emoji_base(p) || is_regional_indicator(p) || matches!(p, '\u{FE0F}' | '\u{200D}')
+                    is_emoji_base(p)
+                        || is_regional_indicator(p)
+                        || matches!(p, '\u{FE0F}' | '\u{200D}')
                 })
         }
         InvisibleKind::TagChar => {
             // Tag sequences: regional-indicator × N followed by tag × N.
             config.preserve_tag_sequences
                 && (prev.is_some_and(is_regional_indicator)
-                    || prev.is_some_and(|p| classify_codepoint(p as u32) == Some(InvisibleKind::TagChar)))
+                    || prev.is_some_and(|p| {
+                        classify_codepoint(p as u32) == Some(InvisibleKind::TagChar)
+                    }))
         }
-        InvisibleKind::Bidi => config.preserve_script_cf_marks
-            && (prev.is_some_and(is_script_internal_cf) || next.is_some_and(is_script_internal_cf)),
+        InvisibleKind::Bidi => {
+            config.preserve_script_cf_marks
+                && (prev.is_some_and(is_script_internal_cf)
+                    || next.is_some_and(is_script_internal_cf))
+        }
         InvisibleKind::PrivateUse | InvisibleKind::ExoticSpace => false,
     }
 }
@@ -331,8 +339,8 @@ pub fn detect_file(
     config: &InvisibleUnicodeConfig,
 ) -> Result<Vec<Finding>, PapertowelError> {
     let path = file_path.as_ref();
-    let content = fs::read_to_string(path)
-        .map_err(|error| PapertowelError::io_with_path(path, error))?;
+    let content =
+        fs::read_to_string(path).map_err(|error| PapertowelError::io_with_path(path, error))?;
     detect_in_text(path, &content, config)
 }
 
@@ -347,9 +355,7 @@ pub fn detect_repo(
     repo_root: impl AsRef<Path>,
     config: &InvisibleUnicodeConfig,
 ) -> Result<Vec<Finding>, PapertowelError> {
-    const SKIP_DIRS: [&str; 6] = [
-        "target", "node_modules", ".git", "vendor", "dist", "build",
-    ];
+    const SKIP_DIRS: [&str; 6] = ["target", "node_modules", ".git", "vendor", "dist", "build"];
 
     let mut findings = Vec::new();
     let walker = WalkBuilder::new(repo_root.as_ref())
@@ -376,7 +382,9 @@ pub fn detect_repo(
             continue;
         }
         // Full read only after the sniff decides "text".
-        let Ok(content) = fs::read_to_string(path) else { continue; };
+        let Ok(content) = fs::read_to_string(path) else {
+            continue;
+        };
         let local = detect_in_text(path, &content, config)?;
         findings.extend(local);
     }
@@ -403,7 +411,10 @@ mod tests {
     #[test]
     fn invisible_kind_labels_are_snake_case() {
         assert_eq!(InvisibleKind::ZwjFamily.as_str(), "zwj_family");
-        assert_eq!(InvisibleKind::VariationSelector.as_str(), "variation_selector");
+        assert_eq!(
+            InvisibleKind::VariationSelector.as_str(),
+            "variation_selector"
+        );
     }
 
     #[test]
@@ -414,8 +425,14 @@ mod tests {
         assert_eq!(classify_codepoint(0x202E), Some(InvisibleKind::Bidi)); // RLO
         assert_eq!(classify_codepoint(0x2069), Some(InvisibleKind::Bidi)); // PDI
         assert_eq!(classify_codepoint(0xE0041), Some(InvisibleKind::TagChar)); // TAG LATIN CAPITAL LETTER A
-        assert_eq!(classify_codepoint(0xFE0F), Some(InvisibleKind::VariationSelector));
-        assert_eq!(classify_codepoint(0xE01EF), Some(InvisibleKind::VariationSelector));
+        assert_eq!(
+            classify_codepoint(0xFE0F),
+            Some(InvisibleKind::VariationSelector)
+        );
+        assert_eq!(
+            classify_codepoint(0xE01EF),
+            Some(InvisibleKind::VariationSelector)
+        );
         assert_eq!(classify_codepoint(0xE001), Some(InvisibleKind::PrivateUse));
         assert_eq!(classify_codepoint(0xF8FF), Some(InvisibleKind::PrivateUse));
         assert_eq!(classify_codepoint(0x00A0), Some(InvisibleKind::ExoticSpace)); // NBSP
@@ -473,7 +490,10 @@ mod tests {
         let text = "\u{1F680}\u{200D}\u{1F525}";
         let matches = find_invisibles(text, &InvisibleUnicodeConfig::default());
         let zwj = matches.iter().find(|m| m.codepoint == 0x200D);
-        assert!(zwj.is_some_and(|m| m.load_bearing), "ZWJ between emoji must be load-bearing");
+        assert!(
+            zwj.is_some_and(|m| m.load_bearing),
+            "ZWJ between emoji must be load-bearing"
+        );
     }
 
     #[test]
@@ -503,13 +523,17 @@ mod tests {
     }
 
     #[test]
-    fn detects_repo_walks_text_files_and_skips_build_dirs() -> Result<(), Box<dyn std::error::Error>> {
+    fn detects_repo_walks_text_files_and_skips_build_dirs() -> Result<(), Box<dyn std::error::Error>>
+    {
         let temp = TempDir::new()?;
         // A source file with a ZWSP — should produce a finding
         fs::write(temp.path().join("lib.rs"), "x\u{200B}y\n")?;
         // A build artifact we'd want skipped
         fs::create_dir(temp.path().join("target"))?;
-        fs::write(temp.path().join("target").join("garbage.rs"), "x\u{200B}y\n")?;
+        fs::write(
+            temp.path().join("target").join("garbage.rs"),
+            "x\u{200B}y\n",
+        )?;
 
         let findings = detect_repo(temp.path(), &InvisibleUnicodeConfig::default())?;
         // Only `lib.rs` should appear; `target/` is skipped.
@@ -519,8 +543,8 @@ mod tests {
     }
 
     #[test]
-    fn min_invisible_chars_threshold_emits_nothing_below_threshold(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn min_invisible_chars_threshold_emits_nothing_below_threshold()
+    -> Result<(), Box<dyn std::error::Error>> {
         let text = "x\u{200B}y\n";
         let cfg = InvisibleUnicodeConfig {
             min_invisible_chars: 5,

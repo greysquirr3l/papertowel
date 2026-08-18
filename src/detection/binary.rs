@@ -41,10 +41,10 @@ const MAGIC_PREFIXES: &[&[u8]] = &[
     &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], // 7z
     b"Rar!\x1A\x07\x00",
     b"Rar!\x1A\x07\x01\x00",
-    &[0x1F, 0x8B], // gzip
-    b"BZh",        // bzip2
+    &[0x1F, 0x8B],                         // gzip
+    b"BZh",                                // bzip2
     &[0xFD, b'7', b'z', b'X', b'Z', 0x00], // XZ
-    &[0x75, b's', b't', b'a', b'r', 0x00],  // POSIX tar
+    &[0x75, b's', b't', b'a', b'r', 0x00], // POSIX tar
     // ── Executables / bytecode ──
     &[0x7F, b'E', b'L', b'F'], // ELF
     &[0xCA, 0xFE, 0xBA, 0xBE], // Java class + Mach-O fat
@@ -52,7 +52,7 @@ const MAGIC_PREFIXES: &[&[u8]] = &[
     &[0xCF, 0xFA, 0xED, 0xFE], // Mach-O 64 LE
     &[0xFE, 0xED, 0xFA, 0xCE], // Mach-O 32 BE
     &[0xFE, 0xCA, 0xFE, 0xBA], // Mach-O 64 BE
-    &[0x00, b'a', b's', b'm'],  // WASM
+    &[0x00, b'a', b's', b'm'], // WASM
     // ── Databases / file caps ──
     b"SQLite format 3\x00",
     // ── Network capture ──
@@ -94,7 +94,9 @@ pub fn looks_binary(bytes: &[u8]) -> bool {
 
 #[must_use]
 pub fn has_magic_prefix(bytes: &[u8]) -> bool {
-    MAGIC_PREFIXES.iter().any(|prefix| bytes.starts_with(prefix))
+    MAGIC_PREFIXES
+        .iter()
+        .any(|prefix| bytes.starts_with(prefix))
 }
 
 /// Ratio of "exotic" control bytes in the first 8 KiB of `bytes`.
@@ -130,7 +132,10 @@ pub const fn is_exotic_control(b: u8) -> bool {
 ///
 /// Reads up to `max_bytes` from the file (the first slice is sufficient
 /// for both heuristics).
-pub fn looks_binary_file(path: impl AsRef<Path>, max_bytes: usize) -> Result<bool, PapertowelError> {
+pub fn looks_binary_file(
+    path: impl AsRef<Path>,
+    max_bytes: usize,
+) -> Result<bool, PapertowelError> {
     let path = path.as_ref();
     let bytes = fs::read(path).map_err(|e| PapertowelError::io_with_path(path, e))?;
     let head = bytes.get(..bytes.len().min(max_bytes)).unwrap_or(&[]);
@@ -155,14 +160,19 @@ mod tests {
     #[test]
     fn ascii_text_is_not_binary() {
         assert!(!looks_binary(b"fn main() {\n    println!(\"hello\");\n}\n"));
-        assert!(!looks_binary(b"The quick brown fox jumps over the lazy dog.\n"));
+        assert!(!looks_binary(
+            b"The quick brown fox jumps over the lazy dog.\n"
+        ));
     }
 
     #[test]
     fn utf8_text_with_high_bit_bytes_is_not_binary() {
         // é (0xC3 0xA9), — (0xE2 0x80 0x94), 😀 (0xF0 0x9F 0x98 0x80)
         let text = "héllo — 😀 café\n".as_bytes();
-        assert!(!looks_binary(text), "UTF-8 should not trip the binary detector");
+        assert!(
+            !looks_binary(text),
+            "UTF-8 should not trip the binary detector"
+        );
     }
 
     #[test]
@@ -200,7 +210,9 @@ mod tests {
 
     #[test]
     fn detects_elf_magic() {
-        assert!(looks_binary(&[0x7F, b'E', b'L', b'F', 0x02, 0x01, 0x01, 0x00]));
+        assert!(looks_binary(&[
+            0x7F, b'E', b'L', b'F', 0x02, 0x01, 0x01, 0x00
+        ]));
     }
 
     #[test]
@@ -229,7 +241,9 @@ mod tests {
     #[test]
     fn detects_dense_control_byte_payload() {
         // Simulate binary content: many 0xFF and 0x00 interspersed.
-        let buf: Vec<u8> = (0..2048).map(|i| if i % 3 == 0 { 0xFF } else { 0x00 }).collect();
+        let buf: Vec<u8> = (0..2048)
+            .map(|i| if i % 3 == 0 { 0xFF } else { 0x00 })
+            .collect();
         assert!(looks_binary(&buf));
     }
 
@@ -241,7 +255,10 @@ mod tests {
         buf[20] = 0x00;
         buf[30] = 0x00;
         buf[40] = 0x7F;
-        assert!(!looks_binary(&buf), "Below 30% control density should not trip");
+        assert!(
+            !looks_binary(&buf),
+            "Below 30% control density should not trip"
+        );
     }
 
     #[test]

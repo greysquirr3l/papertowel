@@ -306,9 +306,7 @@ fn run_file_detectors(
     // Homoglyph detection runs on text files regardless of language.
     // (NFKC rewriting itself is left to `scrub --normalize`; here we
     // only surface the byte-level homoglyph findings.)
-    if normalize_enabled
-        && let Some(content) = cache_content.as_ref()
-    {
+    if normalize_enabled && let Some(content) = cache_content.as_ref() {
         match crate::scrubber::normalize::detect_in_text(path, content, normalize_cfg) {
             Ok(mut nf) => findings.append(&mut nf),
             Err(e) => tracing::warn!("normalize error for {}: {e}", path.display()),

@@ -158,7 +158,9 @@ pub fn find_homoglyph_clusters(text: &str) -> Vec<HomoglyphCluster> {
             line += 1;
             continue;
         }
-        let Some(canonical) = canonical_of(c) else { continue };
+        let Some(canonical) = canonical_of(c) else {
+            continue;
+        };
         let mut sources: BTreeSet<u32> = BTreeSet::new();
         sources.insert(c as u32);
         let start_line = line;
@@ -330,8 +332,8 @@ mod tests {
     }
 
     #[test]
-    fn threshold_min_homoglyph_chars_suppresses_singles(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn threshold_min_homoglyph_chars_suppresses_singles() -> Result<(), Box<dyn std::error::Error>>
+    {
         let text = "\u{0430}b";
         let cfg = NormalizeConfig {
             min_homoglyph_chars: 2,
@@ -343,8 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn detect_in_text_emits_findings_for_clusters(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn detect_in_text_emits_findings_for_clusters() -> Result<(), Box<dyn std::error::Error>> {
         let text = "\u{0430}\u{0435}\u{0440}";
         let findings = detect_in_text("mixed.rs", text, &NormalizeConfig::default())?;
         assert!(!findings.is_empty());
@@ -352,8 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn detect_in_text_disabled_returns_empty(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn detect_in_text_disabled_returns_empty() -> Result<(), Box<dyn std::error::Error>> {
         let text = "\u{0430}\u{0435}\u{0440}";
         let cfg = NormalizeConfig {
             detect_homoglyphs: false,

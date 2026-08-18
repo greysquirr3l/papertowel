@@ -112,20 +112,50 @@ mod tests {
 
     #[test]
     fn threshold_mapping() {
-        assert_eq!(ConfidenceTier::classify(1.0, Severity::Low), ConfidenceTier::Clean);
-        assert_eq!(ConfidenceTier::classify(0.95, Severity::Low), ConfidenceTier::Clean);
-        assert_eq!(ConfidenceTier::classify(0.949, Severity::Low), ConfidenceTier::Low);
-        assert_eq!(ConfidenceTier::classify(0.80, Severity::Low), ConfidenceTier::Low);
-        assert_eq!(ConfidenceTier::classify(0.799, Severity::Low), ConfidenceTier::Medium);
-        assert_eq!(ConfidenceTier::classify(0.65, Severity::Low), ConfidenceTier::Medium);
-        assert_eq!(ConfidenceTier::classify(0.649, Severity::Low), ConfidenceTier::High);
+        assert_eq!(
+            ConfidenceTier::classify(1.0, Severity::Low),
+            ConfidenceTier::Clean
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.95, Severity::Low),
+            ConfidenceTier::Clean
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.949, Severity::Low),
+            ConfidenceTier::Low
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.80, Severity::Low),
+            ConfidenceTier::Low
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.799, Severity::Low),
+            ConfidenceTier::Medium
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.65, Severity::Low),
+            ConfidenceTier::Medium
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.649, Severity::Low),
+            ConfidenceTier::High
+        );
     }
 
     #[test]
     fn high_severity_always_escalates_to_high() {
-        assert_eq!(ConfidenceTier::classify(1.0, Severity::High), ConfidenceTier::High);
-        assert_eq!(ConfidenceTier::classify(0.95, Severity::High), ConfidenceTier::High);
-        assert_eq!(ConfidenceTier::classify(0.80, Severity::High), ConfidenceTier::High);
+        assert_eq!(
+            ConfidenceTier::classify(1.0, Severity::High),
+            ConfidenceTier::High
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.95, Severity::High),
+            ConfidenceTier::High
+        );
+        assert_eq!(
+            ConfidenceTier::classify(0.80, Severity::High),
+            ConfidenceTier::High
+        );
     }
 
     #[test]
