@@ -193,7 +193,13 @@ pub fn transform_text(content: &str) -> (String, CommentTransformResult) {
             _ => false,
         };
 
-        let drop_line = !preserve && (tutorial || repeated_prefix);
+        // Rustdoc (`///`, `//!`) is API documentation, not narration of what
+        // the code obviously does. `analyze_comments` already exempts doc
+        // comments from the tutorial-phrase check, so the transform must
+        // exempt them too — otherwise the two disagree, and the transform
+        // deletes legitimate docs like `/// Returns true when the lock is
+        // already held`, which states a contract the signature cannot.
+        let drop_line = !preserve && !is_doc_comment_line(trimmed) && (tutorial || repeated_prefix);
         if drop_line {
             removed += 1;
             continue;
@@ -485,6 +491,36 @@ fn run() {}\n";
         assert!(result.removed_comment_lines >= 1);
         assert!(transformed.contains("Safety:"));
         assert!(!transformed.contains("This function computes"));
+    }
+
+    #[test]
+    fn transform_text_keeps_rustdoc_that_states_a_return_contract() {
+        // `/// Returns true when ...` documents what the `bool` means, which
+        // the signature alone cannot. It is API documentation, not narration.
+        let sample = "\
+/// Returns `true` when `e` means a byte-range lock is already held.\n\
+fn is_already_locked(e: &std::io::Error) -> bool {\n\
+    e.kind() == std::io::ErrorKind::WouldBlock\n\
+}\n";
+
+        let (transformed, result) = transform_text(sample);
+
+        assert!(!result.changed, "rustdoc must not be rewritten");
+        assert_eq!(result.removed_comment_lines, 0);
+        assert_eq!(transformed, sample);
+    }
+
+    #[test]
+    fn transform_text_keeps_doc_comments_that_restate_a_getter() {
+        // The doc form of the `gets`/`returns` rule is still API docs.
+        let sample = "\
+    /// Returns the total price of the cart.\n    pub fn total(&self) -> Money {\n        self.total\n    }\n";
+
+        let (transformed, result) = transform_text(sample);
+
+        assert!(!result.changed, "rustdoc must not be rewritten");
+        assert_eq!(result.removed_comment_lines, 0);
+        assert_eq!(transformed, sample);
     }
 
     #[test]

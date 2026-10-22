@@ -1,10 +1,27 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::Args;
 
+use crate::config::{LexicalRulesConfig, RulesConfig, resolve_config};
 use crate::recipe::loader::{RecipeLoader, list_available_recipes};
 use crate::recipe::types::RecipeSource;
+
+/// Lexical rule config for `path`, falling back to defaults when it cannot be
+/// resolved.
+fn current_lexical_rules(path: Option<&Path>) -> LexicalRulesConfig {
+    path.and_then(|p| resolve_config(p).ok())
+        .map_or_else(LexicalRulesConfig::default, |(_, config, _)| {
+            config.detectors.lexical.rules()
+        })
+}
+
+/// Id-based rule overrides for `path`, falling back to defaults when they
+/// cannot be resolved.
+fn current_rule_overrides(path: Option<&Path>) -> RulesConfig {
+    path.and_then(|p| resolve_config(p).ok())
+        .map_or_else(RulesConfig::default, |(_, config, _)| config.rules)
+}
 
 #[derive(Debug, Args)]
 pub struct ListArgs {
@@ -65,7 +82,10 @@ pub fn handle_list(args: &ListArgs) -> Result<()> {
 /// Show details of a specific recipe.
 pub fn handle_show(args: &ShowArgs) -> Result<()> {
     let cwd = std::env::current_dir().ok();
-    let loader = RecipeLoader::new(cwd);
+    let loader = RecipeLoader::new(cwd.clone()).with_overrides(
+        &current_lexical_rules(cwd.as_deref()),
+        &current_rule_overrides(cwd.as_deref()),
+    );
     let recipes = loader.load_all()?;
 
     let recipe = recipes

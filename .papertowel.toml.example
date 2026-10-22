@@ -24,6 +24,40 @@ idiom_mismatch   = true   # Language idioms that don't match the project's style
 prompt           = true   # Probable prompt-leakage markers in source text
 security         = true   # Security anti-patterns in supported source languages
 
+# ── Rule overrides ────────────────────────────────────────────────────────────
+# Override individual detection rules that are wrong for your project.
+# Use this instead of disabling a whole detector when only one rule misfires.
+
+[rules]
+# Rule ids to drop entirely. A disabled rule is neither reported by `scan`
+# nor applied by `scrub`.
+#
+# Rule id formats:
+#   <recipe>:word:<word>     e.g. "slop-vocabulary:word:harness"
+#   <recipe>:phrase:<phrase>  e.g. "phrase-patterns:phrase:I-hope-this-helps"
+#   <recipe>:regex:<name>     e.g. "invisible-unicode:regex:zwsp"
+#   built-in detector ids     e.g. "SEC002", "STYLOMETRY-001"
+#
+# Run `papertowel scan --format json` to list the ids your project triggers.
+# disable = ["slop-vocabulary:word:harness"]
+
+# Re-grade a rule without dropping it entirely.
+# [rules.severity]
+# "SEC002" = "low"
+
+# ── Lexical rules ─────────────────────────────────────────────────────────────
+# Fine-grained control over the vocabulary detector.
+#
+# [detectors.lexical]
+# enabled = true
+# extra_terms = ["my-custom-slopword"]
+# extra_phrases = ["it should be noted"]
+# case_sensitive = false
+#
+# Remove a term from the vocabulary rules. Applies to both the built-in slop
+# list and recipe-backed vocabulary, and stops `scrub` from rewriting it.
+# exclude_terms = ["harness"]
+
 # ── Severity ──────────────────────────────────────────────────────────────────
 # Minimum severity level to include in scan output and exit-code evaluation.
 # Choices: low | medium | high

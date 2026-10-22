@@ -92,3 +92,71 @@ severity = "Low"
 description = "Hedging comment preamble"
 suggestion = "State the fact directly"
 auto_fixable = false
+
+# ── Comment decoration and filler ───────────────────────────────────────────
+# Comments whose content is decoration or a bare label rather than information.
+# These say nothing the reader could not infer from the code below.
+
+[[patterns.regex]]
+name = "decorative-separator-line"
+pattern = '^\s*//[/!]?\s*[=\-_*~#─═━]{3,}\s*$'
+severity = "Low"
+description = "Decorative separator comment with no content"
+suggestion = "Remove, or replace with a single plain line if the label matters"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "decorative-separator-banner"
+pattern = '^\s*//[/!]?\s*[=\-_*~#─═━]{4,}\s+\S'
+severity = "Low"
+description = "Banner comment built from repeated characters"
+suggestion = "Replace with a single plain line naming the section"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "block-end-marker"
+pattern = '(?i)^\s*[}\)]?\s*(?://|#)\s*end\s+(?:of\s+)?\w+'
+severity = "Low"
+description = "End-of-block marker comment"
+suggestion = "Remove; the closing brace already ends the block"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "decorative-emoji"
+pattern = '^\s*//[/!]?\s*[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}][\x{200D}\x{FE0F}\x{20E3}]*\s*[A-Za-z]'
+severity = "Low"
+description = "Emoji used as a comment label"
+suggestion = "Use plain English, or remove if the label adds nothing"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "vague-todo"
+pattern = '(?i)^\s*//[/!]?\s*(?:todo|fixme)\s*:\s*(?:improve|optimi[sz]e|refactor|enhance|clean\s+up|update)\s*(?:this|that|it|the\s+code)?\s*\.?\s*$'
+severity = "Low"
+description = "TODO that names a feeling instead of a task"
+suggestion = "Name the specific task and enough context to act on it"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "vague-placeholder"
+pattern = '(?i)^\s*//[/!]?\s*(?:future\s+improvements?|additional\s+(?:optimizations?|improvements?|refactoring)\s+can\s+be\s+added|can\s+be\s+added\s+here|more\s+(?:validation|tests|optimization)\s+can\s+be\s+added|code\s+can\s+be\s+optimized)\b'
+severity = "Low"
+description = "Vague placeholder comment promising unspecified future work"
+suggestion = "Remove, or state the specific change and why it is needed"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "empty-section-label"
+pattern = '(?i)^\s*//[/!]?\s*(?:main\s+logic|error\s+handling|main\s+flow|setup|cleanup|initialization|process\s+data|handle\s+data)\s*\.?\s*$'
+severity = "Low"
+description = "Section label naming a category rather than a fact"
+suggestion = "Remove unless the label carries information the code does not show"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "empty-note-label"
+pattern = '(?i)^\s*//[/!]?\s*note\s*:\s*this\s+is\s+(?:important|critical|essential)\s*\.?\s*$'
+severity = "Low"
+description = "Note label that asserts importance without stating the fact"
+suggestion = "State the fact directly; drop the 'this is important' framing"
+auto_fixable = false

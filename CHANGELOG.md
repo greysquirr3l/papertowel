@@ -7,6 +7,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-22
+
+### Added
+
+- **Rule overrides in `.papertowel.toml`** — individual detection rules can now be overridden instead of disabling an entire detector:
+
+  ```toml
+  # Suppress a vocabulary term (applies to built-in *and* recipe-backed
+  # vocabulary, and stops `scrub` from rewriting it).
+  [detectors.lexical]
+  exclude_terms = ["harness"]
+
+  # Override any rule by its scan-output id.
+  [rules]
+  disable = ["slop-vocabulary:word:harness", "SEC002"]
+
+  [rules.severity]
+  "SEC002" = "low"
+  ```
+
+  `exclude_terms` previously applied only to the hardcoded `SLOP_PATTERNS` list
+  and silently ignored recipe-backed rules — so a project using a word like
+  "harness" correctly still got flagged, and `papertowel scrub` still rewrote
+  the term. Term exclusions and rule overrides are now resolved at recipe-load
+  time, which means a suppressed rule is neither reported by `scan` nor
+  applied by `scrub`.
+
+  `[rules].disable` and `[rules].severity` accept the rule ids reported in
+  scan output: `<recipe>:word:<word>`, `<recipe>:phrase:<phrase>`,
+  `<recipe>:regex:<name>`, and built-in detector ids (`SEC001`–`SEC015`,
+  `STYLOMETRY-001`, …). Repo-level overrides merge with the global config:
+  disabled ids union, and repo-level severity entries win on conflict.
+
+  Disabling a built-in detector's rule also stops `papertowel scrub` from
+  applying that detector's rewrite (the `comments.over_documented` and
+  `readme.template.structure` transforms), so a disabled rule is inert across
+  the whole toolchain.
+
+- **New comment-decoration rules** in the `comment-patterns` recipe, covering
+  comments whose content is decoration rather than information:
+
+  | Rule | Catches |
+  | --- | --- |
+  | `decorative-separator-line` | `// ====================` with no label |
+  | `decorative-separator-banner` | `// ------------- WORKFLOW -------------` |
+  | `block-end-marker` | `} // end if`, `# End of function` |
+  | `decorative-emoji` | `// ✅ Validation` |
+  | `vague-todo` | `// TODO: Improve this` |
+  | `vague-placeholder` | `// Future improvements` |
+  | `empty-section-label` | `// Main logic`, `// Error handling` |
+  | `empty-note-label` | `// Note: This is important.` |
+
+  Each is `Low` severity and reports, but does not rewrite. Legitimate
+  comments are deliberately left alone: a TODO that names a task, a `// ───
+  Section ───` divider, and an emoji that documents a codepoint (as in
+  `// 🚀 (U+1F680) + ZWJ + 🔥 (U+1F525)`) do not fire.
+
+- **New prose patterns** in the `phrase-patterns` recipe, for the phrasings
+  that read as machine-written in marketing copy and docs:
+
+  - Chatbot closers — "Let me know if you have any questions", "Would you
+    like me to expand", "You're welcome".
+  - Fake-candid openers — "Let's be honest", "Here's the thing", "Honestly?",
+    "Real talk".
+  - Persuasive authority tropes — "The real question is", "What really
+    matters", "The deeper issue", "The heart of the matter", "Fundamentally".
+  - Unsourced authority — "Experts say", "Observers say", "People report",
+    "Leading analysts believe".
+  - Significance inflation — "Marking a pivotal moment", "Ushering in a new
+    era", "The future of", "Revolutionizing".
+  - Meta-commentary — "Here's what you need to know".
+
+  Each carries a severity that reflects how strong the signal is; the
+  chatbot closers and authority tropes are `High`, the rest `Medium`.
+
+- **New `dash-patterns` recipe** — detects the em dash (`—`) and the double
+  hyphen (` -- `) used as sentence connectors, the way a language model
+  reaches for a dash instead of a period.
+
+  An em dash on its own is not proof of AI authorship — editors and
+  journalists use them deliberately — so the rule is deliberately weak:
+
+  | Occurrences | Severity |
+  | --- | --- |
+  | 1–2 (anywhere) | `Low`, confidence 0.55 |
+  | 3+ within 20 lines | `Medium` |
+  | never | `High` |
+
+  The severity ladder is the point: the rule stays out of `--fail-on high`
+  results, so a codebase that simply prefers em dashes does not fail CI
+  because of it. The em-dash and spaced-em-dash rules are mutually
+  exclusive, so a dash is never counted twice.
+
+  En dashes (`2020–2024`), command-line flags (`--verbose`), and markdown
+  horizontal rules (`---`) are not flagged. To turn the recipe off:
+
+  ```toml
+  [rules]
+  disable = ["dash-patterns:regex:em-dash"]
+  ```
+
+### Fixed
+
+- **`scrub --detectors` now rejects unknown detector names** — an
+  unrecognized value (including a typo such as `recipie`) used to select no
+  transform at all: the run reported "no changes needed" and exited 0, which
+  reads as success. That is the wrong signal for a CI-gated tool, so an
+  unknown name is now a hard error that lists the valid values
+  (`recipe`, `comments`, `readme`, plus the deprecated `lexical` alias).
+
+  The `lexical` → `recipe` alias is unchanged and still accepted; it remains
+  scheduled for removal in `v0.6.0`. Its deprecation warning previously named
+  `v0.4.0 (2026-07-01)`, a version that shipped two releases ago — the message
+  now names `v0.6.0`.
+
+- **`papertowel scrub` no longer deletes Rustdoc** — the `comments` transform
+  treated any doc comment whose body began with `Returns `, `Gets `, `Sets `, or
+  `Initializes ` as over-documentation and removed it. That made
+  `/// Returns `true` when the lock is already held.` — a line stating a
+  contract the signature cannot — disappear from a file, which then failed to
+  compile.
+
+  `analyze_comments` (the detector behind `papertowel scan`) already exempted
+  Rustdoc from the tutorial-phrase check; the transform did not, so the two
+  disagreed. The transform now exempts `///` and `//!` the same way, and the
+  two agree.
+
+  The scrub still removes inline tutorial narration (`// This function ...`),
+  which is what the transform is for.
+
 ## [0.4.0] — 2026-08-18
 
 ### Highlights

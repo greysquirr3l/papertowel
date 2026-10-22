@@ -38,6 +38,71 @@ paths = [
 
 Patterns in `[exclude].paths` use **gitignore syntax** and are merged with the `.papertowelignore` file described below.
 
+## Overriding Hardcoded Rules
+
+Some rules are wrong for your project. A team that ships a test harness will
+trip the `harness` vocabulary rule on every file; a security tool may flag a
+deliberate `eval` in a sandboxed REPL. Rather than disabling a whole
+detector, you can override the individual rules.
+
+There are two ways to do this, and they can be combined.
+
+### Suppressing a term
+
+`exclude_terms` removes a literal term from the vocabulary rules. It applies to
+both the built-in slop list and the recipe-backed vocabulary, and it also stops
+`papertowel scrub` from rewriting the term.
+
+```toml
+[detectors.lexical]
+exclude_terms = ["harness", "robust"]
+```
+
+Matching is case-insensitive unless `case_sensitive = true` is set.
+
+### Overriding a rule by id
+
+The `[rules]` section addresses any rule by the id that appears in scan output.
+This is the escape hatch for rules that `exclude_terms` cannot express —
+built-in detectors, phrase patterns, and regex rules included.
+
+```toml
+[rules]
+# Drop the rule entirely: not reported by `scan`, not applied by `scrub`.
+disable = [
+    "slop-vocabulary:word:harness",
+    "SEC002",
+]
+
+# Re-grade a rule without losing the signal.
+[rules.severity]
+"SEC002" = "low"
+"slop-vocabulary:word:robust" = "high"
+```
+
+Rule ids follow these formats:
+
+| Source | Id format | Example |
+| --- | --- | --- |
+| Recipe vocabulary | `<recipe>:word:<word>` | `slop-vocabulary:word:harness` |
+| Recipe phrase | `<recipe>:phrase:<phrase>` | `phrase-patterns:phrase:I-hope-this-helps` |
+| Recipe regex | `<recipe>:regex:<name>` | `invisible-unicode:regex:zwsp` |
+| Built-in detectors | `SEC001`–`SEC015`, `STYLOMETRY-001`, … | `SEC002` |
+
+Run `papertowel scan --format json` to list the exact ids your project
+currently triggers.
+
+### How overrides interact
+
+- A disabled rule is removed from both `scan` and `scrub`. Suppressing a term
+  silences the report *and* stops the scrubber from rewriting it.
+- Severity overrides apply to recipe rules at load time and to built-in
+  detector rules when findings are collected, so both paths end up with the
+  same effective severity.
+- Overrides in a repo-level `.papertowel.toml` are merged with the global
+  config in `~/.config/papertowel/config.toml`: disabled ids union, and
+  repo-level severity entries win on conflict.
+
 ## `.papertowelignore`
 
 Create a `.papertowelignore` file in your repo root to list paths that should be skipped entirely. The syntax is identical to `.gitignore`.

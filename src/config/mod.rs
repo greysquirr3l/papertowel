@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +34,29 @@ pub enum MinimumSeverity {
     #[default]
     Medium,
     High,
+}
+
+/// Severity assigned to an individual rule by the `[rules]` section.
+///
+/// Kept separate from [`MinimumSeverity`] because the two answer different
+/// questions: the latter is the report-wide floor, this one re-grades a
+/// single rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RuleSeverity {
+    Low,
+    Medium,
+    High,
+}
+
+impl From<RuleSeverity> for crate::detection::finding::Severity {
+    fn from(severity: RuleSeverity) -> Self {
+        match severity {
+            RuleSeverity::Low => Self::Low,
+            RuleSeverity::Medium => Self::Medium,
+            RuleSeverity::High => Self::High,
+        }
+    }
 }
 
 // ─── Sub-configs ──────────────────────────────────────────────────────────────
@@ -191,6 +215,37 @@ pub struct ExcludeConfig {
     pub paths: Vec<String>,
 }
 
+/// Per-rule overrides for hardcoded detector rules.
+///
+/// Keys are rule identifiers as reported in scan output, e.g.
+/// `slop-vocabulary:word:harness` (recipe-backed) or `SEC012` / `STYLOMETRY-001`
+/// (built-in detectors).
+///
+/// A disabled rule is dropped entirely: it is not reported by `scan`, not
+/// counted in grades, and not applied by `scrub`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct RulesConfig {
+    /// Rule ids to suppress completely.
+    pub disable: Vec<String>,
+
+    /// Rule id → severity override. Useful for downgrading a noisy rule
+    /// without losing the signal entirely.
+    pub severity: BTreeMap<String, RuleSeverity>,
+}
+
+impl RulesConfig {
+    #[must_use]
+    pub fn is_disabled(&self, rule_id: &str) -> bool {
+        self.disable.iter().any(|id| id == rule_id)
+    }
+
+    #[must_use]
+    pub fn severity_override(&self, rule_id: &str) -> Option<crate::detection::finding::Severity> {
+        self.severity.get(rule_id).copied().map(Into::into)
+    }
+}
+
 ///
 /// All sections are optional; missing sections use their `Default`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -201,6 +256,7 @@ pub struct ProjectConfig {
     pub scrubber: ScrubberConfig,
     pub wringer: WringerProjectConfig,
     pub exclude: ExcludeConfig,
+    pub rules: RulesConfig,
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -295,6 +351,22 @@ fn merge_configs(global: ProjectConfig, project: ProjectConfig) -> ProjectConfig
     // "field was absent".  For now, project config wins wholesale when the
     // project's config file existed (indicated by non-default values).
     // The simplest correct behavior: merge exclude paths.
+    //
+    // Rule overrides are additive rather than wholesale: a repo disabling a
+    // rule should not silently resurrect a globally-disabled one, so disabled
+    // ids union and project severity entries win on collision.
+    let mut disable = global.rules.disable;
+    for id in project.rules.disable {
+        if !disable.contains(&id) {
+            disable.push(id);
+        }
+    }
+    let severity = {
+        let mut severity = global.rules.severity;
+        severity.extend(project.rules.severity);
+        severity
+    };
+
     ProjectConfig {
         detectors: project.detectors,
         severity: project.severity,
@@ -307,6 +379,7 @@ fn merge_configs(global: ProjectConfig, project: ProjectConfig) -> ProjectConfig
                 paths
             },
         },
+        rules: RulesConfig { disable, severity },
     }
 }
 
@@ -399,15 +472,16 @@ pub fn is_ignored(matcher: &Gitignore, root: &Path, path: &Path, is_dir: bool) -
 #[cfg(test)]
 #[expect(clippy::expect_used, reason = "test assertions")]
 mod tests {
+    use std::collections::BTreeMap;
     use std::io::Write;
 
     use tempfile::TempDir;
 
     use super::{
         CONFIG_FILE_NAME, DetectorConfig, GLOBAL_CONFIG_FILE_NAME, IGNORE_FILE_NAME,
-        LexicalDetectorConfig, ProjectConfig, ScrubberAggression, SeverityConfig,
-        build_ignore_matcher, discover_project_root, is_ignored, load_config,
-        load_config_from_file, resolve_config, save_config,
+        LexicalDetectorConfig, ProjectConfig, RuleSeverity, RulesConfig, ScrubberAggression,
+        SeverityConfig, build_ignore_matcher, discover_project_root, is_ignored, load_config,
+        load_config_from_file, merge_configs, resolve_config, save_config,
     };
 
     fn scratch() -> TempDir {
@@ -486,6 +560,111 @@ min_size_percent = 101
         let error = load_config(dir.path()).expect_err("validation error");
         let message = error.to_string();
         assert!(message.contains("scrubber.min_size_percent"), "{message}");
+    }
+
+    #[test]
+    fn rules_section_parses_disable_and_severity() {
+        let dir = scratch();
+        let config = r#"
+[rules]
+disable = ["slop-vocabulary:word:harness", "SEC012"]
+
+[rules.severity]
+"SEC002" = "low"
+"lexical.cluster" = "high"
+"#;
+        std::fs::write(dir.path().join(CONFIG_FILE_NAME), config).expect("write");
+
+        let loaded = load_config(dir.path()).expect("load_config");
+        assert_eq!(
+            loaded.rules.disable,
+            vec![
+                "slop-vocabulary:word:harness".to_owned(),
+                "SEC012".to_owned()
+            ]
+        );
+        assert!(loaded.rules.is_disabled("SEC012"));
+        assert!(!loaded.rules.is_disabled("SEC001"));
+        assert_eq!(
+            loaded.rules.severity_override("SEC002"),
+            Some(crate::detection::finding::Severity::Low)
+        );
+        assert_eq!(
+            loaded.rules.severity_override("lexical.cluster"),
+            Some(crate::detection::finding::Severity::High)
+        );
+        assert_eq!(loaded.rules.severity_override("SEC001"), None);
+    }
+
+    #[test]
+    fn rules_section_is_empty_by_default() {
+        let dir = scratch();
+        let loaded = load_config(dir.path()).expect("load_config");
+        assert!(loaded.rules.disable.is_empty());
+        assert!(loaded.rules.severity.is_empty());
+    }
+
+    #[test]
+    fn rules_section_roundtrips_toml() {
+        let dir = scratch();
+        let mut config = ProjectConfig::default();
+        config.rules.disable.push("SEC012".to_owned());
+        config
+            .rules
+            .severity
+            .insert("SEC002".to_owned(), RuleSeverity::Low);
+
+        save_config(dir.path(), &config).expect("save_config");
+        let loaded = load_config(dir.path()).expect("load_config");
+        assert_eq!(loaded.rules, config.rules);
+    }
+
+    #[test]
+    fn merging_unions_disabled_rules_and_prefers_project_severity() {
+        let mut global = ProjectConfig::default();
+        global.rules.disable.push("SEC001".to_owned());
+        global
+            .rules
+            .severity
+            .insert("SEC002".to_owned(), RuleSeverity::High);
+        global
+            .rules
+            .severity
+            .insert("SEC003".to_owned(), RuleSeverity::Low);
+
+        let mut project = ProjectConfig::default();
+        project.rules.disable.push("SEC002".to_owned());
+        project
+            .rules
+            .severity
+            .insert("SEC002".to_owned(), RuleSeverity::Low);
+
+        let merged = merge_configs(global, project);
+
+        assert_eq!(
+            merged.rules.disable,
+            vec!["SEC001".to_owned(), "SEC002".to_owned()]
+        );
+        assert_eq!(
+            merged.rules.severity_override("SEC002"),
+            Some(crate::detection::finding::Severity::Low),
+            "project severity must win over the global baseline"
+        );
+        assert_eq!(
+            merged.rules.severity_override("SEC003"),
+            Some(crate::detection::finding::Severity::Low),
+            "global severity must survive when the project does not override it"
+        );
+    }
+
+    #[test]
+    fn rules_config_helpers_report_membership() {
+        let rules = RulesConfig {
+            disable: vec!["SEC001".to_owned()],
+            severity: BTreeMap::new(),
+        };
+        assert!(rules.is_disabled("SEC001"));
+        assert!(!rules.is_disabled("SEC002"));
     }
 
     #[test]

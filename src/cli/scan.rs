@@ -12,12 +12,13 @@ use crate::cli::report::{
     build_summary, write_github_actions_report, write_json_report, write_sarif_report,
     write_text_report,
 };
-use crate::config::{is_ignored, resolve_config};
+use crate::config::{ProjectConfig, is_ignored, resolve_config};
 use crate::detection::finding::Finding;
 use crate::detection::language::LanguageKind;
 use crate::learning::StyleBaseline;
-use crate::recipe::loader::load_recipe_matcher_for_path;
+use crate::recipe::loader::load_recipe_matcher_for_path_with_config;
 use crate::recipe::matcher::RecipeMatcher;
+use crate::recipe::overrides::apply_finding_overrides;
 use crate::scrubber::comments::CommentDetectionConfig;
 use crate::scrubber::ignore_directives;
 use crate::scrubber::lexical::{LexicalMatcher, LexicalRulesExplainability};
@@ -75,8 +76,8 @@ pub fn effective_ci_settings(args: &ScanArgs) -> (Option<SeverityArg>, OutputFor
     (fail_on, format)
 }
 
-fn load_recipe_matcher(project_root: &Path) -> Option<Arc<RecipeMatcher>> {
-    load_recipe_matcher_for_path(project_root).map(Arc::new)
+fn load_recipe_matcher(project_root: &Path, config: &ProjectConfig) -> Option<Arc<RecipeMatcher>> {
+    load_recipe_matcher_for_path_with_config(project_root, config).map(Arc::new)
 }
 
 pub fn handle(args: &ScanArgs) -> Result<()> {
@@ -153,7 +154,7 @@ pub fn collect_findings_for_root(
             }
         });
 
-    let recipe_matcher = load_recipe_matcher(&project_root);
+    let recipe_matcher = load_recipe_matcher(&project_root, &config);
     let lexical_rules = config.detectors.lexical.rules();
     let lexical_matcher = if config.detectors.lexical.enabled() {
         Some(LexicalMatcher::from_rules(&lexical_rules)?)
@@ -220,6 +221,11 @@ pub fn collect_findings_for_root(
     if is_git_repo(root) {
         run_repo_detectors(root, &mut findings);
     }
+
+    // Apply id-based rule overrides (`[rules].disable` / `[rules].severity`).
+    // Recipe-backed rules are already filtered at load time; this pass covers
+    // the built-in detectors, which each emit a stable id.
+    apply_finding_overrides(&mut findings, &config.rules);
 
     let findings = if mixed {
         aggregate_mixed_content_findings(findings)

@@ -85,6 +85,18 @@ Patterns with both fields: `applies_to` must match **and** `excludes` must not m
 | `slop-vocabulary` | Lexical | Word-level overused adjectives, verbs, and transitions |
 | `phrase-patterns` | Lexical | Multi-word phrases that read as LLM filler |
 | `comment-patterns` | Comment | Doc-comment openers that follow LLM boilerplate templates |
+| `invisible-unicode` | InvisibleUnicode | Zero-width, bidi, and other visually-ambiguous codepoints |
+| `dash-patterns` | Lexical | Em dashes and double hyphens used as sentence connectors |
+
+The `dash-patterns` recipe is deliberately weak, because an em dash on its own
+is not evidence of AI authorship. A single dash is `Low` severity; three or
+more within 20 lines are boosted to `Medium`; it never reaches `High`, so it
+cannot fail a `--fail-on high` build on its own. Disable it with:
+
+```toml
+[rules]
+disable = ["dash-patterns:regex:em-dash"]
+```
 
 List them with:
 
