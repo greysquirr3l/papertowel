@@ -16,6 +16,7 @@ mod builtin {
     pub const COMMENT_PATTERNS: &str = include_str!("../recipes/comment-patterns.toml");
     pub const PHRASE_PATTERNS: &str = include_str!("../recipes/phrase-patterns.toml");
     pub const INVISIBLE_UNICODE: &str = include_str!("../recipes/invisible-unicode.toml");
+    pub const DASH_PATTERNS: &str = include_str!("../recipes/dash-patterns.toml");
 }
 
 /// Discovers and loads recipes from all sources.
@@ -139,6 +140,7 @@ impl RecipeLoader {
             ("comment-patterns", builtin::COMMENT_PATTERNS),
             ("phrase-patterns", builtin::PHRASE_PATTERNS),
             ("invisible-unicode", builtin::INVISIBLE_UNICODE),
+            ("dash-patterns", builtin::DASH_PATTERNS),
         ] {
             match toml::from_str::<Recipe>(content) {
                 Ok(recipe) => {
@@ -236,6 +238,7 @@ pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSo
         ("comment-patterns".to_owned(), RecipeSource::Builtin),
         ("phrase-patterns".to_owned(), RecipeSource::Builtin),
         ("invisible-unicode".to_owned(), RecipeSource::Builtin),
+        ("dash-patterns".to_owned(), RecipeSource::Builtin),
     ];
 
     // User global.

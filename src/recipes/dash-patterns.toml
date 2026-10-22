@@ -1,0 +1,79 @@
+# Dash Pattern Detection
+#
+# Detects the dash characters that language models reach for as a substitute
+# for sentence structure — the em dash used as an aside or connector, and the
+# double hyphen used the same way.
+#
+# Why this is a separate recipe with its own scoring: an em dash on its own
+# is NOT proof of AI authorship. Editors, journalists, and technical writers
+# use them deliberately and well. The signal is real but weak, so:
+#
+#   - a single dash is Low severity and low confidence;
+#   - clustered dashes are boosted to Medium, never High.
+#
+# That keeps the rule visible in reports and grade calculations without
+# failing a `--fail-on high` build on a codebase that simply prefers em
+# dashes. Users who want it gone can disable it:
+#
+#   [rules]
+#   disable = ["dash-patterns:regex:em-dash"]
+#
+# Contribute: Add regex patterns for dash styles to detect.
+
+[recipe]
+name = "dash-patterns"
+version = "1.0.0"
+description = "Detects em dashes and double hyphens used as sentence connectors"
+author = "papertowel"
+category = "Lexical"
+default_severity = "Low"
+
+[scoring]
+# Three dashes within 20 lines is a habit, not a typo. Two is not.
+cluster_threshold = 3
+cluster_range_lines = 20
+cluster_severity_boost = "Medium"
+base_confidence = 0.55
+
+# ── Em dash ─────────────────────────────────────────────────────────────────
+# U+2014 EM DASH and U+2015 HORIZONTAL BAR.
+#
+# The two rules are mutually exclusive on purpose, so a single em dash never
+# produces two findings:
+#
+#   - `em-dash`        the dash is not preceded by whitespace ("word—word"),
+#                      or it opens the line;
+#   - `spaced-em-dash` the dash has a space on both sides ("word — word"),
+#                      which is nearly always a deliberate aside.
+#
+# The regex crate has no lookaround, so the "not preceded by whitespace"
+# condition is expressed as an explicit alternation instead.
+
+[[patterns.regex]]
+name = "em-dash"
+pattern = '(^|[^ \t])—'
+severity = "Low"
+description = "Em dash used as a sentence connector"
+suggestion = "Replace with a period, comma, colon, or parentheses"
+auto_fixable = false
+
+[[patterns.regex]]
+name = "spaced-em-dash"
+pattern = ' — '
+severity = "Low"
+description = "Spaced em dash used as an aside"
+suggestion = "Replace with a period, comma, colon, or parentheses"
+auto_fixable = false
+
+# ── Double hyphen ──────────────────────────────────────────────────────────
+# The ASCII stand-in for an em dash, and a common model output. The spaces on
+# both sides keep this away from markdown horizontal rules (`---`), YAML
+# frontmatter delimiters, command-line flags (`--flag`), and diff headers.
+
+[[patterns.regex]]
+name = "double-hyphen"
+pattern = ' -- '
+severity = "Low"
+description = "Double hyphen used as a dash"
+suggestion = "Replace with a period, comma, colon, or parentheses"
+auto_fixable = false

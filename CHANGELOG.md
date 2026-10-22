@@ -43,6 +43,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `readme.template.structure` transforms), so a disabled rule is inert across
   the whole toolchain.
 
+- **New comment-decoration rules** in the `comment-patterns` recipe, covering
+  comments whose content is decoration rather than information:
+
+  | Rule | Catches |
+  | --- | --- |
+  | `decorative-separator-line` | `// ====================` with no label |
+  | `decorative-separator-banner` | `// ------------- WORKFLOW -------------` |
+  | `block-end-marker` | `} // end if`, `# End of function` |
+  | `decorative-emoji` | `// ✅ Validation` |
+  | `vague-todo` | `// TODO: Improve this` |
+  | `vague-placeholder` | `// Future improvements` |
+  | `empty-section-label` | `// Main logic`, `// Error handling` |
+  | `empty-note-label` | `// Note: This is important.` |
+
+  Each is `Low` severity and reports, but does not rewrite. Legitimate
+  comments are deliberately left alone: a TODO that names a task, a `// ───
+  Section ───` divider, and an emoji that documents a codepoint (as in
+  `// 🚀 (U+1F680) + ZWJ + 🔥 (U+1F525)`) do not fire.
+
+- **New prose patterns** in the `phrase-patterns` recipe, for the phrasings
+  that read as machine-written in marketing copy and docs:
+
+  - Chatbot closers — "Let me know if you have any questions", "Would you
+    like me to expand", "You're welcome".
+  - Fake-candid openers — "Let's be honest", "Here's the thing", "Honestly?",
+    "Real talk".
+  - Persuasive authority tropes — "The real question is", "What really
+    matters", "The deeper issue", "The heart of the matter", "Fundamentally".
+  - Unsourced authority — "Experts say", "Observers say", "People report",
+    "Leading analysts believe".
+  - Significance inflation — "Marking a pivotal moment", "Ushering in a new
+    era", "The future of", "Revolutionizing".
+  - Meta-commentary — "Here's what you need to know".
+
+  Each carries a severity that reflects how strong the signal is; the
+  chatbot closers and authority tropes are `High`, the rest `Medium`.
+
+- **New `dash-patterns` recipe** — detects the em dash (`—`) and the double
+  hyphen (` -- `) used as sentence connectors, the way a language model
+  reaches for a dash instead of a period.
+
+  An em dash on its own is not proof of AI authorship — editors and
+  journalists use them deliberately — so the rule is deliberately weak:
+
+  | Occurrences | Severity |
+  | --- | --- |
+  | 1–2 (anywhere) | `Low`, confidence 0.55 |
+  | 3+ within 20 lines | `Medium` |
+  | never | `High` |
+
+  The severity ladder is the point: the rule stays out of `--fail-on high`
+  results, so a codebase that simply prefers em dashes does not fail CI
+  because of it. The em-dash and spaced-em-dash rules are mutually
+  exclusive, so a dash is never counted twice.
+
+  En dashes (`2020–2024`), command-line flags (`--verbose`), and markdown
+  horizontal rules (`---`) are not flagged. To turn the recipe off:
+
+  ```toml
+  [rules]
+  disable = ["dash-patterns:regex:em-dash"]
+  ```
+
 ### Fixed
 
 - **`scrub --detectors` now rejects unknown detector names** — an

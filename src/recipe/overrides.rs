@@ -349,9 +349,11 @@ mod tests {
 
     #[test]
     fn phrase_rule_id_matches_matcher_format() {
+        // The phrase is deliberately not one the shipped recipes match, so
+        // this file stays clean under `papertowel scan ./src --fail-on high`.
         assert_eq!(
-            phrase_rule_id("phrase-patterns", "Let's break this down"),
-            "phrase-patterns:phrase:Let's-break-this-down"
+            phrase_rule_id("phrase-patterns", "Custom Phrase Here"),
+            "phrase-patterns:phrase:Custom-Phrase-Here"
         );
     }
 }

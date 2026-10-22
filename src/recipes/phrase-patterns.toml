@@ -41,6 +41,39 @@ items = [
     { match = "Feel free to", severity = "Low" },
     { match = "Don't hesitate to", severity = "Medium" },
 
+    # Chatbot closers — conversation artifacts left in a deliverable.
+    { match = "Let me know if you have any questions", severity = "High" },
+    { match = "Would you like me to expand", severity = "High" },
+    { match = "You're welcome", severity = "Medium" },
+
+    # Fake-candid openers — a manufactured pause before an ordinary point.
+    { match = "Let's be honest", severity = "High" },
+    { match = "Here's the thing", severity = "High" },
+    { match = "Honestly?", severity = "Medium" },
+    { match = "Real talk", severity = "Medium" },
+
+    # Persuasive authority tropes — ceremony in place of a real point.
+    { match = "The real question is", severity = "High" },
+    { match = "What really matters", severity = "High" },
+    { match = "The deeper issue", severity = "High" },
+    { match = "The heart of the matter", severity = "High" },
+    { match = "Fundamentally", severity = "Medium" },
+
+    # Unsourced authority — a trust claim with nobody named.
+    { match = "Experts say", severity = "Medium" },
+    { match = "Observers say", severity = "Medium" },
+    { match = "People report", severity = "Medium" },
+    { match = "Leading analysts believe", severity = "Medium" },
+
+    # Significance inflation — ceremony where evidence should be.
+    { match = "Marking a pivotal moment", severity = "High" },
+    { match = "Ushering in a new era", severity = "High" },
+    { match = "The future of", severity = "Medium" },
+    { match = "Revolutionizing", severity = "Medium" },
+
+    # Meta-commentary about the answer instead of the answer.
+    { match = "Here's what you need to know", severity = "High" },
+
     # Explanation starters
     { match = "In essence", suggestion = "" },
     { match = "In other words", suggestion = "i.e." },
