@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-22
+
 ### Added
 
 - **Rule overrides in `.papertowel.toml`** — individual detection rules can now be overridden instead of disabling an entire detector:
@@ -119,6 +121,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scheduled for removal in `v0.6.0`. Its deprecation warning previously named
   `v0.4.0 (2026-07-01)`, a version that shipped two releases ago — the message
   now names `v0.6.0`.
+
+- **`papertowel scrub` no longer deletes Rustdoc** — the `comments` transform
+  treated any doc comment whose body began with `Returns `, `Gets `, `Sets `, or
+  `Initializes ` as over-documentation and removed it. That made
+  `/// Returns `true` when the lock is already held.` — a line stating a
+  contract the signature cannot — disappear from a file, which then failed to
+  compile.
+
+  `analyze_comments` (the detector behind `papertowel scan`) already exempted
+  Rustdoc from the tutorial-phrase check; the transform did not, so the two
+  disagreed. The transform now exempts `///` and `//!` the same way, and the
+  two agree.
+
+  The scrub still removes inline tutorial narration (`// This function ...`),
+  which is what the transform is for.
 
 ## [0.4.0] — 2026-08-18
 
