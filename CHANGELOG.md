@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Rule overrides in `.papertowel.toml`** — individual detection rules can now be overridden instead of disabling an entire detector:
+
+  ```toml
+  # Suppress a vocabulary term (applies to built-in *and* recipe-backed
+  # vocabulary, and stops `scrub` from rewriting it).
+  [detectors.lexical]
+  exclude_terms = ["harness"]
+
+  # Override any rule by its scan-output id.
+  [rules]
+  disable = ["slop-vocabulary:word:harness", "SEC002"]
+
+  [rules.severity]
+  "SEC002" = "low"
+  ```
+
+  `exclude_terms` previously applied only to the hardcoded `SLOP_PATTERNS` list
+  and silently ignored recipe-backed rules — so a project using a word like
+  "harness" correctly still got flagged, and `papertowel scrub` still rewrote
+  the term. Term exclusions and rule overrides are now resolved at recipe-load
+  time, which means a suppressed rule is neither reported by `scan` nor
+  applied by `scrub`.
+
+  `[rules].disable` and `[rules].severity` accept the rule ids reported in
+  scan output: `<recipe>:word:<word>`, `<recipe>:phrase:<phrase>`,
+  `<recipe>:regex:<name>`, and built-in detector ids (`SEC001`–`SEC015`,
+  `STYLOMETRY-001`, …). Repo-level overrides merge with the global config:
+  disabled ids union, and repo-level severity entries win on conflict.
+
+  Disabling a built-in detector's rule also stops `papertowel scrub` from
+  applying that detector's rewrite (the `comments.over_documented` and
+  `readme.template.structure` transforms), so a disabled rule is inert across
+  the whole toolchain.
+
 ## [0.4.0] — 2026-08-18
 
 ### Highlights

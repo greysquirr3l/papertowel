@@ -276,7 +276,12 @@ pub fn handle_tools_call(params: Option<&Value>) -> Result<Value> {
 /// Returns `None` if recipes cannot be loaded or compiled (errors are logged at
 /// `debug` level so the scan still proceeds with structural findings).
 fn load_recipe_matcher(path: &std::path::Path) -> Option<papertowel::recipe::RecipeMatcher> {
-    let matcher = papertowel::recipe::loader::load_recipe_matcher_for_path(path);
+    let (_, config, _) = papertowel::config::resolve_config(path)
+        .map_err(|e| format!("failed to load project config: {e}"))
+        .unwrap_or_default();
+
+    let matcher =
+        papertowel::recipe::loader::load_recipe_matcher_for_path_with_config(path, &config);
     if matcher.is_none() {
         debug!("failed to load recipes (skipped)");
     }
@@ -374,6 +379,11 @@ fn call_scan(args: &Value) -> Value {
             &mut all_findings,
             papertowel::scrubber::name_credibility::detect_repo(&path),
         );
+    }
+
+    // Apply id-based rule overrides (`[rules].disable` / `[rules].severity`).
+    if let Ok((_, config, _)) = papertowel::config::resolve_config(&path) {
+        papertowel::recipe::overrides::apply_finding_overrides(&mut all_findings, &config.rules);
     }
 
     // Filter by severity.

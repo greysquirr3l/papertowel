@@ -8,7 +8,7 @@ use clap::Args;
 use walkdir::WalkDir;
 
 use crate::cli::scan::collect_findings_for_root;
-use crate::config::{is_ignored, resolve_config};
+use crate::config::{ProjectConfig, RulesConfig, is_ignored, resolve_config};
 use crate::detection::finding::Severity;
 use crate::detection::language::LanguageKind;
 use crate::domain::errors::PapertowelError;
@@ -22,6 +22,11 @@ pub const RECIPE_DETECTOR_NAME: &str = "recipe";
 const LEGACY_RECIPE_ALIAS: &str = "lexical";
 // Deprecated in v0.3.x. Remove legacy alias support in v0.4.0 (2026-07-01).
 const LEGACY_RECIPE_ALIAS_REMOVAL: &str = "v0.4.0 (2026-07-01)";
+
+/// Rule id emitted by the comments detector, as reported in scan output.
+const COMMENTS_RULE_ID: &str = "comments.over_documented";
+/// Rule id emitted by the readme detector, as reported in scan output.
+const README_RULE_ID: &str = "readme.template.structure";
 
 #[derive(Debug, Args)]
 pub struct ScrubArgs {
@@ -208,8 +213,15 @@ fn legacy_alias_warnings(detectors: &[String]) -> Vec<String> {
 }
 
 /// Load the recipe scrubber, returning None if loading fails or no patterns exist.
-fn load_recipe_scrubber(project_root: &Path) -> Option<Arc<RecipeScrubber>> {
-    let loader = RecipeLoader::new(Some(project_root.to_path_buf()));
+///
+/// The loader applies the project's rule overrides, so a rule disabled in
+/// `.papertowel.toml` is not rewritten here either.
+fn load_recipe_scrubber(
+    project_root: &Path,
+    config: &ProjectConfig,
+) -> Option<Arc<RecipeScrubber>> {
+    let loader = RecipeLoader::new(Some(project_root.to_path_buf()))
+        .with_overrides(&config.detectors.lexical.rules(), &config.rules);
     match loader.load_all() {
         Ok(recipes) if !recipes.is_empty() => match RecipeScrubber::compile(recipes) {
             Ok(scrubber) if scrubber.has_patterns() => Some(Arc::new(scrubber)),
@@ -267,7 +279,7 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
 
     // Load recipe scrubber once for all files.
     let recipe_scrubber = if wants_detector(&args.detectors, RECIPE_DETECTOR_NAME) {
-        load_recipe_scrubber(&project_root)
+        load_recipe_scrubber(&project_root, &config)
     } else {
         None
     };
@@ -302,6 +314,7 @@ pub fn handle(args: &ScrubArgs) -> Result<()> {
             args,
             recipe_scrubber.as_deref(),
             effective_safety.as_ref(),
+            &config.rules,
         )?;
         if result.safety_blocked.is_some() {
             safety_blocked_count += 1;
@@ -354,6 +367,7 @@ fn apply_transforms(
     args: &ScrubArgs,
     recipe_scrubber: Option<&RecipeScrubber>,
     safety: Option<&SafetyConfig>,
+    rules: &RulesConfig,
 ) -> Result<FileResult, PapertowelError> {
     let ext = path
         .extension()
@@ -384,7 +398,10 @@ fn apply_transforms(
         safety_blocked: None,
     };
 
-    if lang.is_analysable() && wants_detector(&args.detectors, comments::DETECTOR_NAME) {
+    if lang.is_analysable()
+        && wants_detector(&args.detectors, comments::DETECTOR_NAME)
+        && !rules.is_disabled(COMMENTS_RULE_ID)
+    {
         match comments::transform_file(path, args.dry_run) {
             Ok(r) if r.changed => result.comments = Some(r.removed_comment_lines),
             Ok(_) => {}
@@ -404,7 +421,10 @@ fn apply_transforms(
         }
     }
 
-    if ext == "md" && wants_detector(&args.detectors, readme::DETECTOR_NAME) {
+    if ext == "md"
+        && wants_detector(&args.detectors, readme::DETECTOR_NAME)
+        && !rules.is_disabled(README_RULE_ID)
+    {
         match readme::transform_file(path, args.dry_run) {
             Ok(r) if r.changed => result.readme = Some(r.removed_lines),
             Ok(_) => {}

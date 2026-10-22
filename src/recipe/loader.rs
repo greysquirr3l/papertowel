@@ -3,9 +3,11 @@ use std::path::{Path, PathBuf};
 
 use tracing::{debug, instrument, warn};
 
+use crate::config::{LexicalRulesConfig, ProjectConfig, RulesConfig};
 use crate::domain::errors::PapertowelError;
 
 use super::RecipeMatcher;
+use super::overrides::apply_recipe_overrides;
 use super::types::{LoadedRecipe, Recipe, RecipeSource};
 
 /// Embedded built-in recipes.
@@ -28,6 +30,12 @@ pub struct RecipeLoader {
     include_recipes: Vec<String>,
 
     exclude_recipes: Vec<String>,
+
+    /// Lexical rule config supplying `exclude_terms` / `case_sensitive`.
+    lexical_rules: LexicalRulesConfig,
+
+    /// Id-based rule overrides (`disable` / `severity`).
+    rule_overrides: RulesConfig,
 }
 
 impl RecipeLoader {
@@ -38,7 +46,24 @@ impl RecipeLoader {
             include_builtin: true,
             include_recipes: Vec::new(),
             exclude_recipes: Vec::new(),
+            lexical_rules: LexicalRulesConfig::default(),
+            rule_overrides: RulesConfig::default(),
         }
+    }
+
+    /// Apply the user's rule overrides to every recipe this loader returns.
+    ///
+    /// Overrides are applied at load time so that a suppressed rule is neither
+    /// detected nor rewritten by `scrub`.
+    #[must_use]
+    pub fn with_overrides(
+        mut self,
+        lexical_rules: &LexicalRulesConfig,
+        rule_overrides: &RulesConfig,
+    ) -> Self {
+        self.lexical_rules = lexical_rules.clone();
+        self.rule_overrides = rule_overrides.clone();
+        self
     }
 
     /// Disable built-in recipes.
@@ -94,7 +119,12 @@ impl RecipeLoader {
         }
 
         // Apply include/exclude filters.
-        let recipes = self.filter_recipes(recipes);
+        let mut recipes = self.filter_recipes(recipes);
+
+        // Apply user-configured rule overrides (excluded terms, disabled
+        // rules, severity overrides) so that every downstream consumer sees
+        // the same effective rule set.
+        apply_recipe_overrides(&mut recipes, &self.lexical_rules, &self.rule_overrides);
 
         debug!(count = recipes.len(), "loaded recipes");
         Ok(recipes)
@@ -250,6 +280,16 @@ pub fn list_available_recipes(repo_root: Option<&Path>) -> Vec<(String, RecipeSo
 /// Load and compile a [`RecipeMatcher`] for the project root that contains `path`.
 ///
 pub fn load_recipe_matcher_for_path(path: &Path) -> Option<RecipeMatcher> {
+    load_recipe_matcher_for_path_with_config(path, &ProjectConfig::default())
+}
+
+/// Load and compile a [`RecipeMatcher`] honouring the project's rule overrides.
+///
+/// `debug` level so the scan still proceeds with structural findings).
+pub fn load_recipe_matcher_for_path_with_config(
+    path: &Path,
+    config: &ProjectConfig,
+) -> Option<RecipeMatcher> {
     let project_root = if path.is_dir() {
         path.to_path_buf()
     } else {
@@ -257,7 +297,8 @@ pub fn load_recipe_matcher_for_path(path: &Path) -> Option<RecipeMatcher> {
             .map_or_else(|| path.to_path_buf(), Path::to_path_buf)
     };
 
-    let loader = RecipeLoader::new(Some(project_root));
+    let loader = RecipeLoader::new(Some(project_root))
+        .with_overrides(&config.detectors.lexical.rules(), &config.rules);
     match loader.load_all() {
         Ok(recipes) => RecipeMatcher::compile(recipes).ok(),
         Err(e) => {
