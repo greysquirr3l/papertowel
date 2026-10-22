@@ -20,8 +20,20 @@ use crate::scrubber::{comments, readme};
 
 pub const RECIPE_DETECTOR_NAME: &str = "recipe";
 const LEGACY_RECIPE_ALIAS: &str = "lexical";
-// Deprecated in v0.3.x. Remove legacy alias support in v0.4.0 (2026-07-01).
-const LEGACY_RECIPE_ALIAS_REMOVAL: &str = "v0.4.0 (2026-07-01)";
+// Deprecated in v0.3.x. Scheduled for removal in v0.6.0.
+const LEGACY_RECIPE_ALIAS_REMOVAL: &str = "v0.6.0";
+
+/// Detector names accepted by `--detectors`.
+///
+/// `lexical` is the deprecated alias for `recipe`; it is accepted so existing
+/// scripts keep working, but it is no longer a detector in its own right.
+/// The `lexical` *scan* detector is separate and unaffected by this list.
+const VALID_DETECTORS: &[&str] = &[
+    RECIPE_DETECTOR_NAME,
+    LEGACY_RECIPE_ALIAS,
+    comments::DETECTOR_NAME,
+    readme::DETECTOR_NAME,
+];
 
 /// Rule id emitted by the comments detector, as reported in scan output.
 const COMMENTS_RULE_ID: &str = "comments.over_documented";
@@ -33,7 +45,12 @@ pub struct ScrubArgs {
     pub path: String,
     #[arg(long)]
     pub dry_run: bool,
-    #[arg(long, value_delimiter = ',')]
+    /// Detectors to apply. Comma-separated; omit to apply all.
+    ///
+    /// Valid values: `recipe`, `comments`, `readme`. `lexical` is a
+    /// deprecated alias for `recipe`. An unknown name is an error rather
+    /// than a silent no-op.
+    #[arg(long, value_delimiter = ',', value_name = "DETECTORS")]
     pub detectors: Vec<String>,
     /// Treat elevated warnings as hard failures (mirror scan --ci behaviour).
     #[arg(long)]
@@ -202,6 +219,31 @@ fn wants_detector(detectors: &[String], name: &str) -> bool {
     detectors.iter().any(|d| effective.contains(&d.as_str()))
 }
 
+/// Reject detector names that match nothing.
+///
+/// Without this, `--detectors recipie` (or any typo) silently selects no
+/// transform: the run reports "no changes needed" and exits 0, which reads as
+/// success. That is the worst failure mode for a CI-gated tool, so an
+/// unknown name is a hard error instead.
+fn validate_detectors(detectors: &[String]) -> Result<()> {
+    let unknown: Vec<&str> = detectors
+        .iter()
+        .map(String::as_str)
+        .filter(|d| !VALID_DETECTORS.contains(d))
+        .collect();
+
+    if unknown.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "unknown scrub detector{}: {}\nvalid detectors: {}",
+        if unknown.len() == 1 { "" } else { "s" },
+        unknown.join(", "),
+        VALID_DETECTORS.join(", "),
+    )
+}
+
 fn legacy_alias_warnings(detectors: &[String]) -> Vec<String> {
     if detectors.iter().any(|d| d == LEGACY_RECIPE_ALIAS) {
         vec![format!(
@@ -248,6 +290,7 @@ fn load_recipe_scrubber(
 pub fn handle(args: &ScrubArgs) -> Result<()> {
     let root = PathBuf::from(&args.path);
     let (project_root, config, ignore) = resolve_config(&root)?;
+    validate_detectors(&args.detectors)?;
     let alias_warnings = legacy_alias_warnings(&args.detectors);
 
     if !alias_warnings.is_empty() {
@@ -598,6 +641,11 @@ fn write_report(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test assertions"
+)]
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
@@ -605,10 +653,46 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        RECIPE_DETECTOR_NAME, ScrubArgs, VerificationMetrics, VerificationResult,
-        VerificationStatus, compare_verification, enforce_ci_guards, handle, legacy_alias_warnings,
-        wants_detector,
+        LEGACY_RECIPE_ALIAS_REMOVAL, RECIPE_DETECTOR_NAME, ScrubArgs, VerificationMetrics,
+        VerificationResult, VerificationStatus, compare_verification, enforce_ci_guards, handle,
+        legacy_alias_warnings, validate_detectors, wants_detector,
     };
+
+    #[test]
+    fn validate_detectors_accepts_every_valid_name() {
+        for name in ["recipe", "lexical", "comments", "readme"] {
+            assert!(
+                validate_detectors(&[name.to_owned()]).is_ok(),
+                "expected '{name}' to be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_detectors_accepts_empty_list() {
+        assert!(validate_detectors(&[]).is_ok());
+    }
+
+    #[test]
+    fn validate_detectors_rejects_unknown_name() {
+        let error = validate_detectors(&["recippie".to_owned()]).expect_err("should reject");
+        let message = error.to_string();
+        assert!(message.contains("recippie"), "{message}");
+        assert!(message.contains("recipe"), "{message}");
+    }
+
+    #[test]
+    fn validate_detectors_rejects_unknown_name_among_valid_ones() {
+        let error = validate_detectors(&["recipe".to_owned(), "nope".to_owned()])
+            .expect_err("should reject");
+        assert!(error.to_string().contains("nope"), "{error}");
+    }
+
+    #[test]
+    fn validate_detectors_rejects_legacy_alias_typo() {
+        // "lexical" is valid, "lexcial" is not.
+        assert!(validate_detectors(&["lexcial".to_owned()]).is_err());
+    }
 
     #[test]
     fn wants_all_detectors_when_list_is_empty() {
@@ -645,6 +729,22 @@ mod tests {
         assert!(warnings.iter().all(|w| w.contains("deprecated")));
         assert!(warnings.iter().all(|w| w.contains("removed in")));
         assert!(warnings.iter().all(|w| w.contains(RECIPE_DETECTOR_NAME)));
+    }
+
+    #[test]
+    fn deprecation_warning_names_a_future_removal_version() {
+        // The warning must not name a version that has already shipped —
+        // that reads as a broken promise and trains users to ignore it.
+        let warnings = legacy_alias_warnings(&["lexical".to_owned()]);
+        let warning = &warnings[0];
+        assert!(
+            warning.contains(LEGACY_RECIPE_ALIAS_REMOVAL),
+            "expected removal version '{LEGACY_RECIPE_ALIAS_REMOVAL}' in: {warning}"
+        );
+        assert!(
+            !warning.contains("v0.4.0"),
+            "removal version must not be a past release: {warning}"
+        );
     }
 
     #[test]

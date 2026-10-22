@@ -43,6 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `readme.template.structure` transforms), so a disabled rule is inert across
   the whole toolchain.
 
+### Fixed
+
+- **`scrub --detectors` now rejects unknown detector names** — an
+  unrecognized value (including a typo such as `recipie`) used to select no
+  transform at all: the run reported "no changes needed" and exited 0, which
+  reads as success. That is the wrong signal for a CI-gated tool, so an
+  unknown name is now a hard error that lists the valid values
+  (`recipe`, `comments`, `readme`, plus the deprecated `lexical` alias).
+
+  The `lexical` → `recipe` alias is unchanged and still accepted; it remains
+  scheduled for removal in `v0.6.0`. Its deprecation warning previously named
+  `v0.4.0 (2026-07-01)`, a version that shipped two releases ago — the message
+  now names `v0.6.0`.
+
 ## [0.4.0] — 2026-08-18
 
 ### Highlights

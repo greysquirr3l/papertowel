@@ -347,3 +347,72 @@ fn comments_scrubber_strips_comments_when_the_rule_is_enabled() {
         "expected comment stripping when the rule is enabled, got: {text}"
     );
 }
+
+// ── detector name validation ──────────────────────────────────────────────────
+
+#[test]
+fn scrub_rejects_unknown_detector_name() {
+    // An unknown detector used to be a silent no-op: exit 0, "no changes
+    // needed". That reads as success, which is the wrong signal for a
+    // CI-gated tool.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src").join("main.rs"), "fn main() {}\n").unwrap();
+
+    let mut cmd = cmd();
+    cmd.arg("scrub")
+        .arg(dir.path())
+        .arg("--dry-run")
+        .args(["--detectors", "totally-bogus"]);
+    cmd.assert().failure();
+}
+
+#[test]
+fn scrub_rejects_misspelled_detector_name() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src").join("main.rs"), "fn main() {}\n").unwrap();
+
+    let mut cmd = cmd();
+    cmd.arg("scrub")
+        .arg(dir.path())
+        .arg("--dry-run")
+        .args(["--detectors", "recipie"]);
+    cmd.assert().failure();
+}
+
+#[test]
+fn scrub_error_lists_valid_detector_names() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src").join("main.rs"), "fn main() {}\n").unwrap();
+
+    let mut cmd = cmd();
+    cmd.arg("scrub")
+        .arg(dir.path())
+        .arg("--dry-run")
+        .args(["--detectors", "totally-bogus"]);
+    let output = cmd.assert().failure().get_output().stderr.clone();
+    let text = String::from_utf8(output).unwrap();
+
+    assert!(text.contains("totally-bogus"), "{text}");
+    assert!(text.contains("recipe"), "{text}");
+    assert!(text.contains("comments"), "{text}");
+    assert!(text.contains("readme"), "{text}");
+}
+
+#[test]
+fn scrub_accepts_every_valid_detector_name() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src").join("main.rs"), "fn main() {}\n").unwrap();
+
+    for name in ["recipe", "lexical", "comments", "readme"] {
+        let mut cmd = cmd();
+        cmd.arg("scrub")
+            .arg(dir.path())
+            .arg("--dry-run")
+            .args(["--detectors", name]);
+        cmd.assert().success();
+    }
+}

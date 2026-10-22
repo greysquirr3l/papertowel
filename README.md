@@ -124,8 +124,12 @@ papertowel hook install
 papertowel hook status
 ```
 
-`scrub --detectors lexical` is a legacy alias for `recipe` and is deprecated.
-Use `--detectors recipe` going forward. The alias will be removed in `v0.4.0 (2026-07-01)`.
+`scrub --detectors lexical` is a deprecated alias for `recipe`; it still works but
+warns, and support will be removed in `v0.6.0`. Use `--detectors recipe`.
+
+Valid `--detectors` values are `recipe`, `comments`, and `readme` (plus the
+deprecated `lexical` alias). An unrecognized name is a hard error — it is not
+silently ignored.
 
 Cleanup CI rollout guidance and workflow snippets are documented in [docs/dev/cleanup-ci-workflows.md](docs/dev/cleanup-ci-workflows.md).
 
